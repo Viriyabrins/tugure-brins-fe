@@ -1,0 +1,163 @@
+{
+  "name": "Batch",
+  "type": "object",
+  "properties": {
+    "batch_id": {
+      "type": "string",
+      "description": "Unique batch identifier"
+    },
+    "batch_month": {
+      "type": "number",
+      "description": "Batch month (1-12)"
+    },
+    "batch_year": {
+      "type": "number",
+      "description": "Batch year"
+    },
+    "contract_id": {
+      "type": "string",
+      "description": "Reference to Contract"
+    },
+    "total_records": {
+      "type": "number",
+      "default": 0
+    },
+    "total_exposure": {
+      "type": "number",
+      "default": 0,
+      "description": "Raw exposure from upload"
+    },
+    "total_premium": {
+      "type": "number",
+      "default": 0,
+      "description": "Raw premium from upload"
+    },
+    "final_exposure_amount": {
+      "type": "number",
+      "default": 0,
+      "description": "Final exposure after Debtor Review (approved debtors only)"
+    },
+    "final_premium_amount": {
+      "type": "number",
+      "default": 0,
+      "description": "Final premium after Debtor Review (approved debtors only)"
+    },
+    "debtor_review_completed": {
+      "type": "boolean",
+      "default": false,
+      "description": "TRUE when ALL debtors have been reviewed (approved or rejected)"
+    },
+    "batch_ready_for_nota": {
+      "type": "boolean",
+      "default": false,
+      "description": "TRUE after Debtor Review completed with at least 1 approved debtor"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Uploaded",
+        "Validated",
+        "Matched",
+        "Approved",
+        "Nota Issued",
+        "Branch Confirmed",
+        "Paid",
+        "Closed",
+        "Rejected",
+        "Reopen Requested",
+        "Reopened"
+      ],
+      "default": "Uploaded",
+      "description": "Batch status - strict workflow order"
+    },
+    "operational_locked": {
+      "type": "boolean",
+      "default": false,
+      "description": "TRUE when Batch Closed - blocks debtor revisions"
+    },
+    "reopen_requested_by": {
+      "type": "string",
+      "description": "User who requested reopen"
+    },
+    "reopen_requested_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reopen_reason": {
+      "type": "string",
+      "description": "Reason for reopen request"
+    },
+    "reopen_impact": {
+      "type": "string",
+      "enum": [
+        "Data",
+        "Financial"
+      ],
+      "description": "Impact type of reopen"
+    },
+    "reopen_approved_by": {
+      "type": "string",
+      "description": "Supervisor/Admin who approved reopen"
+    },
+    "reopen_approved_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validated_by": {
+      "type": "string"
+    },
+    "validated_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "matched_by": {
+      "type": "string"
+    },
+    "matched_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "approved_by": {
+      "type": "string"
+    },
+    "approved_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "nota_issued_by": {
+      "type": "string"
+    },
+    "nota_issued_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "branch_confirmed_by": {
+      "type": "string"
+    },
+    "branch_confirmed_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "paid_by": {
+      "type": "string"
+    },
+    "paid_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "closed_by": {
+      "type": "string"
+    },
+    "closed_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "rejection_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "batch_id",
+    "contract_id"
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "name": "Document",
+  "type": "object",
+  "properties": {
+    "debtor_id": {
+      "type": "string",
+      "description": "Reference to Debtor"
+    },
+    "batch_id": {
+      "type": "string",
+      "description": "Reference to Batch for bulk upload"
+    },
+    "claim_id": {
+      "type": "string",
+      "description": "Reference to Claim if document is for claim"
+    },
+    "document_type": {
+      "type": "string",
+      "description": "Flexible document type - no restriction"
+    },
+    "document_name": {
+      "type": "string"
+    },
+    "file_url": {
+      "type": "string"
+    },
+    "upload_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "expiry_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "VERIFIED",
+        "REJECTED",
+        "EXPIRED"
+      ],
+      "default": "PENDING"
+    },
+    "remarks": {
+      "type": "string"
+    },
+    "version": {
+      "type": "number",
+      "default": 1,
+      "description": "Document version for revision tracking"
+    },
+    "parent_document_id": {
+      "type": "string",
+      "description": "Reference to parent document for versioning"
+    },
+    "uploaded_by": {
+      "type": "string",
+      "description": "User who uploaded the document"
+    }
+  },
+  "required": [
+    "document_name"
+  ]
+}

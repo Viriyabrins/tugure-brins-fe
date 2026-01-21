@@ -1,0 +1,60 @@
+{
+  "name": "Bordero",
+  "type": "object",
+  "properties": {
+    "bordero_id": {
+      "type": "string"
+    },
+    "contract_id": {
+      "type": "string"
+    },
+    "batch_id": {
+      "type": "string"
+    },
+    "period": {
+      "type": "string",
+      "description": "Format: YYYY-MM"
+    },
+    "total_debtors": {
+      "type": "number"
+    },
+    "total_exposure": {
+      "type": "number"
+    },
+    "total_premium": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string",
+      "default": "IDR"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "GENERATED",
+        "UNDER_REVIEW",
+        "FINAL",
+        "ADJUSTED"
+      ],
+      "default": "GENERATED"
+    },
+    "reviewed_by": {
+      "type": "string"
+    },
+    "reviewed_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "finalized_by": {
+      "type": "string"
+    },
+    "finalized_date": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": [
+    "contract_id",
+    "period"
+  ]
+}

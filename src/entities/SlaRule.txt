@@ -1,0 +1,121 @@
+{
+  "name": "SlaRule",
+  "type": "object",
+  "properties": {
+    "rule_name": {
+      "type": "string",
+      "description": "Nama aturan SLA"
+    },
+    "entity_type": {
+      "type": "string",
+      "enum": [
+        "Debtor",
+        "Batch",
+        "Claim",
+        "Subrogation",
+        "Nota",
+        "Invoice",
+        "Payment",
+        "Reconciliation"
+      ],
+      "description": "Jenis entitas yang dipantau"
+    },
+    "trigger_condition": {
+      "type": "string",
+      "enum": [
+        "STATUS_DURATION",
+        "CREATED_DURATION",
+        "UPDATED_DURATION",
+        "DUE_DATE_APPROACHING",
+        "DUE_DATE_PASSED"
+      ],
+      "description": "Kondisi pemicu"
+    },
+    "status_value": {
+      "type": "string",
+      "description": "Status yang dipantau (jika trigger adalah STATUS_DURATION)"
+    },
+    "duration_value": {
+      "type": "number",
+      "description": "Durasi dalam jam"
+    },
+    "duration_unit": {
+      "type": "string",
+      "enum": [
+        "HOURS",
+        "DAYS"
+      ],
+      "default": "HOURS",
+      "description": "Unit durasi"
+    },
+    "notification_type": {
+      "type": "string",
+      "enum": [
+        "EMAIL",
+        "SYSTEM",
+        "BOTH"
+      ],
+      "default": "BOTH",
+      "description": "Jenis notifikasi"
+    },
+    "recipient_role": {
+      "type": "string",
+      "enum": [
+        "BRINS",
+        "TUGURE",
+        "ADMIN",
+        "ALL"
+      ],
+      "description": "Role penerima notifikasi"
+    },
+    "email_subject": {
+      "type": "string",
+      "description": "Subject email notifikasi"
+    },
+    "email_body": {
+      "type": "string",
+      "description": "Body email (supports variables: {entity_id}, {status}, {duration}, {date})"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "default": "MEDIUM",
+      "description": "Prioritas notifikasi"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Status aktif aturan"
+    },
+    "is_recurring": {
+      "type": "boolean",
+      "default": false,
+      "description": "Apakah notifikasi berulang"
+    },
+    "recurrence_interval": {
+      "type": "number",
+      "description": "Interval pengulangan dalam jam (jika is_recurring true)"
+    },
+    "last_triggered": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Terakhir kali rule dipicu"
+    },
+    "trigger_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Jumlah kali rule dipicu"
+    }
+  },
+  "required": [
+    "rule_name",
+    "entity_type",
+    "trigger_condition",
+    "recipient_role"
+  ]
+}

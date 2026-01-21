@@ -1,0 +1,54 @@
+{
+  "name": "EmailTemplate",
+  "type": "object",
+  "properties": {
+    "object_type": {
+      "type": "string",
+      "enum": [
+        "Batch",
+        "Record",
+        "Nota",
+        "Claim",
+        "Subrogation"
+      ],
+      "description": "Object type"
+    },
+    "status_from": {
+      "type": "string",
+      "description": "Status transition from"
+    },
+    "status_to": {
+      "type": "string",
+      "description": "Status transition to"
+    },
+    "recipient_role": {
+      "type": "string",
+      "enum": [
+        "BRINS",
+        "TUGURE",
+        "ADMIN",
+        "ALL"
+      ],
+      "description": "Target recipient role"
+    },
+    "email_subject": {
+      "type": "string",
+      "description": "Email subject template"
+    },
+    "email_body": {
+      "type": "string",
+      "description": "Email body template (supports variables: {batch_id}, {user_name}, {date}, etc)"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "object_type",
+    "status_to",
+    "recipient_role",
+    "email_subject",
+    "email_body"
+  ]
+}

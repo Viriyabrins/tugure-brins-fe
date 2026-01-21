@@ -1,0 +1,53 @@
+{
+  "name": "SystemConfig",
+  "type": "object",
+  "properties": {
+    "config_type": {
+      "type": "string",
+      "enum": [
+        "STATUS_REFERENCE",
+        "ELIGIBILITY_RULE",
+        "FINANCIAL_THRESHOLD",
+        "APPROVAL_MATRIX",
+        "NOTIFICATION_RULE",
+        "NOTIFICATION_CHANNEL"
+      ]
+    },
+    "config_key": {
+      "type": "string"
+    },
+    "config_value": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "version": {
+      "type": "number",
+      "default": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "SUBMITTED",
+        "APPROVED",
+        "REJECTED"
+      ],
+      "default": "APPROVED"
+    }
+  },
+  "required": [
+    "config_type",
+    "config_key",
+    "config_value"
+  ]
+}

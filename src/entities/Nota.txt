@@ -1,0 +1,93 @@
+{
+  "name": "Nota",
+  "type": "object",
+  "properties": {
+    "nota_number": {
+      "type": "string",
+      "description": "Nota number"
+    },
+    "nota_type": {
+      "type": "string",
+      "enum": [
+        "Batch",
+        "Claim",
+        "Subrogation"
+      ],
+      "description": "Type of nota"
+    },
+    "reference_id": {
+      "type": "string",
+      "description": "ID of related Batch/Claim/Subrogation"
+    },
+    "contract_id": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number",
+      "description": "IMMUTABLE after Issued - derived from final_premium_amount"
+    },
+    "currency": {
+      "type": "string",
+      "default": "IDR"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Draft",
+        "Issued",
+        "Confirmed",
+        "Paid"
+      ],
+      "default": "Draft",
+      "description": "Nota status - strict workflow"
+    },
+    "issued_by": {
+      "type": "string"
+    },
+    "issued_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "confirmed_by": {
+      "type": "string"
+    },
+    "confirmed_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "paid_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "payment_reference": {
+      "type": "string"
+    },
+    "total_actual_paid": {
+      "type": "number",
+      "default": 0,
+      "description": "Accumulation of actual payments"
+    },
+    "reconciliation_status": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "PARTIAL",
+        "MATCHED",
+        "OVERPAID",
+        "FINAL"
+      ],
+      "default": "PENDING"
+    },
+    "is_immutable": {
+      "type": "boolean",
+      "default": false,
+      "description": "TRUE after Issued - cannot edit amount"
+    }
+  },
+  "required": [
+    "nota_number",
+    "nota_type",
+    "reference_id",
+    "amount"
+  ]
+}

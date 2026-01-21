@@ -1,0 +1,145 @@
+{
+  "name": "Claim",
+  "type": "object",
+  "properties": {
+    "claim_no": {
+      "type": "string",
+      "description": "Nomor klaim"
+    },
+    "policy_no": {
+      "type": "string",
+      "description": "Nomor polis"
+    },
+    "nomor_sertifikat": {
+      "type": "string",
+      "description": "Nomor sertifikat"
+    },
+    "nama_tertanggung": {
+      "type": "string",
+      "description": "Nama tertanggung"
+    },
+    "no_ktp_npwp": {
+      "type": "string",
+      "description": "No. KTP/NPWP"
+    },
+    "no_fasilitas_kredit": {
+      "type": "string",
+      "description": "No. Fasilitas Kredit"
+    },
+    "bdo_premi": {
+      "type": "string",
+      "description": "BDO Premi period"
+    },
+    "tanggal_realisasi_kredit": {
+      "type": "string",
+      "format": "date",
+      "description": "Tanggal realisasi kredit"
+    },
+    "plafond": {
+      "type": "number",
+      "description": "Plafond"
+    },
+    "max_coverage": {
+      "type": "number",
+      "description": "Max coverage"
+    },
+    "kol_debitur": {
+      "type": "string",
+      "description": "Kolektibilitas debitur"
+    },
+    "dol": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of Loss"
+    },
+    "nilai_klaim": {
+      "type": "number",
+      "description": "Nilai klaim"
+    },
+    "share_tugure_percentage": {
+      "type": "number",
+      "description": "Share TUGURE (%)"
+    },
+    "share_tugure_amount": {
+      "type": "number",
+      "description": "Share TUGURE (Amount)"
+    },
+    "check_bdo_premi": {
+      "type": "boolean",
+      "default": false,
+      "description": "Check BDO Premi verification"
+    },
+    "batch_id": {
+      "type": "string",
+      "description": "Reference to Batch"
+    },
+    "version_no": {
+      "type": "number",
+      "default": 1,
+      "description": "Version number"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Draft",
+        "Checked",
+        "Doc Verified",
+        "Invoiced",
+        "Paid"
+      ],
+      "default": "Draft",
+      "description": "Claim status"
+    },
+    "debtor_id": {
+      "type": "string",
+      "description": "Reference to Debtor"
+    },
+    "contract_id": {
+      "type": "string",
+      "description": "Reference to Contract"
+    },
+    "checked_by": {
+      "type": "string"
+    },
+    "checked_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "doc_verified_by": {
+      "type": "string"
+    },
+    "doc_verified_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "invoiced_by": {
+      "type": "string"
+    },
+    "invoiced_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "paid_by": {
+      "type": "string"
+    },
+    "paid_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "rejection_reason": {
+      "type": "string"
+    },
+    "reviewed_by": {
+      "type": "string"
+    },
+    "review_date": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": [
+    "claim_no",
+    "nama_tertanggung",
+    "nilai_klaim"
+  ]
+}

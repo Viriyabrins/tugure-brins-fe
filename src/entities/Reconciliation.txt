@@ -1,0 +1,52 @@
+{
+  "name": "Reconciliation",
+  "type": "object",
+  "properties": {
+    "recon_id": {
+      "type": "string"
+    },
+    "contract_id": {
+      "type": "string"
+    },
+    "period": {
+      "type": "string"
+    },
+    "total_invoiced": {
+      "type": "number"
+    },
+    "total_paid": {
+      "type": "number"
+    },
+    "difference": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string",
+      "default": "IDR"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "IN_PROGRESS",
+        "EXCEPTION",
+        "READY_TO_CLOSE",
+        "CLOSED"
+      ],
+      "default": "IN_PROGRESS"
+    },
+    "closed_by": {
+      "type": "string"
+    },
+    "closed_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "remarks": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_id",
+    "period"
+  ]
+}

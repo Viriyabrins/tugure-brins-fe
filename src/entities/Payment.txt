@@ -1,0 +1,74 @@
+{
+  "name": "Payment",
+  "type": "object",
+  "properties": {
+    "payment_ref": {
+      "type": "string",
+      "description": "Bank reference"
+    },
+    "invoice_id": {
+      "type": "string",
+      "description": "Reference to Nota (using invoice_id for compatibility)"
+    },
+    "intent_id": {
+      "type": "string"
+    },
+    "contract_id": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "payment_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "currency": {
+      "type": "string",
+      "default": "IDR"
+    },
+    "bank_reference": {
+      "type": "string",
+      "description": "Bank transaction reference"
+    },
+    "match_status": {
+      "type": "string",
+      "enum": [
+        "RECEIVED",
+        "MATCHED",
+        "PARTIALLY_MATCHED",
+        "UNMATCHED"
+      ],
+      "default": "RECEIVED"
+    },
+    "exception_type": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "PARTIAL",
+        "OVER",
+        "UNDER",
+        "LATE",
+        "FX"
+      ],
+      "default": "NONE"
+    },
+    "matched_by": {
+      "type": "string"
+    },
+    "matched_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "is_actual_payment": {
+      "type": "boolean",
+      "default": true,
+      "description": "TRUE for actual payments (not just planning)"
+    }
+  },
+  "required": [
+    "payment_ref",
+    "amount",
+    "payment_date"
+  ]
+}

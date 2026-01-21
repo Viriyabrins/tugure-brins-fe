@@ -1,2 +1,1 @@
-# tugure-brins-fe
-Tugure BRIN Frontend
+# Base44 App

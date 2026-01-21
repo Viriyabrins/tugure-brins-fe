@@ -1,0 +1,53 @@
+{
+  "name": "Subrogation",
+  "type": "object",
+  "properties": {
+    "subrogation_id": {
+      "type": "string"
+    },
+    "claim_id": {
+      "type": "string"
+    },
+    "debtor_id": {
+      "type": "string"
+    },
+    "recovery_amount": {
+      "type": "number"
+    },
+    "recovery_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Draft",
+        "Invoiced",
+        "Paid / Closed"
+      ],
+      "default": "Draft",
+      "description": "Subrogation status - strict workflow"
+    },
+    "invoiced_by": {
+      "type": "string"
+    },
+    "invoiced_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "closed_by": {
+      "type": "string"
+    },
+    "closed_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "remarks": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim_id",
+    "recovery_amount"
+  ]
+}

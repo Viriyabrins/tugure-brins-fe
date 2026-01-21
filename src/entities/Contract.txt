@@ -1,0 +1,70 @@
+{
+  "name": "Contract",
+  "type": "object",
+  "properties": {
+    "contract_number": {
+      "type": "string",
+      "description": "Nomor kontrak reasuransi"
+    },
+    "contract_name": {
+      "type": "string",
+      "description": "Nama kontrak"
+    },
+    "cedant": {
+      "type": "string",
+      "enum": [
+        "BRINS"
+      ],
+      "default": "BRINS"
+    },
+    "reinsurer": {
+      "type": "string",
+      "enum": [
+        "TUGURE"
+      ],
+      "default": "TUGURE"
+    },
+    "credit_type": {
+      "type": "string",
+      "enum": [
+        "Individual",
+        "Corporate"
+      ],
+      "description": "Jenis kredit"
+    },
+    "coverage_percentage": {
+      "type": "number",
+      "description": "Persentase coverage"
+    },
+    "premium_rate": {
+      "type": "number",
+      "description": "Rate premi"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ACTIVE",
+        "EXPIRED",
+        "TERMINATED"
+      ],
+      "default": "ACTIVE"
+    },
+    "currency": {
+      "type": "string",
+      "default": "IDR"
+    }
+  },
+  "required": [
+    "contract_number",
+    "contract_name",
+    "credit_type"
+  ]
+}

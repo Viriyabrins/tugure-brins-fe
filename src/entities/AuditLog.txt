@@ -1,0 +1,54 @@
+{
+  "name": "AuditLog",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "Action performed"
+    },
+    "module": {
+      "type": "string",
+      "enum": [
+        "AUTH",
+        "DEBTOR",
+        "DOCUMENT",
+        "BORDERO",
+        "INVOICE",
+        "PAYMENT",
+        "RECONCILIATION",
+        "CLAIM",
+        "CONFIG",
+        "SYSTEM"
+      ]
+    },
+    "entity_type": {
+      "type": "string"
+    },
+    "entity_id": {
+      "type": "string"
+    },
+    "old_value": {
+      "type": "string"
+    },
+    "new_value": {
+      "type": "string"
+    },
+    "user_email": {
+      "type": "string"
+    },
+    "user_role": {
+      "type": "string"
+    },
+    "ip_address": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "module",
+    "user_email"
+  ]
+}

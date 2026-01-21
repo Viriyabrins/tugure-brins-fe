@@ -1,0 +1,50 @@
+{
+  "name": "PaymentIntent",
+  "type": "object",
+  "properties": {
+    "intent_id": {
+      "type": "string"
+    },
+    "invoice_id": {
+      "type": "string"
+    },
+    "contract_id": {
+      "type": "string"
+    },
+    "payment_type": {
+      "type": "string",
+      "enum": [
+        "FULL",
+        "PARTIAL",
+        "INSTALMENT"
+      ],
+      "default": "FULL"
+    },
+    "planned_amount": {
+      "type": "number"
+    },
+    "planned_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "remarks": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "SUBMITTED",
+        "APPROVED",
+        "REJECTED",
+        "CANCELLED"
+      ],
+      "default": "DRAFT"
+    }
+  },
+  "required": [
+    "invoice_id",
+    "planned_amount",
+    "planned_date"
+  ]
+}

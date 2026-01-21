@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="BRIN icon">
+  <defs>
+    <linearGradient id="brandGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1645ec" />
+      <stop offset="100%" stop-color="#1ec2ff" />
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="24" fill="url(#brandGradient)" />
+  <path d="M36 78 58 42h8l22 36H76l-6-12-6 12H36Z" fill="#fff" opacity="0.92" />
+</svg>

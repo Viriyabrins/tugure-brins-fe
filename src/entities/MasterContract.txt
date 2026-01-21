@@ -1,0 +1,146 @@
+{
+  "name": "MasterContract",
+  "type": "object",
+  "properties": {
+    "contract_id": {
+      "type": "string",
+      "description": "Contract ID"
+    },
+    "policy_no": {
+      "type": "string",
+      "description": "Policy number"
+    },
+    "program_id": {
+      "type": "string",
+      "description": "Program ID"
+    },
+    "product_type": {
+      "type": "string",
+      "enum": [
+        "Treaty",
+        "Facultative",
+        "Retro"
+      ],
+      "description": "Product type"
+    },
+    "credit_type": {
+      "type": "string",
+      "enum": [
+        "Individual",
+        "Corporate"
+      ],
+      "description": "Credit type"
+    },
+    "loan_type": {
+      "type": "string",
+      "description": "Loan type code"
+    },
+    "loan_type_desc": {
+      "type": "string",
+      "description": "Loan type description"
+    },
+    "coverage_start_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Coverage start date"
+    },
+    "coverage_end_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Coverage end date"
+    },
+    "max_tenor_month": {
+      "type": "number",
+      "description": "Maximum tenor in months"
+    },
+    "max_plafond": {
+      "type": "number",
+      "description": "Maximum plafond"
+    },
+    "share_tugure_percentage": {
+      "type": "number",
+      "description": "Share TUGURE percentage"
+    },
+    "premium_rate": {
+      "type": "number",
+      "description": "Premium rate"
+    },
+    "ric_rate": {
+      "type": "number",
+      "description": "RIC rate"
+    },
+    "bf_rate": {
+      "type": "number",
+      "description": "BF rate"
+    },
+    "allowed_kolektabilitas": {
+      "type": "string",
+      "description": "Allowed kolektabilitas values (comma-separated)"
+    },
+    "allowed_region": {
+      "type": "string",
+      "description": "Allowed regions (comma-separated)"
+    },
+    "currency": {
+      "type": "string",
+      "default": "IDR",
+      "description": "Currency"
+    },
+    "remark": {
+      "type": "string",
+      "description": "Remarks"
+    },
+    "effective_status": {
+      "type": "string",
+      "enum": [
+        "Draft",
+        "Pending First Approval",
+        "Pending Second Approval",
+        "Active",
+        "Inactive",
+        "Archived"
+      ],
+      "default": "Draft",
+      "description": "Status of the contract"
+    },
+    "version": {
+      "type": "number",
+      "default": 1,
+      "description": "Version of the contract"
+    },
+    "parent_contract_id": {
+      "type": "string",
+      "description": "Reference to parent contract for versioning"
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Effective date"
+    },
+    "first_approved_by": {
+      "type": "string"
+    },
+    "first_approved_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "second_approved_by": {
+      "type": "string"
+    },
+    "second_approved_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "rejection_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_id",
+    "policy_no",
+    "product_type",
+    "credit_type",
+    "coverage_start_date",
+    "coverage_end_date"
+  ]
+}

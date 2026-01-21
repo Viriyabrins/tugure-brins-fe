@@ -1,0 +1,59 @@
+{
+  "name": "Record",
+  "type": "object",
+  "properties": {
+    "batch_id": {
+      "type": "string",
+      "description": "Reference to Batch"
+    },
+    "debtor_id": {
+      "type": "string",
+      "description": "Reference to Debtor"
+    },
+    "record_status": {
+      "type": "string",
+      "enum": [
+        "Accepted",
+        "Rejected",
+        "Revised"
+      ],
+      "default": "Accepted",
+      "description": "Record status"
+    },
+    "exposure_amount": {
+      "type": "number"
+    },
+    "premium_amount": {
+      "type": "number"
+    },
+    "revision_reason": {
+      "type": "string"
+    },
+    "revision_count": {
+      "type": "number",
+      "default": 0
+    },
+    "accepted_by": {
+      "type": "string"
+    },
+    "accepted_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "rejected_by": {
+      "type": "string"
+    },
+    "rejected_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "rejection_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "batch_id",
+    "debtor_id",
+    "record_status"
+  ]
+}

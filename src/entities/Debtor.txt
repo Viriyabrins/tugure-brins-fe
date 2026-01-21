@@ -1,0 +1,178 @@
+{
+  "name": "Debtor",
+  "type": "object",
+  "properties": {
+    "cover_id": {
+      "type": "number",
+      "description": "Cover ID"
+    },
+    "program_id": {
+      "type": "string",
+      "description": "Program identifier"
+    },
+    "batch_id": {
+      "type": "string",
+      "description": "Batch submission ID"
+    },
+    "nomor_rekening_pinjaman": {
+      "type": "string",
+      "description": "Nomor rekening pinjaman"
+    },
+    "nomor_peserta": {
+      "type": "string",
+      "description": "Nomor peserta"
+    },
+    "loan_type": {
+      "type": "string",
+      "description": "Loan type code"
+    },
+    "loan_type_desc": {
+      "type": "string",
+      "description": "Loan type description"
+    },
+    "cif_rekening_pinjaman": {
+      "type": "string",
+      "description": "CIF rekening pinjaman"
+    },
+    "jenis_pengajuan_desc": {
+      "type": "string",
+      "description": "Jenis pengajuan description"
+    },
+    "jenis_covering_desc": {
+      "type": "string",
+      "description": "Jenis covering description"
+    },
+    "tanggal_mulai_covering": {
+      "type": "string",
+      "format": "date",
+      "description": "Tanggal mulai covering"
+    },
+    "tanggal_akhir_covering": {
+      "type": "string",
+      "format": "date",
+      "description": "Tanggal akhir covering"
+    },
+    "plafon": {
+      "type": "number",
+      "description": "Plafon"
+    },
+    "nominal_premi": {
+      "type": "number",
+      "description": "Nominal premi"
+    },
+    "premi_percentage": {
+      "type": "number",
+      "description": "Premi percentage"
+    },
+    "ric_percentage": {
+      "type": "number",
+      "description": "RIC percentage"
+    },
+    "bf_percentage": {
+      "type": "number",
+      "description": "BF percentage"
+    },
+    "net_premi": {
+      "type": "number",
+      "description": "Net premi"
+    },
+    "unit_code": {
+      "type": "string",
+      "description": "Unit code"
+    },
+    "unit_desc": {
+      "type": "string",
+      "description": "Unit description"
+    },
+    "branch_desc": {
+      "type": "string",
+      "description": "Branch description"
+    },
+    "region_desc": {
+      "type": "string",
+      "description": "Region description"
+    },
+    "nama_peserta": {
+      "type": "string",
+      "description": "Nama peserta/debtor"
+    },
+    "alamat_usaha": {
+      "type": "string",
+      "description": "Alamat usaha"
+    },
+    "nomor_perjanjian_kredit": {
+      "type": "string",
+      "description": "Nomor perjanjian kredit"
+    },
+    "tanggal_terima": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Tanggal terima"
+    },
+    "tanggal_validasi": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Tanggal validasi"
+    },
+    "teller_premium_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Teller premium date"
+    },
+    "status_aktif": {
+      "type": "number",
+      "description": "Status aktif (0/1)"
+    },
+    "remark_premi": {
+      "type": "string",
+      "description": "Remark premi"
+    },
+    "flag_restruktur": {
+      "type": "number",
+      "description": "Restructuring flag (0/1)"
+    },
+    "kolektabilitas": {
+      "type": "number",
+      "description": "Kolektabilitas status (1-5)"
+    },
+    "contract_id": {
+      "type": "string",
+      "description": "Reference to Contract"
+    },
+    "version_no": {
+      "type": "number",
+      "default": 1,
+      "description": "Revision version number"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "SUBMITTED",
+        "APPROVED",
+        "REJECTED",
+        "CONDITIONAL"
+      ],
+      "default": "DRAFT",
+      "description": "Underwriting status"
+    },
+    "is_locked": {
+      "type": "boolean",
+      "default": false,
+      "description": "TRUE if locked from editing"
+    },
+    "rejection_reason": {
+      "type": "string",
+      "description": "Reason for rejection in underwriting"
+    },
+    "validation_remarks": {
+      "type": "string",
+      "description": "Validation remarks from system checks"
+    }
+  },
+  "required": [
+    "batch_id",
+    "nama_peserta",
+    "nomor_peserta"
+  ]
+}

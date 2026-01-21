@@ -1,0 +1,65 @@
+{
+  "name": "Notification",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "ACTION_REQUIRED",
+        "WARNING",
+        "INFO",
+        "DECISION"
+      ],
+      "default": "INFO"
+    },
+    "module": {
+      "type": "string",
+      "enum": [
+        "DEBTOR",
+        "DOCUMENT",
+        "BORDERO",
+        "INVOICE",
+        "PAYMENT",
+        "RECONCILIATION",
+        "CLAIM",
+        "SYSTEM"
+      ]
+    },
+    "reference_id": {
+      "type": "string"
+    },
+    "reference_type": {
+      "type": "string"
+    },
+    "target_role": {
+      "type": "string",
+      "enum": [
+        "ADMIN",
+        "BRINS",
+        "TUGURE",
+        "ALL"
+      ]
+    },
+    "target_user": {
+      "type": "string"
+    },
+    "is_read": {
+      "type": "boolean",
+      "default": false
+    },
+    "action_url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "message",
+    "type"
+  ]
+}

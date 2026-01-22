@@ -92,14 +92,19 @@ export default function Dashboard() {
         ]);
       }
 
-      setDebtors(debtorData || []);
-      setClaims(claimData || []);
-      setBorderos(borderoData || []);
+      // Ensure data is always an array
+      debtorData = Array.isArray(debtorData) ? debtorData : [];
+      claimData = Array.isArray(claimData) ? claimData : [];
+      borderoData = Array.isArray(borderoData) ? borderoData : [];
+
+      setDebtors(debtorData);
+      setClaims(claimData);
+      setBorderos(borderoData);
 
       // Calculate stats
-      const approved = (debtorData || []).filter(d => d.status === 'APPROVED').length;
-      const pending = (debtorData || []).filter(d => d.status === 'SUBMITTED').length;
-      const rejected = (debtorData || []).filter(d => d.status === 'REJECTED').length;
+      const approved = debtorData.filter(d => d.status === 'APPROVED').length;
+      const pending = debtorData.filter(d => d.status === 'SUBMITTED').length;
+      const rejected = debtorData.filter(d => d.status === 'REJECTED').length;
       
       const totalExposure = debtorData.reduce((sum, d) => sum + (d.plafon || 0), 0);
       const totalPremium = debtorData.reduce((sum, d) => sum + (d.net_premi || 0), 0);
@@ -127,12 +132,15 @@ export default function Dashboard() {
     setLoading(false);
   };
 
-  // Chart data
+  // Chart data - ensure debtors is always an array
+  const debtorsArray = Array.isArray(debtors) ? debtors : [];
+  const claimsArray = Array.isArray(claims) ? claims : [];
+  
   const debtorStatusData = [
-    { name: 'Submitted', value: debtors.filter(d => d.status === 'SUBMITTED').length, color: '#3b82f6' },
-    { name: 'Approved', value: debtors.filter(d => d.status === 'APPROVED').length, color: '#10b981' },
-    { name: 'Rejected', value: debtors.filter(d => d.status === 'REJECTED').length, color: '#ef4444' },
-    { name: 'Conditional', value: debtors.filter(d => d.status === 'CONDITIONAL').length, color: '#f59e0b' }
+    { name: 'Submitted', value: debtorsArray.filter(d => d.status === 'SUBMITTED').length, color: '#3b82f6' },
+    { name: 'Approved', value: debtorsArray.filter(d => d.status === 'APPROVED').length, color: '#10b981' },
+    { name: 'Rejected', value: debtorsArray.filter(d => d.status === 'REJECTED').length, color: '#ef4444' },
+    { name: 'Conditional', value: debtorsArray.filter(d => d.status === 'CONDITIONAL').length, color: '#f59e0b' }
   ].filter(d => d.value > 0);
 
   const monthlyTrendData = [
@@ -158,11 +166,11 @@ export default function Dashboard() {
   ];
 
   const claimStatusData = [
-    { name: 'Draft', value: claims.filter(c => c.status === 'Draft').length },
-    { name: 'Checked', value: claims.filter(c => c.status === 'Checked').length },
-    { name: 'Doc Verified', value: claims.filter(c => c.status === 'Doc Verified').length },
-    { name: 'Invoiced', value: claims.filter(c => c.status === 'Invoiced').length },
-    { name: 'Paid', value: claims.filter(c => c.status === 'Paid').length }
+    { name: 'Draft', value: claimsArray.filter(c => c.status === 'Draft').length },
+    { name: 'Checked', value: claimsArray.filter(c => c.status === 'Checked').length },
+    { name: 'Doc Verified', value: claimsArray.filter(c => c.status === 'Doc Verified').length },
+    { name: 'Invoiced', value: claimsArray.filter(c => c.status === 'Invoiced').length },
+    { name: 'Paid', value: claimsArray.filter(c => c.status === 'Paid').length }
   ].filter(d => d.value > 0);
 
   const formatCurrency = (value) => {
@@ -173,7 +181,7 @@ export default function Dashboard() {
   };
 
   const getFilteredData = () => {
-    return debtors.filter(d => {
+    return debtorsArray.filter(d => {
       if (filters.batch !== 'all' && d.batch_id !== filters.batch) return false;
       if (filters.submitStatus !== 'all' && d.status !== filters.submitStatus) return false;
       return true;
@@ -205,7 +213,7 @@ export default function Dashboard() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Batches</SelectItem>
-              {[...new Set(debtors.map(d => d.batch_id))].filter(Boolean).map(batch => (
+              {[...new Set(debtorsArray.map(d => d.batch_id))].filter(Boolean).map(batch => (
                 <SelectItem key={batch} value={batch}>{batch.slice(0, 20)}</SelectItem>
               ))}
             </SelectContent>
@@ -252,7 +260,7 @@ export default function Dashboard() {
         <ModernKPI
           title="Claims Paid"
           value={`Rp ${formatCurrency(stats.claimsPaid)}`}
-          subtitle={`${claims.filter(c => c.status === 'Paid').length} claims settled`}
+          subtitle={`${claimsArray.filter(c => c.status === 'Paid').length} claims settled`}
           icon={FileText}
           color="orange"
         />
@@ -501,7 +509,7 @@ export default function Dashboard() {
                 </div>
                 <p className="text-sm text-gray-600">{status.name}</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  {((status.value / claims.length) * 100).toFixed(1)}% of total
+                  {((status.value / (claimsArray.length || 1)) * 100).toFixed(1)}% of total
                 </p>
               </div>
             ))}

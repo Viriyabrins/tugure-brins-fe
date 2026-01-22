@@ -9,13 +9,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { 
   FileText, Upload, RefreshCw, CheckCircle2, 
-  Eye, Clock, Download, History, AlertCircle, XCircle
+  Clock, Download, History, AlertCircle, XCircle
 } from "lucide-react";
-import { base44 } from '@/api/base44Client';
+import { backend } from '@/api/backendClient';
+import Papa from 'papaparse';
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
-import StatCard from "@/components/dashboard/StatCard";
 
 export default function MasterContractManagement() {
   const [user, setUser] = useState(null);
@@ -66,10 +66,11 @@ export default function MasterContractManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.MasterContract.list();
-      setContracts(data || []);
+      const data = await backend.list('MasterContract');
+      setContracts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to load contracts:', error);
+      setContracts([]);
     }
     setLoading(false);
   };
@@ -91,29 +92,37 @@ export default function MasterContractManagement() {
     
     try {
       const text = await uploadFile.text();
-      const lines = text.split('\n').filter(line => line.trim());
       
-      if (lines.length < 2) {
+      // Use PapaParse to properly parse CSV (handles quoted fields with commas)
+      const parseResult = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (header) => header.trim(),
+        transform: (value) => value.trim()
+      });
+
+      if (parseResult.errors.length > 0) {
+        console.warn('CSV parsing warnings:', parseResult.errors);
+      }
+
+      const rows = parseResult.data;
+      
+      if (!rows || rows.length === 0) {
         setErrorMessage('File is empty or invalid format');
         setProcessing(false);
         return;
       }
-      
-      const headers = lines[0].split(',');
 
-      for (let i = 1; i < lines.length; i++) {
+      for (let i = 0; i < rows.length; i++) {
         try {
-          const values = lines[i].split(',');
-          if (values.length !== headers.length) {
-            errors.push(`Row ${i + 1}: Column count mismatch`);
-            continue;
-          }
-
-          const contractId = values[0]?.trim();
-          const policyNumber = values[1]?.trim();
+          const row = rows[i];
+          
+          // Map CSV columns to data fields (header-based, not index-based)
+          const contractId = row.contract_id?.trim();
+          const policyNumber = row.policy_no?.trim();
           
           if (!contractId || !policyNumber) {
-            errors.push(`Row ${i + 1}: Missing contract_id or policy_number`);
+            errors.push(`Row ${i + 2}: Missing contract_id or policy_no`);
             continue;
           }
 
@@ -121,56 +130,73 @@ export default function MasterContractManagement() {
           let parentId = null;
           
           if (uploadMode === 'revise') {
-            // Revise specific contract
-            const existingContracts = await base44.entities.MasterContract.filter({ contract_id: selectedContractForRevision });
+            // Revise specific contract - find existing contracts
+            const allContracts = await backend.list('MasterContract');
+            const existingContracts = allContracts.filter(c => c.contract_id === selectedContractForRevision);
             if (existingContracts.length > 0) {
               latestVersion = Math.max(...existingContracts.map(c => c.version || 1));
               const latestContract = existingContracts.find(c => c.version === latestVersion);
-              parentId = latestContract.id;
+              parentId = latestContract.id || latestContract.contract_id;
               
               // Archive old version
-              await base44.entities.MasterContract.update(parentId, {
-                effective_status: 'Archived'
-              });
+              if (latestContract.id) {
+                await backend.update('MasterContract', latestContract.id, {
+                  effective_status: 'Archived'
+                });
+              }
             }
           } else {
             // New contract mode - check if contract_id exists
-            const existingContracts = await base44.entities.MasterContract.filter({ contract_id: contractId });
+            const allContracts = await backend.list('MasterContract');
+            const existingContracts = allContracts.filter(c => c.contract_id === contractId);
             if (existingContracts.length > 0) {
-              errors.push(`Row ${i + 1}: Contract ID ${contractId} already exists. Use revise mode to update.`);
+              errors.push(`Row ${i + 2}: Contract ID ${contractId} already exists. Use revise mode to update.`);
               continue;
             }
           }
 
-          await base44.entities.MasterContract.create({
+          // Helper function to parse dates
+          const parseDate = (dateStr) => {
+            if (!dateStr || !dateStr.trim()) return null;
+            const date = new Date(dateStr.trim());
+            return isNaN(date.getTime()) ? null : date.toISOString();
+          };
+
+          // Prepare payload with proper data types and defaults
+          const coverageStartDate = parseDate(row.coverage_start_date) || new Date().toISOString();
+          const coverageEndDate = parseDate(row.coverage_end_date) || new Date().toISOString();
+
+          const payload = {
             contract_id: uploadMode === 'revise' ? selectedContractForRevision : contractId,
             policy_no: policyNumber,
-            program_id: values[2]?.trim() || '',
-            product_type: values[3]?.trim() || 'Treaty',
-            credit_type: values[4]?.trim() || 'Individual',
-            loan_type: values[5]?.trim() || '',
-            loan_type_desc: values[6]?.trim() || '',
-            coverage_start_date: values[7]?.trim(),
-            coverage_end_date: values[8]?.trim(),
-            max_tenor_month: parseInt(values[9]) || 0,
-            max_plafond: parseFloat(values[10]) || 0,
-            share_tugure_percentage: parseFloat(values[11]) || 0,
-            premium_rate: parseFloat(values[12]) || 0,
-            ric_rate: parseFloat(values[13]) || 0,
-            bf_rate: parseFloat(values[14]) || 0,
-            allowed_kolektabilitas: values[15]?.trim() || '',
-            allowed_region: values[16]?.trim() || '',
-            currency: values[17]?.trim() || 'IDR',
-            remark: values[18]?.trim() || '',
+            program_id: row.program_id?.trim() || '',
+            product_type: row.product_type?.trim() || 'Treaty',
+            credit_type: row.credit_type?.trim() || 'Individual',
+            loan_type: row.loan_type?.trim() || '',
+            loan_type_desc: row.loan_type_desc?.trim() || '',
+            coverage_start_date: coverageStartDate,
+            coverage_end_date: coverageEndDate,
+            max_tenor_month: row.max_tenor_month ? parseInt(row.max_tenor_month) || 0 : 0,
+            max_plafond: row.max_plafond ? parseFloat(row.max_plafond) || 0 : 0,
+            share_tugure_percentage: row.share_tugure_percentage ? parseFloat(row.share_tugure_percentage) || 0 : 0,
+            premium_rate: row.premium_rate ? parseFloat(row.premium_rate) || 0 : 0,
+            ric_rate: row.ric_rate ? parseFloat(row.ric_rate) || 0 : 0,
+            bf_rate: row.bf_rate ? parseFloat(row.bf_rate) || 0 : 0,
+            allowed_kolektabilitas: row.allowed_kolektabilitas?.trim() || '',
+            allowed_region: row.allowed_region?.trim() || '',
+            currency: row.currency?.trim() || 'IDR',
+            remark: row.remark?.trim() || '',
             effective_status: 'Draft',
             version: latestVersion + 1,
-            parent_contract_id: parentId,
-            effective_date: values[7]?.trim()
-          });
+            parent_contract_id: parentId || null,
+            effective_date: coverageStartDate
+          };
+
+          await backend.create('MasterContract', payload);
           
           uploaded++;
         } catch (rowError) {
-          errors.push(`Row ${i + 1}: ${rowError.message}`);
+          errors.push(`Row ${i + 2}: ${rowError.message}`);
         }
       }
 
@@ -212,28 +238,40 @@ export default function MasterContractManagement() {
         updates.rejection_reason = approvalRemarks;
       }
 
-      await base44.entities.MasterContract.update(selectedContract.id, updates);
+      // MasterContract uses contract_id as primary key
+      const contractId = selectedContract.contract_id || selectedContract.id;
+      await backend.update('MasterContract', contractId, updates);
 
-      await base44.entities.AuditLog.create({
-        action: `CONTRACT_${approvalAction}`,
-        module: 'CONFIG',
-        entity_type: 'MasterContract',
-        entity_id: selectedContract.id,
-        old_value: JSON.stringify({ status: selectedContract.effective_status }),
-        new_value: JSON.stringify({ status: updates.effective_status }),
-        user_email: user?.email,
-        user_role: user?.role,
-        reason: approvalRemarks
-      });
+      // Create audit log if AuditLog entity exists
+      try {
+        await backend.create('AuditLog', {
+          action: `CONTRACT_${approvalAction}`,
+          module: 'CONFIG',
+          entity_type: 'MasterContract',
+          entity_id: contractId,
+          old_value: JSON.stringify({ status: selectedContract.effective_status }),
+          new_value: JSON.stringify({ status: updates.effective_status }),
+          user_email: user?.email,
+          user_role: user?.role,
+          reason: approvalRemarks
+        });
+      } catch (auditError) {
+        console.warn('Failed to create audit log:', auditError);
+      }
 
-      await base44.entities.Notification.create({
-        title: `Contract ${approvalAction === 'REJECT' ? 'Rejected' : 'Approved'}`,
-        message: `Master Contract ${selectedContract.contract_id} - ${approvalAction === 'FIRST_APPROVE' ? 'First approval completed, awaiting admin approval' : approvalAction === 'SECOND_APPROVE' ? 'Activated and ready for use' : 'Rejected: ' + approvalRemarks}`,
-        type: approvalAction === 'REJECT' ? 'WARNING' : 'INFO',
-        module: 'CONFIG',
-        reference_id: selectedContract.id,
-        target_role: approvalAction === 'FIRST_APPROVE' ? 'ADMIN' : 'ALL'
-      });
+      // Create notification if Notification entity exists
+      try {
+        await backend.create('Notification', {
+          title: `Contract ${approvalAction === 'REJECT' ? 'Rejected' : 'Approved'}`,
+          message: `Master Contract ${selectedContract.contract_id} - ${approvalAction === 'FIRST_APPROVE' ? 'First approval completed, awaiting admin approval' : approvalAction === 'SECOND_APPROVE' ? 'Activated and ready for use' : 'Rejected: ' + approvalRemarks}`,
+          type: approvalAction === 'REJECT' ? 'WARNING' : 'INFO',
+          module: 'CONFIG',
+          reference_id: contractId,
+          target_role: approvalAction === 'FIRST_APPROVE' ? 'ADMIN' : 'ALL'
+        });
+      } catch (notifError) {
+        console.warn('Failed to create notification:', notifError);
+      }
 
       setSuccessMessage(`Contract ${approvalAction.toLowerCase().replace('_', ' ')} successfully`);
       setShowApprovalDialog(false);
@@ -243,6 +281,7 @@ export default function MasterContractManagement() {
       loadData();
     } catch (error) {
       console.error('Approval error:', error);
+      setErrorMessage(`Failed to process approval: ${error.message}`);
     }
     setProcessing(false);
   };
@@ -650,22 +689,29 @@ export default function MasterContractManagement() {
                 setProcessing(true);
                 try {
                   const newStatus = actionType === 'close' ? 'Inactive' : 'Archived';
-                  await base44.entities.MasterContract.update(selectedContract.id, {
+                  // MasterContract uses contract_id as primary key
+                  const contractId = selectedContract.contract_id || selectedContract.id;
+                  await backend.update('MasterContract', contractId, {
                     effective_status: newStatus,
-                    remarks: approvalRemarks
+                    remark: approvalRemarks
                   });
 
-                  await base44.entities.AuditLog.create({
-                    action: `CONTRACT_${actionType.toUpperCase()}`,
-                    module: 'CONFIG',
-                    entity_type: 'MasterContract',
-                    entity_id: selectedContract.id,
-                    old_value: JSON.stringify({ status: selectedContract.effective_status }),
-                    new_value: JSON.stringify({ status: newStatus }),
-                    user_email: user?.email,
-                    user_role: user?.role,
-                    reason: approvalRemarks
-                  });
+                  // Create audit log if AuditLog entity exists
+                  try {
+                    await backend.create('AuditLog', {
+                      action: `CONTRACT_${actionType.toUpperCase()}`,
+                      module: 'CONFIG',
+                      entity_type: 'MasterContract',
+                      entity_id: contractId,
+                      old_value: JSON.stringify({ status: selectedContract.effective_status }),
+                      new_value: JSON.stringify({ status: newStatus }),
+                      user_email: user?.email,
+                      user_role: user?.role,
+                      reason: approvalRemarks
+                    });
+                  } catch (auditError) {
+                    console.warn('Failed to create audit log:', auditError);
+                  }
 
                   setSuccessMessage(`Contract ${actionType}d successfully`);
                   setShowActionDialog(false);
@@ -673,7 +719,7 @@ export default function MasterContractManagement() {
                   loadData();
                 } catch (error) {
                   console.error('Action error:', error);
-                  setErrorMessage('Failed to process action');
+                  setErrorMessage(`Failed to process action: ${error.message}`);
                 }
                 setProcessing(false);
               }}

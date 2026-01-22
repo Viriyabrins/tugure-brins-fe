@@ -16,6 +16,8 @@ import FilterPanel from "@/components/common/FilterPanel";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import { Label } from "@/components/ui/label";
+import { useAuth } from '@/lib/AuthContext';
+import { backend } from '@/api/backendClient';
 
 export default function BorderoManagement() {
   const [user, setUser] = useState(null);
@@ -44,10 +46,20 @@ export default function BorderoManagement() {
     endDate: ''
   });
 
+  const { bypassAuth } = useAuth();
+  const useBackendApi = import.meta.env.VITE_USE_BACKEND_API === 'true';
+
   useEffect(() => {
-    loadUser();
+    if (bypassAuth && !useBackendApi) {
+      setLoading(false);
+      return;
+    }
+    if (!bypassAuth) {
+      loadUser();
+    }
     loadData();
   }, []);
+
 
   const loadUser = () => {
     try {
@@ -63,20 +75,59 @@ export default function BorderoManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [debtorData, borderoData, contractData, claimData, subrogationData] = await Promise.all([
-        base44.entities.Debtor.list(),
-        base44.entities.Bordero.list(),
-        base44.entities.Contract.list(),
-        base44.entities.Claim.list(),
-        base44.entities.Subrogation.list()
-      ]);
-      setDebtors(debtorData || []);
-      setBorderos(borderoData || []);
-      setContracts(contractData || []);
-      setClaims(claimData || []);
-      setSubrogations(subrogationData || []);
+      let debtorData = [];
+      let borderoData = [];
+      let contractData = [];
+      let claimData = [];
+      let subrogationData = [];
+
+      // Gunakan approach yang sama seperti Dashboard.jsx
+      if (useBackendApi) {
+        [debtorData, borderoData, contractData, claimData, subrogationData] = await Promise.all([
+          backend.list('Debtor'),
+          backend.list('Bordero'),
+          backend.list('Contract'),
+          backend.list('Claim'),
+          backend.list('Subrogation')
+        ]);
+      } else {
+        [debtorData, borderoData, contractData, claimData, subrogationData] = await Promise.all([
+          base44.entities.Debtor.list(),
+          base44.entities.Bordero.list(),
+          base44.entities.Contract.list(),
+          base44.entities.Claim.list(),
+          base44.entities.Subrogation.list()
+        ]);
+      }
+
+      // Ensure data is always an array (SAMA seperti Dashboard.jsx)
+      debtorData = Array.isArray(debtorData) ? debtorData : [];
+      borderoData = Array.isArray(borderoData) ? borderoData : [];
+      contractData = Array.isArray(contractData) ? contractData : [];
+      claimData = Array.isArray(claimData) ? claimData : [];
+      subrogationData = Array.isArray(subrogationData) ? subrogationData : [];
+
+      setDebtors(debtorData);
+      setBorderos(borderoData);
+      setContracts(contractData);
+      setClaims(claimData);
+      setSubrogations(subrogationData);
+
+      console.log('Loaded data:', {
+        debtors: debtorData.length,
+        borderos: borderoData.length,
+        claims: claimData.length,
+        subrogations: subrogationData.length
+      });
+
     } catch (error) {
       console.error('Failed to load data:', error);
+      // Set default empty arrays
+      setDebtors([]);
+      setBorderos([]);
+      setContracts([]);
+      setClaims([]);
+      setSubrogations([]);
     }
     setLoading(false);
   };
@@ -428,8 +479,13 @@ export default function BorderoManagement() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-100 text-sm font-medium mb-1">Total Debtors</p>
-                <h3 className="text-3xl font-bold">{debtors.filter(d => d.status === 'APPROVED').length}</h3>
-                <p className="text-blue-100 text-xs mt-2">Approved only</p>
+                <h3 className="text-3xl font-bold">
+                  {/* Hitung hanya yang APPROVED seperti Dashboard */}
+                  {debtors.filter(d => d.status === 'APPROVED').length}
+                </h3>
+                <p className="text-blue-100 text-xs mt-2">
+                  {debtors.length} total • {debtors.filter(d => d.status === 'SUBMITTED').length} pending
+                </p>
               </div>
               <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center">
                 <FileText className="w-6 h-6 text-white" />
@@ -445,7 +501,9 @@ export default function BorderoManagement() {
               <div>
                 <p className="text-purple-100 text-sm font-medium mb-1">Borderos</p>
                 <h3 className="text-3xl font-bold">{borderos.length}</h3>
-                <p className="text-purple-100 text-xs mt-2">Generated</p>
+                <p className="text-purple-100 text-xs mt-2">
+                  {borderos.filter(b => b.status === 'FINAL').length} finalized
+                </p>
               </div>
               <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center">
                 <FileText className="w-6 h-6 text-white" />

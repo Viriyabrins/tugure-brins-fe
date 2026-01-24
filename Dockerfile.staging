@@ -10,12 +10,12 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 
-# install production deps so `npm run server:staging` can run
-COPY package*.json ./
-RUN npm ci --production --silent
-
-# copy built files
+# copy built files and built node_modules from builder to avoid native compile issues
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/server.js ./server.js
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.env* ./
 
 # expose port the user requested
 ENV PORT=10010

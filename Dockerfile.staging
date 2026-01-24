@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:24-bullseye-slim AS builder
 WORKDIR /app
 
 # install dependencies and build
@@ -7,7 +7,7 @@ RUN npm ci --silent
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:24-bullseye-slim
 WORKDIR /app
 
 # copy built files and built node_modules from builder to avoid native compile issues

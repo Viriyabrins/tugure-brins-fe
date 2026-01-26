@@ -11,7 +11,7 @@ import {
   Download, CheckCircle2, AlertCircle, Check, X, Clock, DollarSign
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { base44 } from '@/api/base44Client';
+import { backend } from "@/api/backendClient";
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -62,16 +62,102 @@ export default function BatchProcessing() {
   const loadData = async () => {
     setLoading(true);
     try {
+      // Load data menggunakan backend client
       const [batchData, contractData, debtorData] = await Promise.all([
-        base44.entities.Batch.list(),
-        base44.entities.Contract.list(),
-        base44.entities.Debtor.list()
+        backend.list('Batch'),
+        backend.list('Contract'),
+        backend.list('Debtor')
       ]);
-      setBatches(batchData || []);
-      setContracts(contractData || []);
-      setDebtors(debtorData || []);
+      
+      // Pastikan data adalah array
+      const nextBatches = Array.isArray(batchData) ? batchData : [];
+      const nextContracts = Array.isArray(contractData) ? contractData : [];
+      const nextDebtors = Array.isArray(debtorData) ? debtorData : [];
+
+      // Sync review status untuk setiap batch
+      const batchReviewSync = nextBatches.map((batch) => {
+        const batchDebtors = nextDebtors.filter(
+          (debtor) => debtor.batch_id === batch.batch_id
+        );
+
+        if (batchDebtors.length === 0) {
+          return { batch, needsUpdate: false, updatePayload: null };
+        }
+
+        const reviewedDebtors = batchDebtors.filter(d => 
+          d.status === 'APPROVED' || d.status === 'REJECTED' || 
+          d.validation_remarks || d.remark_premi
+        );
+        
+        const approvedDebtors = batchDebtors.filter(d => d.status === 'APPROVED');
+        const allReviewed = reviewedDebtors.length === batchDebtors.length;
+        const hasApproved = approvedDebtors.length > 0;
+        const reviewCompleted = allReviewed;
+        const readyForNota = allReviewed && hasApproved;
+
+        const finalExposureAmount = approvedDebtors.reduce(
+          (sum, debtor) => sum + (Number(debtor.plafon) || 0),
+          0
+        );
+        const finalPremiumAmount = approvedDebtors.reduce(
+          (sum, debtor) => sum + (Number(debtor.net_premi) || 0),
+          0
+        );
+
+        const currentFinalExposure = Number(batch.final_exposure_amount) || 0;
+        const currentFinalPremium = Number(batch.final_premium_amount) || 0;
+        const currentReviewCompleted = Boolean(batch.debtor_review_completed);
+        const currentReadyForNota = Boolean(batch.batch_ready_for_nota);
+
+        const needsUpdate =
+          currentReviewCompleted !== reviewCompleted ||
+          currentReadyForNota !== readyForNota ||
+          currentFinalExposure !== finalExposureAmount ||
+          currentFinalPremium !== finalPremiumAmount;
+
+        return {
+          batch: {
+            ...batch,
+            debtor_review_completed: reviewCompleted,
+            batch_ready_for_nota: readyForNota,
+            final_exposure_amount: finalExposureAmount,
+            final_premium_amount: finalPremiumAmount
+          },
+          needsUpdate,
+          updatePayload: {
+            debtor_review_completed: reviewCompleted,
+            batch_ready_for_nota: readyForNota,
+            final_exposure_amount: finalExposureAmount,
+            final_premium_amount: finalPremiumAmount
+          }
+        };
+      });
+
+      const updatedBatches = batchReviewSync.map(entry => entry.batch);
+
+      // Update batch yang memerlukan sync
+      const updatePromises = batchReviewSync
+        .filter(entry => entry.needsUpdate && entry.batch.batch_id)
+        .map(entry =>
+          backend
+            .update('Batch', entry.batch.batch_id, entry.updatePayload)
+            .catch(syncError => {
+              console.warn('Failed to sync batch review status:', syncError);
+            })
+        );
+
+      if (updatePromises.length > 0) {
+        await Promise.allSettled(updatePromises);
+      }
+
+      setBatches(updatedBatches);
+      setContracts(nextContracts);
+      setDebtors(nextDebtors);
     } catch (error) {
       console.error('Failed to load data:', error);
+      setBatches([]);
+      setContracts([]);
+      setDebtors([]);
     }
     setLoading(false);
   };
@@ -124,7 +210,7 @@ export default function BatchProcessing() {
       if (actionType === 'close') {
         // Check all debtors and claims reviewed
         const batchDebtors = debtors.filter(d => d.batch_id === selectedBatch.batch_id);
-        const batchClaims = await base44.entities.Claim.filter({ debtor_id: { $in: batchDebtors.map(d => d.id) } });
+        const batchClaims = await backend.list('Claim', { debtor_id: { $in: batchDebtors.map(d => d.id) } });
         
         const unreviewed = batchDebtors.filter(d => 
           d.status !== 'APPROVED' && d.status !== 'REJECTED'
@@ -140,19 +226,32 @@ export default function BatchProcessing() {
           return;
         }
 
-        await base44.entities.Batch.update(selectedBatch.id, {
+        await backend.update('Batch', selectedBatch.batch_id, {
           status: 'Closed',
           operational_locked: true,
           closed_by: user?.email,
-          closed_date: new Date().toISOString().split('T')[0]
+          closed_date: new Date().toISOString()
         });
 
         // Mark debtors as locked
         for (const debtor of batchDebtors) {
-          await base44.entities.Debtor.update(debtor.id, {
+          await backend.update('Debtor', debtor.id, {
             is_locked: true
           });
         }
+
+        // Create audit log
+        await backend.create('AuditLog', {
+          action: 'BATCH_CLOSED',
+          module: 'DEBTOR',
+          entity_type: 'Batch',
+          entity_id: selectedBatch.batch_id,
+          old_value: JSON.stringify({ status: selectedBatch.status }),
+          new_value: JSON.stringify({ status: 'Closed', operational_locked: true }),
+          user_email: user?.email,
+          user_role: user?.role,
+          reason: 'Batch closed successfully'
+        });
 
         setSuccessMessage('Batch closed successfully');
         setShowActionDialog(false);
@@ -168,24 +267,21 @@ export default function BatchProcessing() {
         return;
       }
 
-      // STAGE 1-4: DATA INGESTION ONLY (Uploaded → Validated → Matched)
-      // No financial implications, just data quality checks
-      
       // CRITICAL: APPROVED status is set by Debtor Review, not here
       if (nextStatus === 'Approved') {
         alert('❌ BLOCKED: Batch approval is handled automatically.\n\nApproval happens AFTER Debtor Review is completed.\n\nPlease use Debtor Review menu to review and approve/reject debtors.');
         
-        await createAuditLog(
-          'BLOCKED_MANUAL_BATCH_APPROVAL',
-          'DEBTOR',
-          'Batch',
-          selectedBatch.id,
-          JSON.stringify({ status: selectedBatch.status }),
-          JSON.stringify({ blocked_action: 'Manual Approve', reason: 'Approval must come from Debtor Review completion' }),
-          user?.email,
-          user?.role,
-          'Attempted manual batch approval - use Debtor Review instead'
-        );
+        await backend.create('AuditLog', {
+          action: 'BLOCKED_MANUAL_BATCH_APPROVAL',
+          module: 'DEBTOR',
+          entity_type: 'Batch',
+          entity_id: selectedBatch.batch_id,
+          old_value: JSON.stringify({ status: selectedBatch.status }),
+          new_value: JSON.stringify({ blocked_action: 'Manual Approve', reason: 'Approval must come from Debtor Review completion' }),
+          user_email: user?.email,
+          user_role: user?.role,
+          reason: 'Attempted manual batch approval - use Debtor Review instead'
+        });
         
         setProcessing(false);
         setShowActionDialog(false);
@@ -195,17 +291,17 @@ export default function BatchProcessing() {
       // CRITICAL FIX: Check if Debtor Review completed for Approved batches before Nota generation
       if (nextStatus === 'Nota Issued') {
         if (!selectedBatch.debtor_review_completed || !selectedBatch.batch_ready_for_nota) {
-          await createAuditLog(
-            'BLOCKED_NOTA_GENERATION',
-            'DEBTOR',
-            'Batch',
-            selectedBatch.id,
-            JSON.stringify({ status: selectedBatch.status }),
-            JSON.stringify({ blocked_action: 'Generate Nota', reason: 'Debtor Review not completed' }),
-            user?.email,
-            user?.role,
-            'Attempted to generate Nota before Debtor Review completion'
-          );
+          await backend.create('AuditLog', {
+            action: 'BLOCKED_NOTA_GENERATION',
+            module: 'DEBTOR',
+            entity_type: 'Batch',
+            entity_id: selectedBatch.batch_id,
+            old_value: JSON.stringify({ status: selectedBatch.status }),
+            new_value: JSON.stringify({ blocked_action: 'Generate Nota', reason: 'Debtor Review not completed' }),
+            user_email: user?.email,
+            user_role: user?.role,
+            reason: 'Attempted to generate Nota before Debtor Review completion'
+          });
           
           alert('❌ BLOCKED: Debtor Review must be completed first.\n\nPlease go to Debtor Review menu to approve/reject debtors before generating Nota.');
           setProcessing(false);
@@ -218,18 +314,16 @@ export default function BatchProcessing() {
       const updateData = {
         status: nextStatus,
         [statusField.by]: user?.email,
-        [statusField.date]: new Date().toISOString().split('T')[0]
+        [statusField.date]: new Date().toISOString()
       };
 
-      await base44.entities.Batch.update(selectedBatch.id, updateData);
-
-
+      await backend.update('Batch', selectedBatch.batch_id, updateData);
 
       // Generate Nota when moving to Nota Issued (ONLY IF batch_ready_for_nota = TRUE)
       if (nextStatus === 'Nota Issued') {
         // Use FINAL amounts from Debtor Review
         const notaNumber = `NOTA-${selectedBatch.batch_id}-${Date.now()}`;
-        await base44.entities.Nota.create({
+        await backend.create('Nota', {
           nota_number: notaNumber,
           nota_type: 'Batch',
           reference_id: selectedBatch.batch_id,
@@ -244,11 +338,12 @@ export default function BatchProcessing() {
 
         // Create Invoice
         const invoiceNumber = `INV-${selectedBatch.batch_id}-${Date.now()}`;
-        await base44.entities.Invoice.create({
+        await backend.create('Invoice', {
           invoice_number: invoiceNumber,
           contract_id: selectedBatch.contract_id,
           period: `${selectedBatch.batch_year}-${String(selectedBatch.batch_month).padStart(2, '0')}`,
           total_amount: selectedBatch.final_premium_amount || 0,
+          paid_amount: 0,
           outstanding_amount: selectedBatch.final_premium_amount || 0,
           currency: 'IDR',
           status: 'ISSUED'
@@ -260,62 +355,47 @@ export default function BatchProcessing() {
           d.status === 'APPROVED'
         );
         
-        await createAuditLog(
-          'NOTA_GENERATED_FROM_FINAL',
-          'DEBTOR',
-          'Batch',
-          selectedBatch.id,
-          JSON.stringify({}),
-          JSON.stringify({ nota_number: notaNumber, amount: selectedBatch.final_premium_amount, source: 'Debtor Review Final Amounts' }),
-          user?.email,
-          user?.role,
-          `Nota generated with final premium: Rp ${(selectedBatch.final_premium_amount || 0).toLocaleString()}`
-        );
+        await backend.create('AuditLog', {
+          action: 'NOTA_GENERATED_FROM_FINAL',
+          module: 'DEBTOR',
+          entity_type: 'Batch',
+          entity_id: selectedBatch.batch_id,
+          old_value: JSON.stringify({}),
+          new_value: JSON.stringify({ nota_number: notaNumber, amount: selectedBatch.final_premium_amount, source: 'Debtor Review Final Amounts' }),
+          user_email: user?.email,
+          user_role: user?.role,
+          reason: `Nota generated with final premium: Rp ${(selectedBatch.final_premium_amount || 0).toLocaleString()}`
+        });
       }
 
+      // Create notification
       const targetRole = nextStatus === 'Nota Issued' ? 'BRINS' :
                         nextStatus === 'Branch Confirmed' ? 'TUGURE' : 'ALL';
 
-      // Use FINAL amounts for email if after Debtor Review
+      // Use FINAL amounts for notification if after Debtor Review
       const exposureAmount = selectedBatch.final_exposure_amount || selectedBatch.total_exposure || 0;
       const premiumAmount = selectedBatch.final_premium_amount || selectedBatch.total_premium || 0;
 
-      await sendTemplatedEmail(
-        'Batch',
-        selectedBatch.status,
-        nextStatus,
-        targetRole,
-        'notify_batch_status',
-        {
-          batch_id: selectedBatch.batch_id,
-          total_records: selectedBatch.total_records,
-          total_exposure: `Rp ${exposureAmount.toLocaleString('id-ID')}`,
-          total_premium: `Rp ${premiumAmount.toLocaleString('id-ID')}`,
-          user_name: user?.email,
-          date: new Date().toLocaleDateString('id-ID')
-        }
-      );
+      await backend.create('Notification', {
+        title: `Batch ${nextStatus}`,
+        message: `Batch ${selectedBatch.batch_id} moved to ${nextStatus}. Total Exposure: Rp ${exposureAmount.toLocaleString('id-ID')}, Total Premium: Rp ${premiumAmount.toLocaleString('id-ID')}`,
+        type: 'INFO',
+        module: 'DEBTOR',
+        reference_id: selectedBatch.batch_id,
+        target_role: targetRole
+      });
 
-      await createNotification(
-        `Batch ${nextStatus}`,
-        `Batch ${selectedBatch.batch_id} moved to ${nextStatus}`,
-        'INFO',
-        'DEBTOR',
-        selectedBatch.id,
-        targetRole
-      );
-
-      await createAuditLog(
-        `BATCH_${nextStatus.toUpperCase().replace(' ', '_')}`,
-        'DEBTOR',
-        'Batch',
-        selectedBatch.id,
-        JSON.stringify({ status: selectedBatch.status }),
-        JSON.stringify({ status: nextStatus }),
-        user?.email,
-        user?.role,
-        remarks
-      );
+      await backend.create('AuditLog', {
+        action: `BATCH_${nextStatus.toUpperCase().replace(' ', '_')}`,
+        module: 'DEBTOR',
+        entity_type: 'Batch',
+        entity_id: selectedBatch.batch_id,
+        old_value: JSON.stringify({ status: selectedBatch.status }),
+        new_value: JSON.stringify({ status: nextStatus }),
+        user_email: user?.email,
+        user_role: user?.role,
+        reason: remarks
+      });
 
       setSuccessMessage(`Batch processed to ${nextStatus} successfully`);
       setShowActionDialog(false);
@@ -333,30 +413,30 @@ export default function BatchProcessing() {
 
     setProcessing(true);
     try {
-      const batchesToProcess = batches.filter(b => selectedBatches.includes(b.id));
+      const batchesToProcess = batches.filter(b => selectedBatches.includes(b.batch_id));
       
       for (const batch of batchesToProcess) {
         const nextStatus = getNextStatus(batch.status);
         if (!nextStatus) continue;
 
         const statusField = getStatusField(nextStatus);
-        await base44.entities.Batch.update(batch.id, {
+        await backend.update('Batch', batch.batch_id, {
           status: nextStatus,
           [statusField.by]: user?.email,
-          [statusField.date]: new Date().toISOString().split('T')[0]
+          [statusField.date]: new Date().toISOString()
         });
 
-        await createAuditLog(
-          `BATCH_BULK_${nextStatus.toUpperCase().replace(' ', '_')}`,
-          'DEBTOR',
-          'Batch',
-          batch.id,
-          JSON.stringify({ status: batch.status }),
-          JSON.stringify({ status: nextStatus }),
-          user?.email,
-          user?.role,
-          'Bulk operation'
-        );
+        await backend.create('AuditLog', {
+          action: `BATCH_BULK_${nextStatus.toUpperCase().replace(' ', '_')}`,
+          module: 'DEBTOR',
+          entity_type: 'Batch',
+          entity_id: batch.batch_id,
+          old_value: JSON.stringify({ status: batch.status }),
+          new_value: JSON.stringify({ status: nextStatus }),
+          user_email: user?.email,
+          user_role: user?.role,
+          reason: 'Bulk operation'
+        });
       }
 
       setSuccessMessage(`${batchesToProcess.length} batches processed successfully`);
@@ -374,31 +454,31 @@ export default function BatchProcessing() {
 
     setProcessing(true);
     try {
-      await base44.entities.Batch.update(selectedBatch.id, {
+      await backend.update('Batch', selectedBatch.batch_id, {
         status: 'Rejected',
         rejection_reason: remarks
       });
 
-      await createNotification(
-        'Batch Rejected',
-        `Batch ${selectedBatch.batch_id} rejected: ${remarks}`,
-        'WARNING',
-        'DEBTOR',
-        selectedBatch.id,
-        'BRINS'
-      );
+      await backend.create('Notification', {
+        title: 'Batch Rejected',
+        message: `Batch ${selectedBatch.batch_id} rejected: ${remarks}`,
+        type: 'WARNING',
+        module: 'DEBTOR',
+        reference_id: selectedBatch.batch_id,
+        target_role: 'BRINS'
+      });
 
-      await createAuditLog(
-        'BATCH_REJECTED',
-        'DEBTOR',
-        'Batch',
-        selectedBatch.id,
-        JSON.stringify({ status: selectedBatch.status }),
-        JSON.stringify({ status: 'Rejected', reason: remarks }),
-        user?.email,
-        user?.role,
-        remarks
-      );
+      await backend.create('AuditLog', {
+        action: 'BATCH_REJECTED',
+        module: 'DEBTOR',
+        entity_type: 'Batch',
+        entity_id: selectedBatch.batch_id,
+        old_value: JSON.stringify({ status: selectedBatch.status }),
+        new_value: JSON.stringify({ status: 'Rejected', reason: remarks }),
+        user_email: user?.email,
+        user_role: user?.role,
+        reason: remarks
+      });
 
       setSuccessMessage('Batch rejected - BRINS can revise and resubmit');
       setShowRejectDialog(false);
@@ -461,25 +541,33 @@ export default function BatchProcessing() {
     { header: 'Records', accessorKey: 'total_records' },
     { 
       header: 'Raw / Final Exposure', 
-      cell: (row) => (
-        <div>
-          <div className="text-sm">Rp {((row.total_exposure || 0) / 1000000).toFixed(1)}M</div>
-          {row.final_exposure_amount > 0 && (
-            <div className="text-xs text-green-600 font-bold">Final: Rp {((row.final_exposure_amount || 0) / 1000000).toFixed(1)}M</div>
-          )}
-        </div>
-      )
+      cell: (row) => {
+        const rawExposure = Number(row.total_exposure) || 0;
+        const finalExposure = Number(row.final_exposure_amount) || 0;
+        return (
+          <div>
+            <div className="text-sm">Rp {(rawExposure / 1000000).toFixed(1)}M</div>
+            {finalExposure > 0 && (
+              <div className="text-xs text-green-600 font-bold">Final: Rp {(finalExposure / 1000000).toFixed(1)}M</div>
+            )}
+          </div>
+        );
+      }
     },
     { 
       header: 'Raw / Final Premium', 
-      cell: (row) => (
-        <div>
-          <div className="text-sm">Rp {((row.total_premium || 0) / 1000000).toFixed(1)}M</div>
-          {row.final_premium_amount > 0 && (
-            <div className="text-xs text-green-600 font-bold">Final: Rp {((row.final_premium_amount || 0) / 1000000).toFixed(1)}M</div>
-          )}
-        </div>
-      )
+      cell: (row) => {
+        const rawPremium = Number(row.total_premium) || 0;
+        const finalPremium = Number(row.final_premium_amount) || 0;
+        return (
+          <div>
+            <div className="text-sm">Rp {(rawPremium / 1000000).toFixed(1)}M</div>
+            {finalPremium > 0 && (
+              <div className="text-xs text-green-600 font-bold">Final: Rp {(finalPremium / 1000000).toFixed(1)}M</div>
+            )}
+          </div>
+        );
+      }
     },
     { 
       header: 'Status', 
@@ -517,7 +605,7 @@ export default function BatchProcessing() {
             }}
           >
             <Eye className="w-4 h-4" />
-          </Button>
+            </Button>
           {row.status !== 'Closed' && row.status !== 'Rejected' && getNextStatus(row.status) && (
             <Button 
               size="sm" 
@@ -535,29 +623,29 @@ export default function BatchProcessing() {
           )}
           {row.status === 'Matched' && (
             <Button 
-              size="sm" 
-              variant="destructive"
-              onClick={() => {
-                setSelectedBatch(row);
-                setShowRejectDialog(true);
-              }}
-            >
-              <X className="w-4 h-4 mr-1" />
-              Reject
-            </Button>
+            size="sm" 
+            variant="destructive"
+            onClick={() => {
+              setSelectedBatch(row);
+              setShowRejectDialog(true);
+            }}
+          >
+            <X className="w-4 h-4 mr-1" />
+            Reject
+          </Button>
           )}
           {row.status === 'Paid' && (
             <Button 
-              size="sm" 
-              className="bg-gray-600"
-              onClick={() => {
-                setSelectedBatch(row);
-                setActionType('close');
-                setShowActionDialog(true);
-              }}
-            >
-              Close Batch
-            </Button>
+            size="sm" 
+            className="bg-gray-600"
+            onClick={() => {
+              setSelectedBatch(row);
+              setActionType('close');
+              setShowActionDialog(true);
+            }}
+          >
+            Close Batch
+          </Button>
           )}
         </div>
       )
@@ -639,6 +727,10 @@ export default function BatchProcessing() {
                   <SelectItem value="Validated">Validated</SelectItem>
                   <SelectItem value="Matched">Matched</SelectItem>
                   <SelectItem value="Approved">Approved</SelectItem>
+                  <SelectItem value="Nota Issued">Nota Issued</SelectItem>
+                  <SelectItem value="Branch Confirmed">Branch Confirmed</SelectItem>
+                  <SelectItem value="Paid">Paid</SelectItem>
+                  <SelectItem value="Closed">Closed</SelectItem>
                   <SelectItem value="Rejected">Rejected</SelectItem>
                 </SelectContent>
               </Select>
@@ -744,9 +836,15 @@ export default function BatchProcessing() {
           <div className="py-4">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div><span className="text-gray-500">Records:</span><span className="ml-2 font-medium">{selectedBatch?.total_records}</span></div>
-              <div><span className="text-gray-500">Exposure:</span><span className="ml-2 font-medium">Rp {(selectedBatch?.total_exposure || 0).toLocaleString()}</span></div>
-              <div><span className="text-gray-500">Premium:</span><span className="ml-2 font-medium">Rp {(selectedBatch?.total_premium || 0).toLocaleString()}</span></div>
+              <div><span className="text-gray-500">Exposure:</span><span className="ml-2 font-medium">Rp {(Number(selectedBatch?.total_exposure) || 0).toLocaleString()}</span></div>
+              <div><span className="text-gray-500">Premium:</span><span className="ml-2 font-medium">Rp {(Number(selectedBatch?.total_premium) || 0).toLocaleString()}</span></div>
               <div><span className="text-gray-500">Status:</span><StatusBadge status={selectedBatch?.status} /></div>
+              {selectedBatch?.final_exposure_amount > 0 && (
+                <div><span className="text-gray-500">Final Exposure:</span><span className="ml-2 font-medium text-green-600">Rp {(Number(selectedBatch?.final_exposure_amount) || 0).toLocaleString()}</span></div>
+              )}
+              {selectedBatch?.final_premium_amount > 0 && (
+                <div><span className="text-gray-500">Final Premium:</span><span className="ml-2 font-medium text-green-600">Rp {(Number(selectedBatch?.final_premium_amount) || 0).toLocaleString()}</span></div>
+              )}
             </div>
           </div>
           <DialogFooter>

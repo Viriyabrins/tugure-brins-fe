@@ -46,6 +46,39 @@ import {
     createAuditLog,
 } from "@/components/utils/emailTemplateHelper";
 
+const normalizeRemark = (value) =>
+    typeof value === "string" ? value.trim() : "";
+
+const isOkRemark = (value) => {
+    const remark = normalizeRemark(value);
+    if (!remark) return false;
+    const normalized = remark.toUpperCase();
+    if (/\bNOT\s+OK\b/.test(normalized)) return false;
+    return /\bV?\s*OK\b/.test(normalized);
+};
+
+const hasReviewRemark = (debtor) =>
+    isOkRemark(debtor?.remark_premi) || isOkRemark(debtor?.validation_remarks);
+
+const isDebtorReviewed = (debtor) => {
+    const status = (debtor?.status || "").toUpperCase();
+    return (
+        status === "APPROVED" || status === "REJECTED" || hasReviewRemark(debtor)
+    );
+};
+
+const isDebtorApproved = (debtor) => {
+    const status = (debtor?.status || "").toUpperCase();
+    if (status === "APPROVED") return true;
+    if (status === "REJECTED") return false;
+    return hasReviewRemark(debtor);
+};
+
+const toNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export default function DebtorReview() {
     const [user, setUser] = useState(null);
     const [debtors, setDebtors] = useState([]);
@@ -249,26 +282,22 @@ export default function DebtorReview() {
                             return d;
                         });
 
-                        const reviewedDebtors = updatedDebtors.filter(
-                            (d) =>
-                                d.status === "APPROVED" ||
-                                d.status === "REJECTED",
-                        );
+                        const reviewedDebtors =
+                            updatedDebtors.filter(isDebtorReviewed);
 
-                        const approvedDebtors = updatedDebtors.filter(
-                            (d) => d.status === "APPROVED",
-                        );
+                        const approvedDebtors =
+                            updatedDebtors.filter(isDebtorApproved);
 
                         const allReviewed =
                             reviewedDebtors.length === updatedDebtors.length;
                         const hasApproved = approvedDebtors.length > 0;
 
                         const totalApprovedExposure = approvedDebtors.reduce(
-                            (sum, d) => sum + (parseFloat(d.plafon) || 0),
+                            (sum, d) => sum + toNumber(d.plafon),
                             0,
                         );
                         const totalApprovedPremium = approvedDebtors.reduce(
-                            (sum, d) => sum + (parseFloat(d.net_premi) || 0),
+                            (sum, d) => sum + toNumber(d.net_premi),
                             0,
                         );
 

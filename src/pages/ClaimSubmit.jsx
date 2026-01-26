@@ -35,7 +35,7 @@ import {
     DollarSign,
     Clock,
 } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { backend } from "@/api/backendClient";
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -92,7 +92,7 @@ export default function ClaimSubmit() {
         setErrorMessage("");
 
         try {
-            // Load semua data dengan error handling untuk masing-masing
+            // Load semua data menggunakan backend client
             const [
                 claimData,
                 subrogationData,
@@ -100,38 +100,21 @@ export default function ClaimSubmit() {
                 batchData,
                 contractData,
             ] = await Promise.all([
-                safeApiCall(() => base44.entities.Claim.list(), []),
-                safeApiCall(() => base44.entities.Subrogation.list(), []),
-                safeApiCall(() => base44.entities.Debtor.list(), []),
-                safeApiCall(() => base44.entities.Batch.list(), []),
-                safeApiCall(() => base44.entities.Contract.list(), []),
+                backend.list("Claim"),
+                backend.list("Subrogation"),
+                backend.list("Debtor"),
+                backend.list("Batch"),
+                backend.list("Contract"),
             ]);
 
-            setClaims(
-                Array.isArray(claimData)
-                    ? claimData
-                    : extractArrayFromResponse(claimData),
-            );
+            // Pastikan data adalah array
+            setClaims(Array.isArray(claimData) ? claimData : []);
             setSubrogations(
-                Array.isArray(subrogationData)
-                    ? subrogationData
-                    : extractArrayFromResponse(subrogationData),
+                Array.isArray(subrogationData) ? subrogationData : [],
             );
-            setDebtors(
-                Array.isArray(debtorData)
-                    ? debtorData
-                    : extractArrayFromResponse(debtorData),
-            );
-            setBatches(
-                Array.isArray(batchData)
-                    ? batchData
-                    : extractArrayFromResponse(batchData),
-            );
-            setContracts(
-                Array.isArray(contractData)
-                    ? contractData
-                    : extractArrayFromResponse(contractData),
-            );
+            setDebtors(Array.isArray(debtorData) ? debtorData : []);
+            setBatches(Array.isArray(batchData) ? batchData : []);
+            setContracts(Array.isArray(contractData) ? contractData : []);
         } catch (error) {
             console.error("Failed to load data:", error);
             setErrorMessage("Failed to load data. Please refresh the page.");
@@ -145,30 +128,6 @@ export default function ClaimSubmit() {
         } finally {
             setLoading(false);
         }
-    };
-
-    const safeApiCall = async (apiCall, defaultValue = []) => {
-        try {
-            const result = await apiCall();
-            return result;
-        } catch (error) {
-            console.error("API call failed:", error);
-            return defaultValue;
-        }
-    };
-
-    const extractArrayFromResponse = (response) => {
-        if (!response) return [];
-        if (Array.isArray(response)) return response;
-        if (response.data && Array.isArray(response.data)) return response.data;
-        if (response.items && Array.isArray(response.items))
-            return response.items;
-        if (typeof response === "object") {
-            // Coba convert object values ke array
-            const values = Object.values(response);
-            return Array.isArray(values) ? values : [];
-        }
-        return [];
     };
 
     const downloadTemplate = () => {
@@ -206,6 +165,20 @@ export default function ClaimSubmit() {
         a.click();
     };
 
+    const formatDateToISO = (dateString) => {
+        if (!dateString || typeof dateString !== "string") return null;
+
+        // Jika sudah format ISO, return langsung
+        if (dateString.includes("T")) return dateString;
+
+        // Jika format YYYY-MM-DD, tambahkan waktu
+        if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            return new Date(`${dateString}T00:00:00.000Z`).toISOString();
+        }
+
+        return null;
+    };
+
     const handleFileUpload = async (file) => {
         if (!file || !selectedBatch) return;
 
@@ -215,10 +188,8 @@ export default function ClaimSubmit() {
         setParsedClaims([]);
 
         try {
-            // Pastikan batches adalah array
-            const batch = Array.isArray(batches)
-                ? batches.find((b) => b.id === selectedBatch)
-                : null;
+            // Cari batch berdasarkan selectedBatch (yang berisi batch_id)
+            const batch = batches.find((b) => b.batch_id === selectedBatch);
 
             if (!batch) {
                 setErrorMessage("Batch not found");
@@ -226,10 +197,10 @@ export default function ClaimSubmit() {
                 return;
             }
 
-            // Pastikan debtors adalah array
-            const batchDebtors = Array.isArray(debtors)
-                ? debtors.filter((d) => d.batch_id === batch.batch_id)
-                : [];
+            // Ambil debtors untuk batch ini
+            const batchDebtors = debtors.filter(
+                (d) => d.batch_id === batch.batch_id,
+            );
 
             const text = await file.text();
             const lines = text.split("\n").filter((line) => line.trim());
@@ -347,9 +318,7 @@ export default function ClaimSubmit() {
         setProcessing(true);
 
         try {
-            const batch = Array.isArray(batches)
-                ? batches.find((b) => b.id === selectedBatch)
-                : null;
+            const batch = batches.find((b) => b.batch_id === selectedBatch);
 
             if (!batch) {
                 setErrorMessage("Batch not found");
@@ -357,20 +326,17 @@ export default function ClaimSubmit() {
                 return;
             }
 
-            // Validate Nota payment dengan error handling
+            // Validate Nota payment
             let batchNotas = [];
             try {
-                const notasResponse = await base44.entities.Nota.filter({
-                    reference_id: batch.batch_id,
-                    nota_type: "Batch",
-                });
-
-                batchNotas = Array.isArray(notasResponse)
-                    ? notasResponse
-                    : notasResponse?.data || notasResponse?.items || [];
+                const notasResponse = await backend.list("Nota");
+                batchNotas = notasResponse.filter(
+                    (n) =>
+                        n.reference_id === batch.batch_id &&
+                        n.nota_type === "Batch",
+                );
             } catch (notaError) {
                 console.error("Error checking notas:", notaError);
-                // Lanjutkan tanpa validasi nota jika error
             }
 
             const hasCompletedPayment = batchNotas.some(
@@ -383,11 +349,11 @@ export default function ClaimSubmit() {
                 );
 
                 try {
-                    await base44.entities.AuditLog.create({
+                    await backend.create("AuditLog", {
                         action: "BLOCKED_CLAIM_SUBMISSION",
                         module: "CLAIM",
                         entity_type: "Batch",
-                        entity_id: batch.id,
+                        entity_id: batch.batch_id,
                         old_value: "{}",
                         new_value: JSON.stringify({
                             blocked_reason: "Nota not PAID",
@@ -411,14 +377,16 @@ export default function ClaimSubmit() {
                 if (claim.validation_remarks) continue;
 
                 try {
-                    // AUTO-GENERATE claim_no: CLM-YYYY-MM-XXXXXX
                     const now = new Date();
                     const year = now.getFullYear();
                     const month = String(now.getMonth() + 1).padStart(2, "0");
                     const sequence = String(uploaded + 1).padStart(6, "0");
                     const claimNo = `CLM-${year}-${month}-${sequence}`;
 
-                    await base44.entities.Claim.create({
+                    const tanggalRealisasiISO = formatDateToISO(claim.tanggal_realisasi_kredit);
+                    const dolISO = formatDateToISO(claim.dol);
+
+                    await backend.create("Claim", {
                         claim_no: claimNo,
                         policy_no: claim.policy_no,
                         nomor_sertifikat: claim.nomor_sertifikat,
@@ -426,12 +394,11 @@ export default function ClaimSubmit() {
                         no_ktp_npwp: claim.no_ktp_npwp,
                         no_fasilitas_kredit: claim.no_fasilitas_kredit,
                         bdo_premi: claim.bdo_premi,
-                        tanggal_realisasi_kredit:
-                            claim.tanggal_realisasi_kredit,
+                        tanggal_realisasi_kredit: tanggalRealisasiISO,
                         plafond: claim.plafond,
                         max_coverage: claim.max_coverage,
                         kol_debitur: claim.kol_debitur,
-                        dol: claim.dol,
+                        dol: dolISO,
                         nilai_klaim: claim.nilai_klaim,
                         share_tugure_percentage: claim.share_tugure_percentage,
                         share_tugure_amount: claim.share_tugure_amount,
@@ -443,10 +410,42 @@ export default function ClaimSubmit() {
                         version_no: 1,
                     });
 
+                    // Create audit log
+                    await backend.create("AuditLog", {
+                        action: "CLAIM_CREATED",
+                        module: "CLAIM",
+                        entity_type: "Claim",
+                        entity_id: claimNo,
+                        old_value: "{}",
+                        new_value: JSON.stringify({
+                            batch_id: batch.batch_id,
+                            nilai_klaim: claim.nilai_klaim,
+                        }),
+                        user_email: user?.email,
+                        user_role: user?.role,
+                        reason: "Bulk upload from CSV",
+                    });
+
                     uploaded++;
                 } catch (createError) {
                     errors.push(`Row ${uploaded + 1}: ${createError.message}`);
                     console.error("Failed to create claim:", createError);
+                }
+            }
+
+            // Create notification for bulk upload
+            if (uploaded > 0) {
+                try {
+                    await backend.create("Notification", {
+                        title: "Bulk Claim Upload",
+                        message: `${uploaded} claims uploaded for batch ${batch.batch_id}`,
+                        type: "INFO",
+                        module: "CLAIM",
+                        reference_id: batch.batch_id,
+                        target_role: "TUGURE",
+                    });
+                } catch (notifError) {
+                    console.error("Failed to create notification:", notifError);
                 }
             }
 
@@ -559,39 +558,30 @@ export default function ClaimSubmit() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <ModernKPI
                     title="Total Claims"
-                    value={Array.isArray(claims) ? claims.length : 0}
-                    subtitle={`Rp ${((Array.isArray(claims) ? claims.reduce((s, c) => s + (parseFloat(c.nilai_klaim) || 0), 0) : 0) / 1000000).toFixed(1)}M`}
+                    value={claims.length}
+                    subtitle={`Rp ${(claims.reduce((s, c) => s + (parseFloat(c.nilai_klaim) || 0), 0) / 1000000).toFixed(1)}M`}
                     icon={FileText}
                     color="blue"
                 />
                 <ModernKPI
                     title="Draft Claims"
-                    value={
-                        Array.isArray(claims)
-                            ? claims.filter((c) => c.status === "Draft").length
-                            : 0
-                    }
+                    value={claims.filter((c) => c.status === "Draft").length}
                     subtitle="Pending check"
                     icon={Clock}
                     color="orange"
                 />
                 <ModernKPI
                     title="Total Subrogation"
-                    value={
-                        Array.isArray(subrogations) ? subrogations.length : 0
-                    }
-                    subtitle={`Rp ${((Array.isArray(subrogations) ? subrogations.reduce((s, sub) => s + (parseFloat(sub.recovery_amount) || 0), 0) : 0) / 1000000).toFixed(1)}M`}
+                    value={subrogations.length}
+                    subtitle={`Rp ${(subrogations.reduce((s, sub) => s + (parseFloat(sub.recovery_amount) || 0), 0) / 1000000).toFixed(1)}M`}
                     icon={DollarSign}
                     color="green"
                 />
                 <ModernKPI
                     title="Recovered"
                     value={
-                        Array.isArray(subrogations)
-                            ? subrogations.filter(
-                                  (s) => s.status === "Paid / Closed",
-                              ).length
-                            : 0
+                        subrogations.filter((s) => s.status === "Paid / Closed")
+                            .length
                     }
                     subtitle="Completed"
                     icon={CheckCircle2}
@@ -616,14 +606,14 @@ export default function ClaimSubmit() {
                                 <SelectItem value="all">
                                     All Contracts
                                 </SelectItem>
-                                {Array.isArray(contracts) &&
-                                    contracts.map((c) => (
-                                        <SelectItem key={c.id} value={c.id}>
-                                            {c.contract_number ||
-                                                c.contract_id ||
-                                                "Unknown"}
-                                        </SelectItem>
-                                    ))}
+                                {contracts.map((c) => (
+                                    <SelectItem
+                                        key={c.contract_number}
+                                        value={c.contract_number}
+                                    >
+                                        {c.contract_number}
+                                    </SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
                         <Input
@@ -735,25 +725,24 @@ export default function ClaimSubmit() {
                                 ),
                             },
                         ]}
-                        data={
-                            Array.isArray(claims)
-                                ? claims.filter((c) => {
-                                      if (
-                                          filters.contract !== "all" &&
-                                          c.contract_id !== filters.contract
-                                      )
-                                          return false;
-                                      if (filters.batch && !c.debtor_id)
-                                          return false;
-                                      if (
-                                          filters.claimStatus !== "all" &&
-                                          c.status !== filters.claimStatus
-                                      )
-                                          return false;
-                                      return true;
-                                  })
-                                : []
-                        }
+                        data={claims.filter((c) => {
+                            if (
+                                filters.contract !== "all" &&
+                                c.contract_id !== filters.contract
+                            )
+                                return false;
+                            if (
+                                filters.batch &&
+                                !c.batch_id?.includes(filters.batch)
+                            )
+                                return false;
+                            if (
+                                filters.claimStatus !== "all" &&
+                                c.status !== filters.claimStatus
+                            )
+                                return false;
+                            return true;
+                        })}
                         isLoading={loading}
                         emptyMessage="No claims submitted"
                     />
@@ -783,7 +772,12 @@ export default function ClaimSubmit() {
                             },
                             {
                                 header: "Recovery Date",
-                                accessorKey: "recovery_date",
+                                cell: (row) =>
+                                    row.recovery_date
+                                        ? new Date(
+                                              row.recovery_date,
+                                          ).toLocaleDateString("id-ID")
+                                        : "-",
                             },
                             {
                                 header: "Status",
@@ -792,18 +786,14 @@ export default function ClaimSubmit() {
                                 ),
                             },
                         ]}
-                        data={
-                            Array.isArray(subrogations)
-                                ? subrogations.filter((s) => {
-                                        if (
-                                            filters.subrogationStatus !== "all" &&
-                                            s.status !== filters.subrogationStatus
-                                        )
-                                            return false;
-                                        return true;
-                                    })
-                                : []
-                        }
+                        data={subrogations.filter((s) => {
+                            if (
+                                filters.subrogationStatus !== "all" &&
+                                s.status !== filters.subrogationStatus
+                            )
+                                return false;
+                            return true;
+                        })}
                         isLoading={loading}
                         emptyMessage="No subrogation records"
                     />
@@ -1000,23 +990,68 @@ export default function ClaimSubmit() {
                         <Button
                             onClick={async () => {
                                 if (!selectedClaim || !recoveryAmount) return;
-                                const claim = claims.find(
-                                    (c) => c.id === selectedClaim,
-                                );
-                                await base44.entities.Subrogation.create({
-                                    subrogation_id: `SUB-${Date.now()}`,
-                                    claim_id: claim.claim_no,
-                                    debtor_id: claim.debtor_id,
-                                    recovery_amount: parseFloat(recoveryAmount),
-                                    recovery_date: recoveryDate,
-                                    status: "Draft",
-                                });
-                                setSuccessMessage("Subrogation created");
-                                setShowSubrogationDialog(false);
-                                setSelectedClaim("");
-                                setRecoveryAmount("");
-                                setRecoveryDate("");
-                                loadData();
+
+                                try {
+                                    const claim = claims.find(
+                                        (c) => c.claim_no === selectedClaim,
+                                    );
+
+                                    const subrogationId = `SUB-${Date.now()}`;
+
+                                    await backend.create("Subrogation", {
+                                        subrogation_id: subrogationId,
+                                        claim_id: claim.claim_no,
+                                        debtor_id: claim.debtor_id,
+                                        recovery_amount:
+                                            parseFloat(recoveryAmount),
+                                        recovery_date: formatDateToISO(recoveryDate),
+                                        status: "Draft",
+                                        remarks: subrogationRemarks,
+                                    });
+
+                                    // Create audit log
+                                    await backend.create("AuditLog", {
+                                        action: "SUBROGATION_CREATED",
+                                        module: "SUBROGATION",
+                                        entity_type: "Subrogation",
+                                        entity_id: subrogationId,
+                                        old_value: "{}",
+                                        new_value: JSON.stringify({
+                                            claim_id: claim.claim_no,
+                                            recovery_amount: recoveryAmount,
+                                        }),
+                                        user_email: user?.email,
+                                        user_role: user?.role,
+                                        reason: "Manual subrogation creation",
+                                    });
+
+                                    // Create notification
+                                    await backend.create("Notification", {
+                                        title: "New Subrogation Created",
+                                        message: `Subrogation ${subrogationId} created for claim ${claim.claim_no}`,
+                                        type: "INFO",
+                                        module: "SUBROGATION",
+                                        reference_id: subrogationId,
+                                        target_role: "TUGURE",
+                                    });
+
+                                    setSuccessMessage("Subrogation created");
+                                    setShowSubrogationDialog(false);
+                                    setSelectedClaim("");
+                                    setRecoveryAmount("");
+                                    setRecoveryDate("");
+                                    setSubrogationRemarks("");
+                                    loadData();
+                                } catch (error) {
+                                    console.error(
+                                        "Failed to create subrogation:",
+                                        error,
+                                    );
+                                    setErrorMessage(
+                                        "Failed to create subrogation: " +
+                                            error.message,
+                                    );
+                                }
                             }}
                             disabled={!selectedClaim || !recoveryAmount}
                         >

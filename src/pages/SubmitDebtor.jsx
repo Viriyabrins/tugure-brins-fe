@@ -43,6 +43,7 @@ import {
     createAuditLog,
     sendTemplatedEmail,
 } from "@/components/utils/emailTemplateHelper";
+import { formatRupiahAdaptive } from "@/utils/currency";
 
 export default function SubmitDebtor() {
     const [user, setUser] = useState(null);
@@ -200,7 +201,7 @@ export default function SubmitDebtor() {
         a.click();
         toast.success("Template downloaded");
     };
-    
+
     // Submit bulk upload
     const handleBulkUpload = async () => {
         if (!selectedContract) {
@@ -565,10 +566,8 @@ export default function SubmitDebtor() {
             header: "Plafon",
             accessorKey: "plafon",
             cell: (row) => (
-                <div className="text-right">
-                    <div className="font-medium">
-                        Rp {row.plafon?.toLocaleString("id-ID")}
-                    </div>
+                <div className="font-medium">
+                    {formatRupiahAdaptive(row.plafon)}
                 </div>
             ),
         },
@@ -576,10 +575,8 @@ export default function SubmitDebtor() {
             header: "Net Premi",
             accessorKey: "net_premi",
             cell: (row) => (
-                <div className="text-right">
-                    <div className="font-medium">
-                        Rp {row.net_premi?.toLocaleString("id-ID")}
-                    </div>
+                <div className="font-medium">
+                    {formatRupiahAdaptive(row.net_premi)}
                 </div>
             ),
         },
@@ -623,7 +620,7 @@ export default function SubmitDebtor() {
     );
 
     const userBatches = batches.filter(
-        (b) => filterContract === 'all' || b.contract_id === filterContract
+        (b) => filterContract === "all" || b.contract_id === filterContract,
     );
 
     if (loading) {
@@ -964,7 +961,9 @@ export default function SubmitDebtor() {
                             <Input
                                 type="file"
                                 accept=".csv,.xlsx,.xls"
-                                onChange={(e) => setUploadFile(e.target.files?.[0])}
+                                onChange={(e) =>
+                                    setUploadFile(e.target.files?.[0])
+                                }
                             />
                             {uploadFile && (
                                 <p className="text-sm text-gray-600 mt-1">

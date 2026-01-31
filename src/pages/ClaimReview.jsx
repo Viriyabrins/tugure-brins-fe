@@ -33,6 +33,7 @@ import {
     DollarSign,
     Plus,
 } from "lucide-react";
+import { formatRupiahAdaptive } from "@/utils/currency";
 import { Checkbox } from "@/components/ui/checkbox";
 import { backend } from "@/api/backendClient";
 import PageHeader from "@/components/common/PageHeader";
@@ -184,7 +185,7 @@ export default function ClaimReview() {
             let newStatus = "";
             let updateData = {
                 reviewed_by: user?.email,
-                review_date: new Date().toISOString().split("T")[0],
+                review_date: new Date().toISOString(),
             };
 
             switch (actionType) {
@@ -192,25 +193,19 @@ export default function ClaimReview() {
                     newStatus = "Checked";
                     updateData.status = "Checked";
                     updateData.checked_by = user?.email;
-                    updateData.checked_date = new Date()
-                        .toISOString()
-                        .split("T")[0];
+                    updateData.checked_date = new Date().toISOString();
                     break;
                 case "verify":
                     newStatus = "Doc Verified";
                     updateData.status = "Doc Verified";
                     updateData.doc_verified_by = user?.email;
-                    updateData.doc_verified_date = new Date()
-                        .toISOString()
-                        .split("T")[0];
+                    updateData.doc_verified_date = new Date().toISOString();
                     break;
                 case "invoice":
                     newStatus = "Invoiced";
                     updateData.status = "Invoiced";
                     updateData.invoiced_by = user?.email;
-                    updateData.invoiced_date = new Date()
-                        .toISOString()
-                        .split("T")[0];
+                    updateData.invoiced_date = new Date().toISOString();
 
                     // Create Claim Nota (IMMUTABLE AFTER ISSUED)
                     const notaNumber = `NOTA-CLM-${selectedClaim.claim_no}-${Date.now()}`;
@@ -344,13 +339,12 @@ export default function ClaimReview() {
         { header: "Debtor", accessorKey: "nama_tertanggung" },
         {
             header: "Claim Amount",
-            cell: (row) =>
-                `Rp ${(row.nilai_klaim || 0).toLocaleString("id-ID")}`,
+            cell: (row) => formatRupiahAdaptive(Number(row.nilai_klaim) || 0),
         },
         {
             header: "Share Tugure",
             cell: (row) =>
-                `Rp ${(row.share_tugure_amount || 0).toLocaleString("id-ID")}`,
+                formatRupiahAdaptive(Number(row.share_tugure_amount) || 0),
         },
         {
             header: "Status",
@@ -462,11 +456,7 @@ export default function ClaimReview() {
                                                             checked_by:
                                                                 user?.email,
                                                             checked_date:
-                                                                new Date()
-                                                                    .toISOString()
-                                                                    .split(
-                                                                        "T",
-                                                                    )[0],
+                                                                new Date().toISOString(),
                                                         },
                                                     );
                                                 }
@@ -553,14 +543,6 @@ export default function ClaimReview() {
                     </AlertDescription>
                 </Alert>
             )}
-
-            {errorMessage && (
-                <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{errorMessage}</AlertDescription>
-                </Alert>
-            )}
-
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <ModernKPI
                     title="Pending Review"
@@ -572,7 +554,12 @@ export default function ClaimReview() {
                 <ModernKPI
                     title="Total Claims"
                     value={claims.length}
-                    subtitle={`Rp ${(claims.reduce((s, c) => s + (c.nilai_klaim || 0), 0) / 1000000).toFixed(1)}M`}
+                    subtitle={formatRupiahAdaptive(
+                        claims.reduce(
+                            (s, c) => s + (Number(c.nilai_klaim) || 0),
+                            0,
+                        ),
+                    )}
                     icon={DollarSign}
                     color="blue"
                 />
@@ -754,7 +741,15 @@ export default function ClaimReview() {
                             {
                                 header: "Recovery",
                                 cell: (row) =>
-                                    `Rp ${(row.recovery_amount || 0).toLocaleString()}`,
+                                    formatRupiahAdaptive(
+                                        subrogations.reduce(
+                                            (s, sub) =>
+                                                s +
+                                                (Number(sub.recovery_amount) ||
+                                                    0),
+                                            0,
+                                        ),
+                                    ),
                             },
                             {
                                 header: "Status",
@@ -788,7 +783,7 @@ export default function ClaimReview() {
                             {actionType === "reject" && "Reject Claim"}
                         </DialogTitle>
                         <DialogDescription>
-                            {selectedClaim?.claim_no} - {" "}
+                            {selectedClaim?.claim_no} -{" "}
                             {selectedClaim?.nama_tertanggung}
                         </DialogDescription>
                     </DialogHeader>
@@ -838,10 +833,11 @@ export default function ClaimReview() {
                                             Claim Amount:
                                         </span>
                                         <span className="ml-2 font-bold">
-                                            Rp{" "}
-                                            {(
-                                                selectedClaim.nilai_klaim || 0
-                                            ).toLocaleString()}
+                                            {formatRupiahAdaptive(
+                                                Number(
+                                                    selectedClaim.nilai_klaim,
+                                                ) || 0,
+                                            )}
                                         </span>
                                     </div>
                                     <div>
@@ -849,11 +845,11 @@ export default function ClaimReview() {
                                             Share TUGURE:
                                         </span>
                                         <span className="ml-2 font-bold text-green-600">
-                                            Rp{" "}
-                                            {(
-                                                selectedClaim.share_tugure_amount ||
-                                                0
-                                            ).toLocaleString()}
+                                            {formatRupiahAdaptive(
+                                                Number(
+                                                    selectedClaim.share_tugure_amount,
+                                                ) || 0,
+                                            )}
                                         </span>
                                     </div>
                                 </div>
@@ -919,10 +915,9 @@ export default function ClaimReview() {
                             <div>
                                 <span className="text-gray-500">Amount:</span>
                                 <span className="ml-2 font-medium">
-                                    Rp{" "}
-                                    {(
-                                        selectedClaim?.nilai_klaim || 0
-                                    ).toLocaleString()}
+                                    {formatRupiahAdaptive(
+                                        Number(selectedClaim?.nilai_klaim) || 0,
+                                    )}
                                 </span>
                             </div>
                             <div>

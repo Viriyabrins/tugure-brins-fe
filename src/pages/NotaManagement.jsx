@@ -48,6 +48,7 @@ import {
     createNotification,
     createAuditLog,
 } from "@/components/utils/emailTemplateHelper";
+import { formatRupiahAdaptive } from "@/utils/currency";
 
 const normalizeRemark = (value) =>
     typeof value === "string" ? value.trim() : "";
@@ -1227,17 +1228,25 @@ export default function NotaManagement() {
                         />
                         <ModernKPI
                             title="Total Amount"
-                            value={`Rp ${(notas.reduce((sum, n) => sum + (n.amount || 0), 0) / 1000000).toFixed(1)}M`}
+                            value={
+                                formatRupiahAdaptive(
+                                    notas.reduce((sum, n) => sum + toNumber(n.amount), 0),
+                                )
+                            }
                             subtitle="All notas"
                             icon={DollarSign}
                             color="green"
                         />
                         <ModernKPI
                             title="Paid Notas"
-                            value={
-                                notas.filter((n) => n.status === "Paid").length
+                            value={notas.filter((n) => n.status === "Paid").length}
+                            subtitle={
+                                formatRupiahAdaptive(
+                                    notas
+                                        .filter((n) => n.status === "Paid")
+                                        .reduce((sum, n) => sum + toNumber(n.amount), 0),
+                                )
                             }
-                            subtitle={`Rp ${(notas.filter((n) => n.status === "Paid").reduce((sum, n) => sum + (n.amount || 0), 0) / 1000000).toFixed(1)}M`}
                             icon={CheckCircle2}
                             color="purple"
                         />
@@ -1377,10 +1386,7 @@ export default function NotaManagement() {
                                 header: "Amount",
                                 cell: (row) => (
                                     <span className="font-bold">
-                                        Rp{" "}
-                                        {(row.amount || 0).toLocaleString(
-                                            "id-ID",
-                                        )}
+                                        {formatRupiahAdaptive(row.amount)}
                                     </span>
                                 ),
                             },
@@ -1471,21 +1477,21 @@ export default function NotaManagement() {
                         />
                         <ModernKPI
                             title="Total Invoiced"
-                            value={`Rp ${(reconciliationItems.reduce((sum, r) => sum + (r.amount || 0), 0) / 1000000).toFixed(1)}M`}
+                            value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + toNumber(r.amount), 0))}
                             subtitle="Nota amounts"
                             icon={FileText}
                             color="blue"
                         />
                         <ModernKPI
                             title="Total Paid"
-                            value={`Rp ${(reconciliationItems.reduce((sum, r) => sum + (r.total_actual_paid || 0), 0) / 1000000).toFixed(1)}M`}
+                            value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + toNumber(r.total_actual_paid), 0))}
                             subtitle="Actual payments"
                             icon={CheckCircle2}
                             color="green"
                         />
                         <ModernKPI
                             title="Difference"
-                            value={`Rp ${(reconciliationItems.reduce((sum, r) => sum + ((r.amount || 0) - (r.total_actual_paid || 0)), 0) / 1000000).toFixed(1)}M`}
+                            value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + ((toNumber(r.amount) || 0) - (toNumber(r.total_actual_paid) || 0)), 0))}
                             subtitle="To reconcile"
                             icon={AlertTriangle}
                             color="orange"
@@ -1627,15 +1633,9 @@ export default function NotaManagement() {
                                 cell: (row) => (
                                     <div>
                                         <div className="font-bold text-blue-600">
-                                            Rp{" "}
-                                            {(
-                                                (row.amount || 0) / 1000000
-                                            ).toFixed(2)}
-                                            M
+                                            
                                         </div>
-                                        {row.is_immutable && (
-                                            <Lock className="w-3 h-3 text-red-500 inline ml-1" />
-                                        )}
+                                        {formatRupiahAdaptive(row.amount)}
                                     </div>
                                 ),
                             },
@@ -1644,12 +1644,7 @@ export default function NotaManagement() {
                                 cell: (row) => (
                                     <div>
                                         <div className="text-gray-600">
-                                            Rp{" "}
-                                            {(
-                                                (row.total_planned || 0) /
-                                                1000000
-                                            ).toFixed(2)}
-                                            M
+                                            {formatRupiahAdaptive(row.total_planned)}
                                         </div>
                                         <div className="text-xs text-gray-400">
                                             {row.intent_count} intent(s)
@@ -1662,12 +1657,7 @@ export default function NotaManagement() {
                                 cell: (row) => (
                                     <div>
                                         <div className="text-green-600 font-bold">
-                                            Rp{" "}
-                                            {(
-                                                (row.total_actual_paid || 0) /
-                                                1000000
-                                            ).toFixed(2)}
-                                            M
+                                            {formatRupiahAdaptive(row.total_actual_paid)}
                                         </div>
                                         <div className="text-xs text-gray-400">
                                             {row.payment_count} payment(s)
@@ -1690,8 +1680,7 @@ export default function NotaManagement() {
                                                         : "text-green-600"
                                                 }
                                             >
-                                                Rp {(diff / 1000000).toFixed(2)}
-                                                M
+                                                {formatRupiahAdaptive(diff)}
                                             </span>
                                             {Math.abs(diff) > 1000 && (
                                                 <AlertTriangle className="w-4 h-4 text-orange-500" />

@@ -2,7 +2,7 @@ import { createClient } from '@base44/sdk';
 import { appParams } from '@/lib/app-params';
 
 const { appId, token, functionsVersion } = appParams;
-const bypassAuth = import.meta.env.VITE_BYPASS_AUTH === 'true';
+const bypassAuth = import.meta.env.VITE_BYPASS_AUTH === 'false';
 
 const createEntityStub = () => {
   const handler = {

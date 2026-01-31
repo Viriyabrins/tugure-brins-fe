@@ -37,6 +37,7 @@ import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import StatCard from "@/components/dashboard/StatCard";
 import ModernKPI from "@/components/dashboard/ModernKPI";
+import { formatRupiahAdaptive } from "@/utils/currency";
 
 export default function PaymentIntent() {
     const [user, setUser] = useState(null);
@@ -472,8 +473,12 @@ export default function PaymentIntent() {
                 />
                 <ModernKPI
                     title="Total Planned"
-                    value={`Rp ${(paymentIntents.reduce((s, p) => s + (p.planned_amount || 0), 0) / 1000000).toFixed(1)}M`}
-                    icon={DollarSign}
+                    value={formatRupiahAdaptive(
+                        paymentIntents.reduce(
+                            (sum, p) => sum + (p.planned_amount || 0), 0),
+                    )}
+                    subtitle="Planned Payment Amount"
+                    icon={DollarSign}   
                     color="purple"
                 />
             </div>

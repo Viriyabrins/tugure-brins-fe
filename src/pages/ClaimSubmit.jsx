@@ -36,6 +36,7 @@ import {
     Clock,
 } from "lucide-react";
 import { backend } from "@/api/backendClient";
+import { formatRupiahAdaptive } from "@/utils/currency";
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -383,7 +384,9 @@ export default function ClaimSubmit() {
                     const sequence = String(uploaded + 1).padStart(6, "0");
                     const claimNo = `CLM-${year}-${month}-${sequence}`;
 
-                    const tanggalRealisasiISO = formatDateToISO(claim.tanggal_realisasi_kredit);
+                    const tanggalRealisasiISO = formatDateToISO(
+                        claim.tanggal_realisasi_kredit,
+                    );
                     const dolISO = formatDateToISO(claim.dol);
 
                     await backend.create("Claim", {
@@ -559,7 +562,12 @@ export default function ClaimSubmit() {
                 <ModernKPI
                     title="Total Claims"
                     value={claims.length}
-                    subtitle={`Rp ${(claims.reduce((s, c) => s + (parseFloat(c.nilai_klaim) || 0), 0) / 1000000).toFixed(1)}M`}
+                    subtitle={formatRupiahAdaptive(
+                        claims.reduce(
+                            (s, c) => s + (Number(c.nilai_klaim) || 0),
+                            0,
+                        ),
+                    )}
                     icon={FileText}
                     color="blue"
                 />
@@ -573,7 +581,12 @@ export default function ClaimSubmit() {
                 <ModernKPI
                     title="Total Subrogation"
                     value={subrogations.length}
-                    subtitle={`Rp ${(subrogations.reduce((s, sub) => s + (parseFloat(sub.recovery_amount) || 0), 0) / 1000000).toFixed(1)}M`}
+                    subtitle={formatRupiahAdaptive(
+                        subrogations.reduce(
+                            (s, sub) => s + (Number(sub.recovery_amount) || 0),
+                            0,
+                        ),
+                    )}
                     icon={DollarSign}
                     color="green"
                 />
@@ -768,7 +781,15 @@ export default function ClaimSubmit() {
                             {
                                 header: "Recovery Amount",
                                 cell: (row) =>
-                                    `Rp ${(parseFloat(row.recovery_amount) || 0).toLocaleString()}`,
+                                    formatRupiahAdaptive(
+                                        subrogations.reduce(
+                                            (s, sub) =>
+                                                s +
+                                                (Number(sub.recovery_amount) ||
+                                                    0),
+                                            0,
+                                        ),
+                                    ),
                             },
                             {
                                 header: "Recovery Date",
@@ -1004,7 +1025,8 @@ export default function ClaimSubmit() {
                                         debtor_id: claim.debtor_id,
                                         recovery_amount:
                                             parseFloat(recoveryAmount),
-                                        recovery_date: formatDateToISO(recoveryDate),
+                                        recovery_date:
+                                            formatDateToISO(recoveryDate),
                                         status: "Draft",
                                         remarks: subrogationRemarks,
                                     });

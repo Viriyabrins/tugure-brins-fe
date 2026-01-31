@@ -40,6 +40,7 @@ import {
 import ModernKPI from "@/components/dashboard/ModernKPI";
 import { backend } from "@/api/backendClient";
 import { useAuth } from "@/lib/AuthContext";
+import { formatRupiahAdaptive } from "@/utils/currency";
 
 const COLORS = [
     "#3B82F6",
@@ -49,6 +50,11 @@ const COLORS = [
     "#8B5CF6",
     "#EC4899",
 ];
+
+const toNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function Dashboard() {
     const [user, setUser] = useState(null);
@@ -72,6 +78,10 @@ export default function Dashboard() {
         claimsPaid: 0,
         osRecovery: 0,
         lossRatio: 0,
+        totalPayments: 0,
+        issuedNotas: 0,
+        paidNotas: 0,
+        totalNotaPremium: 0,
     });
 
     const [debtors, setDebtors] = useState([]);
@@ -164,8 +174,16 @@ export default function Dashboard() {
                 (sum, d) => sum + (parseFloat(d.plafon) || 0),
                 0,
             );
-            const totalPremium = nextDebtors.reduce(
-                (sum, d) => sum + (parseFloat(d.net_premi) || 0),
+            const approvedDebtorsList = nextDebtors.filter(
+                (d) => (d?.status || "").toUpperCase() === "APPROVED",
+            );
+
+            const totalApprovedPremium = approvedDebtorsList.reduce(
+                (sum, d) =>
+                    sum +
+                    toNumber(
+                        d?.net_premi ?? d?.net_premium ?? d?.netPremi ?? 0,
+                    ),
                 0,
             );
 
@@ -191,8 +209,8 @@ export default function Dashboard() {
                 .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
             const lossRatio =
-                totalPremium > 0
-                    ? ((claimsPaid / totalPremium) * 100).toFixed(1)
+                totalApprovedPremium > 0
+                    ? (claimsPaid / totalApprovedPremium) * 100
                     : 0;
 
             // Calculate outstanding recovery from subrogations
@@ -222,11 +240,11 @@ export default function Dashboard() {
                 pendingDebtors: pending,
                 rejectedDebtors: rejected,
                 totalExposure,
-                totalPremium: totalBatchPremium, // Use premium from approved batches
+                totalPremium: totalApprovedPremium,
                 totalClaims: nextClaims.length,
                 claimsPaid,
                 osRecovery,
-                lossRatio: parseFloat(lossRatio),
+                lossRatio: Number(lossRatio.toFixed(1)),
                 totalPayments,
                 issuedNotas,
                 paidNotas,
@@ -317,14 +335,13 @@ export default function Dashboard() {
                 0,
             );
 
-            const lossRatio =
-                premium > 0 ? ((claims / premium) * 100).toFixed(1) : 0;
+            const lossRatio = premium > 0 ? (claims / premium) * 100 : 0;
 
             return {
                 month,
                 premium: premium || 0,
                 claims: claims || 0,
-                lossRatio: parseFloat(lossRatio) || 0,
+                lossRatio: Number(lossRatio.toFixed(1)),
                 recovery: recovery || 0,
             };
         });
@@ -334,41 +351,69 @@ export default function Dashboard() {
 
     const monthlyTrendData = generateMonthlyTrendData();
 
+    const normalizeBatchStatus = (status) =>
+        (status ?? "").toString().trim().toLowerCase();
+
+    const getBatchPremiumAmount = (batch) => {
+        const finalPremium = Number(batch?.final_premium_amount);
+        if (!Number.isNaN(finalPremium) && finalPremium) return finalPremium;
+        const totalPremium = Number(batch?.total_premium);
+        if (!Number.isNaN(totalPremium) && totalPremium) return totalPremium;
+        return 0;
+    };
+
+    // Note: Batch workflow statuses include "Matched", "Nota Issued", "Branch Confirmed", "Paid", "Closed".
+    // Previously, the chart only counted "Approved" and a non-existent "Submitted", which often resulted in empty data.
+    const premiumByStatusBuckets = batchesArray.reduce(
+        (acc, batch) => {
+            const status = normalizeBatchStatus(batch?.status);
+            const amount = getBatchPremiumAmount(batch);
+
+            const approvedStatuses = [
+                "approved",
+                "nota issued",
+                "branch confirmed",
+                "paid",
+                "closed",
+            ];
+            const pendingStatuses = [
+                "uploaded",
+                "validated",
+                "matched",
+                "reopen requested",
+                "reopened",
+            ];
+
+            if (approvedStatuses.includes(status)) acc.approved += amount;
+            else if (status === "rejected") acc.rejected += amount;
+            else if (pendingStatuses.includes(status)) acc.pending += amount;
+            else acc.other += amount;
+
+            return acc;
+        },
+        { approved: 0, pending: 0, rejected: 0, other: 0 },
+    );
+
     const premiumByStatusData = [
         {
             name: "Approved",
-            value: batchesArray
-                .filter((b) => b.status === "Approved")
-                .reduce(
-                    (sum, b) => sum + (parseFloat(b.final_premium_amount) || 0),
-                    0,
-                ),
+            value: premiumByStatusBuckets.approved,
             color: "#10B981",
         },
         {
             name: "Pending",
-            value: batchesArray
-                .filter(
-                    (b) =>
-                        b.status === "Uploaded" ||
-                        b.status === "Validated" ||
-                        b.status === "Submitted",
-                )
-                .reduce(
-                    (sum, b) => sum + (parseFloat(b.final_premium_amount) || 0),
-                    0,
-                ),
+            value: premiumByStatusBuckets.pending,
             color: "#F59E0B",
         },
         {
             name: "Rejected",
-            value: batchesArray
-                .filter((b) => b.status === "Rejected")
-                .reduce(
-                    (sum, b) => sum + (parseFloat(b.final_premium_amount) || 0),
-                    0,
-                ),
+            value: premiumByStatusBuckets.rejected,
             color: "#EF4444",
+        },
+        {
+            name: "Other",
+            value: premiumByStatusBuckets.other,
+            color: "#6B7280",
         },
     ].filter((d) => d.value > 0);
 
@@ -621,21 +666,21 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <ModernKPI
                     title="Total Exposure"
-                    value={`Rp ${formatCurrency(stats.totalExposure)}`}
+                    value={formatRupiahAdaptive(stats.totalExposure)}
                     subtitle={`${stats.approvedDebtors} approved debtors`}
                     icon={TrendingUp}
                     color="blue"
                 />
                 <ModernKPI
                     title="Total Premium"
-                    value={`Rp ${formatCurrency(stats.totalPremium)}`}
+                    value={formatRupiahAdaptive(stats.totalPremium)}
                     subtitle="Net premium collected"
                     icon={DollarSign}
                     color="green"
                 />
                 <ModernKPI
                     title="Claims Paid"
-                    value={`Rp ${formatCurrency(stats.claimsPaid)}`}
+                    value={formatRupiahAdaptive(stats.claimsPaid)}
                     subtitle={`${claimsArray.filter((c) => c.status === "Paid").length} claims settled`}
                     icon={FileText}
                     color="orange"
@@ -666,7 +711,7 @@ export default function Dashboard() {
                 />
                 <ModernKPI
                     title="OS Recovery"
-                    value={`Rp ${formatCurrency(stats.osRecovery)}`}
+                    value={formatRupiahAdaptive(stats.osRecovery)}
                     icon={AlertTriangle}
                     color="red"
                 />
@@ -746,36 +791,45 @@ export default function Dashboard() {
                     </CardHeader>
                     <CardContent>
                         <div className="h-64">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <RePieChart>
-                                    <Pie
-                                        data={premiumByStatusData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={100}
-                                        paddingAngle={3}
-                                        dataKey="value"
-                                        label={({ value }) =>
-                                            `IDR ${formatCurrency(value)}`
-                                        }
-                                    >
-                                        {premiumByStatusData.map(
-                                            (entry, index) => (
-                                                <Cell
-                                                    key={`cell-${index}`}
-                                                    fill={entry.color}
-                                                />
-                                            ),
-                                        )}
-                                    </Pie>
-                                    <Tooltip
-                                        formatter={(value) =>
-                                            `IDR ${formatCurrency(value)}`
-                                        }
-                                    />
-                                </RePieChart>
-                            </ResponsiveContainer>
+                            {premiumByStatusData.length === 0 ? (
+                                <div className="h-full flex items-center justify-center">
+                                    <p className="text-sm text-gray-500 text-center">
+                                        No premium data to display for the selected
+                                        period.
+                                    </p>
+                                </div>
+                            ) : (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RePieChart>
+                                        <Pie
+                                            data={premiumByStatusData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={60}
+                                            outerRadius={100}
+                                            paddingAngle={3}
+                                            dataKey="value"
+                                            label={({ value }) =>
+                                                `${formatRupiahAdaptive(value)}`
+                                            }
+                                        >
+                                            {premiumByStatusData.map(
+                                                (entry, index) => (
+                                                    <Cell
+                                                        key={`cell-${index}`}
+                                                        fill={entry.color}
+                                                    />
+                                                ),
+                                            )}
+                                        </Pie>
+                                        <Tooltip
+                                            formatter={(value) =>
+                                                `${formatRupiahAdaptive(value)}`
+                                            }
+                                        />
+                                    </RePieChart>
+                                </ResponsiveContainer>
+                            )}
                         </div>
                         <div className="flex flex-wrap justify-center gap-4 mt-4">
                             {premiumByStatusData.map((entry, index) => (
@@ -877,11 +931,11 @@ export default function Dashboard() {
                                     <YAxis
                                         tick={{ fontSize: 12 }}
                                         stroke="#6B7280"
-                                        tickFormatter={formatCurrency}
+                                        tickFormatter={formatRupiahAdaptive}
                                     />
                                     <Tooltip
                                         formatter={(value) =>
-                                            `IDR ${formatCurrency(value)}`
+                                            `${formatRupiahAdaptive(value)}`
                                         }
                                     />
                                     <Legend />
@@ -930,11 +984,11 @@ export default function Dashboard() {
                                     <YAxis
                                         tick={{ fontSize: 12 }}
                                         stroke="#6B7280"
-                                        tickFormatter={formatCurrency}
+                                        tickFormatter={formatRupiahAdaptive}
                                     />
                                     <Tooltip
                                         formatter={(value) =>
-                                            `IDR ${formatCurrency(value)}`
+                                            formatRupiahAdaptive(value)
                                         }
                                     />
                                     <Legend />
@@ -952,8 +1006,7 @@ export default function Dashboard() {
                         <div className="mt-4 p-3 bg-orange-50 rounded-lg">
                             <p className="text-sm">
                                 <span className="font-semibold text-orange-700">
-                                    Total OS Recovery: IDR{" "}
-                                    {formatCurrency(stats.osRecovery)}
+                                    Total OS Recovery: {formatRupiahAdaptive(stats.osRecovery)}
                                 </span>
                             </p>
                         </div>
@@ -989,11 +1042,11 @@ export default function Dashboard() {
                                         type="number"
                                         tick={{ fontSize: 12 }}
                                         stroke="#6B7280"
-                                        tickFormatter={formatCurrency}
+                                        tickFormatter={formatRupiahAdaptive}
                                     />
                                     <Tooltip
                                         formatter={(value) =>
-                                            `IDR ${formatCurrency(value)}`
+                                            `${formatRupiahAdaptive(value)}`
                                         }
                                     />
                                     <Bar

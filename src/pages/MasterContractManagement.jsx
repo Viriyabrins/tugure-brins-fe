@@ -16,6 +16,7 @@ import Papa from 'papaparse';
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
+import { formatRupiahAdaptive } from '@/utils/currency';
 
 export default function MasterContractManagement() {
   const [user, setUser] = useState(null);
@@ -336,7 +337,7 @@ export default function MasterContractManagement() {
     },
     { 
       header: 'Max Plafond', 
-      cell: (row) => `IDR ${((row.max_plafond || 0) / 1000000).toFixed(1)}M`
+      cell: (row) => `${formatRupiahAdaptive(row.max_plafond)}`
     },
     { 
       header: 'Share TUGURE %', 

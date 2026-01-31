@@ -18,6 +18,7 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import StatCard from "@/components/dashboard/StatCard";
 import ModernKPI from "@/components/dashboard/ModernKPI";
 import { sendTemplatedEmail, createNotification, createAuditLog } from "@/components/utils/emailTemplateHelper";
+import { formatRupiahAdaptive } from '@/utils/currency';
 
 export default function BatchProcessing() {
   const [user, setUser] = useState(null);
@@ -546,9 +547,9 @@ export default function BatchProcessing() {
         const finalExposure = Number(row.final_exposure_amount) || 0;
         return (
           <div>
-            <div className="text-sm">Rp {(rawExposure / 1000000).toFixed(1)}M</div>
+            <div className="text-sm">{formatRupiahAdaptive(rawExposure)}</div>
             {finalExposure > 0 && (
-              <div className="text-xs text-green-600 font-bold">Final: Rp {(finalExposure / 1000000).toFixed(1)}M</div>
+              <div className="text-xs text-green-600 font-bold">Final: {formatRupiahAdaptive(finalExposure)}</div>
             )}
           </div>
         );
@@ -561,9 +562,9 @@ export default function BatchProcessing() {
         const finalPremium = Number(row.final_premium_amount) || 0;
         return (
           <div>
-            <div className="text-sm">Rp {(rawPremium / 1000000).toFixed(1)}M</div>
+            <div className="text-sm">{formatRupiahAdaptive(rawPremium)}</div>
             {finalPremium > 0 && (
-              <div className="text-xs text-green-600 font-bold">Final: Rp {(finalPremium / 1000000).toFixed(1)}M</div>
+              <div className="text-xs text-green-600 font-bold">Final: {formatRupiahAdaptive(finalPremium)}</div>
             )}
           </div>
         );

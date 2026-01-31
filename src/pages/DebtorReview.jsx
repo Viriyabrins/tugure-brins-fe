@@ -45,6 +45,7 @@ import {
     createNotification,
     createAuditLog,
 } from "@/components/utils/emailTemplateHelper";
+import { formatRupiahAdaptive } from "@/utils/currency";
 
 const normalizeRemark = (value) =>
     typeof value === "string" ? value.trim() : "";
@@ -549,11 +550,11 @@ export default function DebtorReview() {
         },
         {
             header: "Plafond",
-            cell: (row) => `Rp ${(row.plafon || 0).toLocaleString("id-ID")}`,
+            cell: (row) => `${formatRupiahAdaptive(row.plafon)}`,
         },
         {
             header: "Net Premi",
-            cell: (row) => `Rp ${(row.net_premi || 0).toLocaleString("id-ID")}`,
+            cell: (row) => `${formatRupiahAdaptive(row.net_premi)}`,
         },
         {
             header: "Status",
@@ -703,7 +704,7 @@ export default function DebtorReview() {
                 />
                 <ModernKPI
                     title="Total Plafon"
-                    value={`Rp ${(totalPlafond / 1000000).toFixed(1)}M`}
+                    value={formatRupiahAdaptive(totalPlafond)}
                     subtitle="Approved only"
                     icon={DollarSign}
                     color="blue"

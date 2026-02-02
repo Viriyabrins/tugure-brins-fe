@@ -345,15 +345,6 @@ export default function SystemConfiguration() {
       {
         object_type: 'MasterContract',
         status_from: 'Pending First Approval',
-        status_to: 'Pending Second Approval',
-        recipient_role: 'ADMIN',
-        email_subject: '[Contract {contract_id}] Second Approval Required',
-        email_body: 'Dear Admin,\n\nMaster Contract {contract_id} requires second approval.\n\nFirst approved by: {user_name}\nDate: {date}\n\nPlease review and approve.\n\nBest regards,\nSystem',
-        is_active: true
-      },
-      {
-        object_type: 'MasterContract',
-        status_from: 'Pending Second Approval',
         status_to: 'Active',
         recipient_role: 'ALL',
         email_subject: '[Contract {contract_id}] Activated',
@@ -859,21 +850,6 @@ export default function SystemConfiguration() {
         recipient_role: 'TUGURE',
         email_subject: '[SLA Alert] Contract {entity_id} - First Approval Pending 24h',
         email_body: 'Dear TUGURE Team,\n\nMaster Contract {entity_id} pending first approval for {duration} hours.\n\nAction Required:\n- Review contract terms\n- Approve or reject within SLA\n\nBest regards,\nSystem SLA Monitor',
-        priority: 'HIGH',
-        is_active: true,
-        is_recurring: false
-      },
-      {
-        rule_name: 'Contract Pending Second Approval - 48h SLA',
-        entity_type: 'MasterContract',
-        trigger_condition: 'STATUS_DURATION',
-        status_value: 'Pending Second Approval',
-        duration_value: 48,
-        duration_unit: 'HOURS',
-        notification_type: 'BOTH',
-        recipient_role: 'ADMIN',
-        email_subject: '[SLA Alert] Contract {entity_id} - Second Approval Pending 48h',
-        email_body: 'Dear Admin,\n\nMaster Contract {entity_id} pending second approval for {duration} hours.\n\nAction Required:\n- Final review and approval needed\n\nBest regards,\nSystem SLA Monitor',
         priority: 'HIGH',
         is_active: true,
         is_recurring: false

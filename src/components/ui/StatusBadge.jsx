@@ -8,6 +8,7 @@ const statusColors = {
   SUBMITTED: 'bg-blue-100 text-blue-700 border-blue-200',
   APPROVED: 'bg-green-100 text-green-700 border-green-200',
   REJECTED: 'bg-red-100 text-red-700 border-red-200',
+  REVISION: 'bg-orange-100 text-orange-700 border-orange-200',
   CONDITIONAL: 'bg-orange-100 text-orange-700 border-orange-200',
   TERMINATED: 'bg-gray-200 text-gray-600 border-gray-300',
   
@@ -72,7 +73,7 @@ export default function StatusBadge({ status, className }) {
   return (
     <Badge 
       variant="outline" 
-      className={cn('font-medium border', colorClass, className)}
+      className={cn('font-medium border ml-1', colorClass, className)}
     >
       {displayText}
     </Badge>

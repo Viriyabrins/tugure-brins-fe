@@ -95,7 +95,7 @@ export default function PaymentIntent() {
                 : [];
 
             const issuedNotas = nextNotas.filter(
-                (n) => n.status === "Issued" || n.status === "Confirmed",
+                (n) => n.status === "Final" || n.status === "Confirmed",
             );
 
             setNotas(issuedNotas);
@@ -129,9 +129,9 @@ export default function PaymentIntent() {
                 return;
             }
 
-            if (nota.status !== "Issued" && nota.status !== "Confirmed") {
+            if (nota.status !== "Final" && nota.status !== "Confirmed") {
                 alert(
-                    `❌ BLOCKED: Payment Intent can only be created for ISSUED or CONFIRMED notas.\n\nCurrent nota status: ${nota.status}\n\nPlease wait for Nota to be issued first.`,
+                    `❌ BLOCKED: Payment Intent can only be created for FINAL or CONFIRMED notas.\n\nCurrent nota status: ${nota.status}\n\nPlease wait for Nota to reach Final status first.`,
                 );
 
                 await backend.create("AuditLog", {
@@ -145,11 +145,11 @@ export default function PaymentIntent() {
                     }),
                     user_email: user?.email,
                     user_role: user?.role,
-                    reason: `Attempted to create Payment Intent before Nota Issued (current status: ${nota.status})`,
+                    reason: `Attempted to create Payment Intent before Nota Final (current status: ${nota.status})`,
                 });
 
                 setErrorMessage(
-                    "Payment Intent blocked - Nota must be Issued first",
+                    "Payment Intent blocked - Nota must be Final first",
                 );
                 setProcessing(false);
                 return;
@@ -320,7 +320,7 @@ export default function PaymentIntent() {
         {
             header: "Planned Amount",
             cell: (row) =>
-                `Rp ${(row.planned_amount || 0).toLocaleString("id-ID")}`,
+                formatRupiahAdaptive(row.planned_amount),
         },
         {
             header: "Planned Date",
@@ -437,8 +437,8 @@ export default function PaymentIntent() {
                 <Alert className="bg-blue-50 border-blue-200">
                     <AlertCircle className="h-4 w-4 text-blue-600" />
                     <AlertDescription className="text-blue-700">
-                        No issued notas available. Please ensure Nota Management
-                        has issued notas first.
+                        No Final notas available. Please ensure Nota Management
+                        has Final notas first.
                     </AlertDescription>
                 </Alert>
             )}
@@ -447,7 +447,7 @@ export default function PaymentIntent() {
                 <ModernKPI
                     title="Available Notas"
                     value={notas.length}
-                    subtitle="Issued/Confirmed"
+                    subtitle="Final/Confirmed"
                     icon={DollarSign}
                     color="blue"
                 />
@@ -474,11 +474,13 @@ export default function PaymentIntent() {
                 <ModernKPI
                     title="Total Planned"
                     value={formatRupiahAdaptive(
-                        paymentIntents.reduce(
-                            (sum, p) => sum + (p.planned_amount || 0), 0),
+                        filteredIntents.reduce(
+                            (sum, p) => sum + (Number(p.planned_amount) || 0),
+                            0,
+                        ),
                     )}
                     subtitle="Planned Payment Amount"
-                    icon={DollarSign}   
+                    icon={DollarSign}
                     color="purple"
                 />
             </div>
@@ -584,7 +586,7 @@ export default function PaymentIntent() {
                     <DialogHeader>
                         <DialogTitle>Create Payment Intent</DialogTitle>
                         <DialogDescription>
-                            Plan payment for issued nota
+                            Plan payment for Final nota
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">

@@ -361,37 +361,23 @@ export default function Dashboard() {
         if (!Number.isNaN(totalPremium) && totalPremium) return totalPremium;
         return 0;
     };
+    // Calculate Premium by Status from `debtors` (sum of `net_premi` grouped by debtor status).
+    // Debtor statuses are the source of truth for premium amounts.
+    const premiumByStatusBuckets = debtorsArray.reduce(
+        (acc, debtor) => {
+            const status = (debtor?.status || "").toString().toUpperCase();
+            const amount = toNumber(
+                debtor?.net_premi ?? debtor?.net_premium ?? debtor?.netPremium ?? 0,
+            );
 
-    // Note: Batch workflow statuses include "Matched", "Nota Issued", "Branch Confirmed", "Paid", "Closed".
-    // Previously, the chart only counted "Approved" and a non-existent "Submitted", which often resulted in empty data.
-    const premiumByStatusBuckets = batchesArray.reduce(
-        (acc, batch) => {
-            const status = normalizeBatchStatus(batch?.status);
-            const amount = getBatchPremiumAmount(batch);
-
-            const approvedStatuses = [
-                "approved",
-                "nota issued",
-                "branch confirmed",
-                "paid",
-                "closed",
-            ];
-            const pendingStatuses = [
-                "uploaded",
-                "validated",
-                "matched",
-                "reopen requested",
-                "reopened",
-            ];
-
-            if (approvedStatuses.includes(status)) acc.approved += amount;
-            else if (status === "rejected") acc.rejected += amount;
-            else if (pendingStatuses.includes(status)) acc.pending += amount;
-            else acc.other += amount;
+            if (status === "APPROVED") acc.approved += amount;
+            else if (status === "SUBMITTED") acc.pending += amount;
+            else if (status === "REJECTED") acc.rejected += amount;
+            else acc.revision += amount;
 
             return acc;
         },
-        { approved: 0, pending: 0, rejected: 0, other: 0 },
+        { approved: 0, pending: 0, rejected: 0, revision: 0 },
     );
 
     const premiumByStatusData = [
@@ -411,9 +397,9 @@ export default function Dashboard() {
             color: "#EF4444",
         },
         {
-            name: "Other",
-            value: premiumByStatusBuckets.other,
-            color: "#6B7280",
+            name: "Revision",
+            value: premiumByStatusBuckets.revision,
+            color: "#FF7F11",
         },
     ].filter((d) => d.value > 0);
 

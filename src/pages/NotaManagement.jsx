@@ -85,6 +85,25 @@ const toNumber = (value) => {
 
 const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
 
+    // Compute nota amount from debtors when nota is batch-type
+    const getNotaAmount = (nota) => {
+        try {
+            if (!nota) return 0;
+            if (nota.nota_type === "Batch" && nota.reference_id) {
+                const batchDebtors = debtors.filter(
+                    (d) => d.batch_id === nota.reference_id,
+                );
+                return batchDebtors.reduce(
+                    (s, d) => s + toNumber(d.net_premi),
+                    0,
+                );
+            }
+            return toNumber(nota.amount);
+        } catch (e) {
+            return toNumber(nota.amount);
+        }
+    };
+
 export default function NotaManagement() {
     const [user, setUser] = useState(null);
     const [notas, setNotas] = useState([]);
@@ -103,7 +122,6 @@ export default function NotaManagement() {
     const [showDnCnDialog, setShowDnCnDialog] = useState(false);
     const [showDnCnActionDialog, setShowDnCnActionDialog] = useState(false);
     const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-    const [showGenerateNotaDialog, setShowGenerateNotaDialog] = useState(false);
     const [selectedBatch, setSelectedBatch] = useState(null);
     const [actionType, setActionType] = useState("");
     const [processing, setProcessing] = useState(false);
@@ -200,6 +218,7 @@ export default function NotaManagement() {
                         needsUpdate: false,
                         updatePayload: null,
                         batchId: batch.batch_id || batch.id,
+                        isFinal: false,
                     };
                 }
 
@@ -210,6 +229,19 @@ export default function NotaManagement() {
                 const hasApproved = approvedDebtors.length > 0;
                 const reviewCompleted = allReviewed;
                 const readyForNota = allReviewed && hasApproved;
+
+                // Check if all debtors have OK remarks (Final status)
+                const allHaveOkRemarks =
+                    batchDebtors.length > 0 &&
+                    batchDebtors.every(
+                        (debtor) =>
+                            isOkRemark(debtor?.remark_premi) ||
+                            isOkRemark(debtor?.validation_remarks),
+                    );
+
+                // Also treat batch as Final when Debtor Review has completed and
+                // batch_ready_for_nota is true (DebtorReview updates these flags).
+                const reviewFlagsIndicateFinal = reviewCompleted && readyForNota;
 
                 const finalExposureAmount = approvedDebtors.reduce(
                     (sum, debtor) => sum + toNumber(debtor.plafon),
@@ -253,10 +285,56 @@ export default function NotaManagement() {
                         final_premium_amount: finalPremiumAmount,
                     },
                     batchId: batch.batch_id || batch.id,
+                    isFinal: allHaveOkRemarks || reviewFlagsIndicateFinal,
                 };
             });
 
             const updatedBatches = batchReviewSync.map((entry) => entry.batch);
+
+            // Create map of batch_id to Final status
+            const batchNotaMap = {};
+            batchReviewSync.forEach((entry) => {
+                if (entry.batchId) {
+                    batchNotaMap[entry.batchId] = {
+                        isFinal: entry.isFinal,
+                        batchData: entry.batch,
+                    };
+                }
+            });
+
+            // Auto-create nota entries for batches that don't have them
+            const notaCreationPromises = [];
+            for (const entry of batchReviewSync) {
+                const batchId = entry.batchId;
+                const existingNota = nextNotas.find((n) => n.reference_id === batchId);
+                
+                // Ensure every batch has a corresponding Nota entry so it appears
+                // in Nota Management immediately after upload. Create Nota even
+                // if final_premium_amount is zero — amount can be updated later.
+                if (!existingNota && batchId) {
+                    // Create nota for this batch
+                    const notaNumber = `NOTA-${batchId}-${Date.now()}`;
+                    notaCreationPromises.push(
+                        backend.create("Nota", {
+                            nota_number: notaNumber,
+                            nota_type: "Batch",
+                            reference_id: batchId,
+                            amount: entry.batch.final_premium_amount || 0,
+                            status: entry.isFinal ? "Final" : "Draft",
+                            contract_id: entry.batch.contract_id,
+                        }).catch((err) => {
+                            console.warn(`Failed to auto-create nota for batch ${batchId}:`, err);
+                        })
+                    );
+                }
+            }
+
+            if (notaCreationPromises.length > 0) {
+                await Promise.allSettled(notaCreationPromises);
+                // Reload notas after creation
+                const updatedNotas = await backend.list("Nota");
+                nextNotas.splice(0, nextNotas.length, ...(Array.isArray(updatedNotas) ? updatedNotas : []));
+            }
 
             const updatePromises = batchReviewSync
                 .filter((entry) => entry.needsUpdate && entry.batchId)
@@ -273,6 +351,27 @@ export default function NotaManagement() {
 
             if (updatePromises.length > 0) {
                 await Promise.allSettled(updatePromises);
+            }
+
+            // Update nota status to Final where applicable
+            const notaUpdatePromises = [];
+            nextNotas.forEach((nota) => {
+                const batchInfo = batchNotaMap[nota.reference_id];
+                if (batchInfo && batchInfo.isFinal && nota.status !== "Final" && nota.status !== "Paid" && nota.status !== "Closed") {
+                    notaUpdatePromises.push(
+                        backend.update("Nota", nota.id, { status: "Final" })
+                            .then((updated) => {
+                                // Update in local array
+                                const idx = nextNotas.findIndex((n) => n.id === nota.id);
+                                if (idx >= 0) nextNotas[idx] = updated;
+                            })
+                            .catch((err) => console.warn(`Failed to update nota ${nota.id} to Final:`, err))
+                    );
+                }
+            });
+
+            if (notaUpdatePromises.length > 0) {
+                await Promise.allSettled(notaUpdatePromises);
             }
 
             setNotas(nextNotas);
@@ -296,7 +395,7 @@ export default function NotaManagement() {
     };
 
     const getNextStatus = (currentStatus) => {
-        const workflow = ["Draft", "Issued", "Confirmed", "Paid"];
+        const workflow = ["Draft", "Final", "Confirmed", "Paid"];
         const currentIndex = workflow.indexOf(currentStatus);
         return currentIndex >= 0 && currentIndex < workflow.length - 1
             ? workflow[currentIndex + 1]
@@ -305,176 +404,22 @@ export default function NotaManagement() {
 
     const getActionLabel = (status) => {
         const labels = {
-            Draft: "Issue Nota",
-            Issued: "Confirm Receipt",
+            Draft: "Process",
+            Final: "Confirm Receipt",
             Confirmed: "Mark Paid",
         };
         return labels[status] || "Process";
     };
 
-    const handleGenerateNota = async () => {
-        if (!selectedBatch) return;
-
-        setProcessing(true);
-        try {
-            // CRITICAL CHECKS
-            if (!selectedBatch.debtor_review_completed) {
-                alert(
-                    "❌ BLOCKED: Debtor Review not completed.\n\nAll debtors in this batch must be reviewed (approved/rejected) before generating Nota.",
-                );
-
-                // Create audit log using backend client
-                try {
-                    await backend.create("AuditLog", {
-                        action: "BLOCKED_NOTA_GENERATION",
-                        module: "DEBTOR",
-                        entity_type: "Batch",
-                        entity_id: selectedBatch.batch_id,
-                        old_value: "{}",
-                        new_value: JSON.stringify({
-                            blocked_reason: "debtor_review_completed = FALSE",
-                        }),
-                        user_email: user?.email,
-                        user_role: user?.role,
-                        reason: "Attempted to generate Nota before Debtor Review completion",
-                    });
-                } catch (auditError) {
-                    console.warn("Failed to create audit log:", auditError);
-                }
-
-                setProcessing(false);
-                setShowGenerateNotaDialog(false);
-                return;
-            }
-
-            if (!selectedBatch.batch_ready_for_nota) {
-                alert(
-                    "❌ BLOCKED: Batch not ready for Nota.\n\nAt least one debtor must be approved in Debtor Review.",
-                );
-
-                try {
-                    await backend.create("AuditLog", {
-                        action: "BLOCKED_NOTA_GENERATION",
-                        module: "DEBTOR",
-                        entity_type: "Batch",
-                        entity_id: selectedBatch.batch_id,
-                        old_value: "{}",
-                        new_value: JSON.stringify({
-                            blocked_reason:
-                                "batch_ready_for_nota = FALSE - no approved debtors",
-                        }),
-                        user_email: user?.email,
-                        user_role: user?.role,
-                        reason: "Attempted to generate Nota with no approved debtors",
-                    });
-                } catch (auditError) {
-                    console.warn("Failed to create audit log:", auditError);
-                }
-
-                setProcessing(false);
-                setShowGenerateNotaDialog(false);
-                return;
-            }
-
-            if ((selectedBatch.final_premium_amount || 0) === 0) {
-                alert(
-                    "❌ BLOCKED: Final Premium Amount is zero.\n\nCannot generate Nota without any approved premium.",
-                );
-
-                try {
-                    await backend.create("AuditLog", {
-                        action: "BLOCKED_NOTA_GENERATION",
-                        module: "DEBTOR",
-                        entity_type: "Batch",
-                        entity_id: selectedBatch.batch_id,
-                        old_value: "{}",
-                        new_value: JSON.stringify({
-                            blocked_reason: "final_premium_amount is zero",
-                        }),
-                        user_email: user?.email,
-                        user_role: user?.role,
-                        reason: "Attempted to generate Nota with zero final premium amount",
-                    });
-                } catch (auditError) {
-                    console.warn("Failed to create audit log:", auditError);
-                }
-
-                setProcessing(false);
-                setShowGenerateNotaDialog(false);
-                return;
-            }
-
-            const notaNumber = `NOTA-${selectedBatch.batch_id}-${Date.now()}`;
-
-            await backend.create("Nota", {
-                nota_number: notaNumber,
-                nota_type: "Batch",
-                reference_id: selectedBatch.batch_id,
-                contract_id: selectedBatch.contract_id,
-                amount: selectedBatch.final_premium_amount,
-                currency: "IDR",
-                status: "Draft",
-                is_immutable: false,
-                total_actual_paid: 0,
-                reconciliation_status: "PENDING",
-            });
-
-            // Create notification using backend client
-            try {
-                await backend.create("Notification", {
-                    title: "Nota Generated from Final Amounts",
-                    message: `Nota ${notaNumber} created for Batch ${selectedBatch.batch_id} with final premium: Rp ${(selectedBatch.final_premium_amount || 0).toLocaleString()}`,
-                    type: "INFO",
-                    module: "DEBTOR",
-                    reference_id: selectedBatch.batch_id,
-                    target_role: "ALL",
-                });
-            } catch (notifError) {
-                console.warn("Failed to create notification:", notifError);
-            }
-
-            // Create audit log using backend client
-            try {
-                await backend.create("AuditLog", {
-                    action: "NOTA_GENERATED",
-                    module: "DEBTOR",
-                    entity_type: "Nota",
-                    entity_id: notaNumber,
-                    old_value: "{}",
-                    new_value: JSON.stringify({
-                        batch_id: selectedBatch.batch_id,
-                        amount: selectedBatch.final_premium_amount,
-                    }),
-                    user_email: user?.email,
-                    user_role: user?.role,
-                    reason: `Generated from debtor_review_completed = TRUE, batch_ready_for_nota = TRUE`,
-                });
-            } catch (auditError) {
-                console.warn("Failed to create audit log:", auditError);
-            }
-
-            setSuccessMessage(
-                `Nota ${notaNumber} generated successfully with final premium amount`,
-            );
-            setShowGenerateNotaDialog(false);
-            setSelectedBatch(null);
-            loadData();
-        } catch (error) {
-            console.error("Generate nota error:", error);
-        }
-        setProcessing(false);
-    };
+    // Note: handleGenerateNota removed - notas are now auto-created per batch
 
     const handleNotaAction = async () => {
         if (!selectedNota || !actionType) return;
 
-        // BLOCK: Cannot edit Nota after Issued
-        if (
-            selectedNota.is_immutable &&
-            getActionLabel(selectedNota.status) === "Issue Nota"
-        ) {
+        // BLOCK: Cannot edit Nota after it reached Final state (immutable)
+        if (selectedNota.is_immutable && selectedNota.status === "Final") {
             alert(
-                "❌ BLOCKED: Nota is IMMUTABLE after being issued.\n\nNota amount cannot be changed. Use DN/CN for adjustments.",
+                "❌ BLOCKED: Nota is IMMUTABLE after becoming Final.\n\nNota amount cannot be changed. Use DN/CN for adjustments.",
             );
 
             try {
@@ -509,7 +454,7 @@ export default function NotaManagement() {
 
             const updateData = { status: nextStatus };
 
-            if (nextStatus === "Issued") {
+            if (nextStatus === "Final") {
                 updateData.issued_by = user?.email;
                 updateData.issued_date = new Date().toISOString();
                 updateData.is_immutable = true; // LOCK Nota amount
@@ -520,19 +465,19 @@ export default function NotaManagement() {
 
             await backend.update("Nota", selectedNota.nota_number || selectedNota.id, updateData);
 
-            const targetRole =
-                nextStatus === "Issued"
-                    ? "BRINS"
-                    : nextStatus === "Confirmed"
-                      ? "TUGURE"
-                      : "ALL";
+                        const targetRole =
+                                nextStatus === "Final"
+                                        ? "BRINS"
+                                        : nextStatus === "Confirmed"
+                                            ? "TUGURE"
+                                            : "ALL";
 
             // Create notification using backend client
             try {
                 await backend.create("Notification", {
                     title: `Nota ${nextStatus}`,
-                    message: `Nota ${selectedNota.nota_number} (${selectedNota.nota_type}) moved to ${nextStatus}${nextStatus === "Issued" ? " - Amount now IMMUTABLE" : ""}`,
-                    type: nextStatus === "Issued" ? "ACTION_REQUIRED" : "INFO",
+                    message: `Nota ${selectedNota.nota_number} (${selectedNota.nota_type}) moved to ${nextStatus}${nextStatus === "Final" ? " - Amount now IMMUTABLE" : ""}`,
+                    type: nextStatus === "Final" ? "ACTION_REQUIRED" : "INFO",
                     module: "DEBTOR",
                     reference_id: selectedNota.nota_number,
                     target_role: targetRole,
@@ -551,7 +496,7 @@ export default function NotaManagement() {
                     old_value: JSON.stringify({ status: selectedNota.status }),
                     new_value: JSON.stringify({
                         status: nextStatus,
-                        is_immutable: nextStatus === "Issued",
+                        is_immutable: nextStatus === "Final",
                     }),
                     user_email: user?.email,
                     user_role: user?.role,
@@ -562,7 +507,7 @@ export default function NotaManagement() {
             }
 
             setSuccessMessage(
-                `Nota moved to ${nextStatus} successfully${nextStatus === "Issued" ? " - Nota is now IMMUTABLE" : ""}`,
+                `Nota moved to ${nextStatus} successfully${nextStatus === "Final" ? " - Nota is now IMMUTABLE" : ""}`,
             );
             setShowActionDialog(false);
             setSelectedNota(null);
@@ -1175,15 +1120,6 @@ export default function NotaManagement() {
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Refresh
                         </Button>
-                        {isTugure && (
-                            <Button
-                                className="bg-blue-600"
-                                onClick={() => setShowGenerateNotaDialog(true)}
-                            >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Generate Nota
-                            </Button>
-                        )}
                     </div>
                 }
             />
@@ -1219,7 +1155,7 @@ export default function NotaManagement() {
                         <ModernKPI
                             title="Pending Confirmation"
                             value={
-                                notas.filter((n) => n.status === "Issued")
+                                notas.filter((n) => n.status === "Final")
                                     .length
                             }
                             subtitle="Awaiting branch"
@@ -1230,7 +1166,7 @@ export default function NotaManagement() {
                             title="Total Amount"
                             value={
                                 formatRupiahAdaptive(
-                                    notas.reduce((sum, n) => sum + toNumber(n.amount), 0),
+                                    notas.reduce((sum, n) => sum + getNotaAmount(n), 0),
                                 )
                             }
                             subtitle="All notas"
@@ -1244,7 +1180,7 @@ export default function NotaManagement() {
                                 formatRupiahAdaptive(
                                     notas
                                         .filter((n) => n.status === "Paid")
-                                        .reduce((sum, n) => sum + toNumber(n.amount), 0),
+                                        .reduce((sum, n) => sum + getNotaAmount(n), 0),
                                 )
                             }
                             icon={CheckCircle2}
@@ -1321,8 +1257,8 @@ export default function NotaManagement() {
                                         <SelectItem value="Draft">
                                             Draft
                                         </SelectItem>
-                                        <SelectItem value="Issued">
-                                            Issued
+                                        <SelectItem value="Final">
+                                            Final
                                         </SelectItem>
                                         <SelectItem value="Confirmed">
                                             Confirmed
@@ -1386,7 +1322,7 @@ export default function NotaManagement() {
                                 header: "Amount",
                                 cell: (row) => (
                                     <span className="font-bold">
-                                        {formatRupiahAdaptive(row.amount)}
+                                        {formatRupiahAdaptive(getNotaAmount(row))}
                                     </span>
                                 ),
                             },
@@ -1556,8 +1492,8 @@ export default function NotaManagement() {
                                         <SelectItem value="Draft">
                                             Draft
                                         </SelectItem>
-                                        <SelectItem value="Issued">
-                                            Issued
+                                        <SelectItem value="Final">
+                                            Final
                                         </SelectItem>
                                         <SelectItem value="Confirmed">
                                             Confirmed
@@ -1635,7 +1571,7 @@ export default function NotaManagement() {
                                         <div className="font-bold text-blue-600">
                                             
                                         </div>
-                                        {formatRupiahAdaptive(row.amount)}
+                                        {formatRupiahAdaptive(getNotaAmount(row))}
                                     </div>
                                 ),
                             },
@@ -1840,7 +1776,7 @@ export default function NotaManagement() {
                         />
                         <ModernKPI
                             title="Total Adjustment"
-                            value={`Rp ${(dnCnRecords.reduce((sum, d) => sum + Math.abs(d.adjustment_amount || 0), 0) / 1000000).toFixed(1)}M`}
+                            value={formatRupiahAdaptive(dnCnRecords.reduce((sum, d) => sum + toNumber(d.adjustment_amount), 0))}
                             icon={DollarSign}
                             color="purple"
                         />
@@ -1981,10 +1917,7 @@ export default function NotaManagement() {
                                                 : "text-blue-600 font-bold"
                                         }
                                     >
-                                        Rp{" "}
-                                        {Math.abs(
-                                            row.adjustment_amount || 0,
-                                        ).toLocaleString("id-ID")}
+                                        {formatRupiahAdaptive(row.adjustment_amount)}
                                     </div>
                                 ),
                             },
@@ -2091,180 +2024,7 @@ export default function NotaManagement() {
                 </TabsContent>
             </Tabs>
 
-            {/* Generate Nota Dialog */}
-            <Dialog
-                open={showGenerateNotaDialog}
-                onOpenChange={setShowGenerateNotaDialog}
-            >
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Generate Nota from Batch</DialogTitle>
-                        <DialogDescription>
-                            Select batch where Debtor Review is completed
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4 space-y-4">
-                        <Alert className="bg-blue-50 border-blue-200">
-                            <AlertCircle className="h-4 w-4 text-blue-600" />
-                            <AlertDescription className="text-blue-700">
-                                <strong>Requirements:</strong>
-                                <br />✓ debtor_review_completed = TRUE (all
-                                debtors reviewed)
-                                <br />✓ batch_ready_for_nota = TRUE (at least 1
-                                approved)
-                                <br />✓ final_premium_amount &gt; 0
-                                <br />
-                                <br />
-                                Nota amount will be derived from{" "}
-                                <strong>final_premium_amount</strong>.
-                            </AlertDescription>
-                        </Alert>
-                        <div>
-                            <Label>Select Batch *</Label>
-                            <Select
-                                value={selectedBatch?.id || ""}
-                                onValueChange={(val) => {
-                                    const batch = batches.find(
-                                        (b) => b.id === val,
-                                    );
-                                    setSelectedBatch(batch);
-                                }}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select batch" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {batches
-                                        .filter(
-                                            (b) =>
-                                                b.debtor_review_completed &&
-                                                b.batch_ready_for_nota &&
-                                                b.status === "Approved" &&
-                                                (b.final_premium_amount || 0) >
-                                                    0,
-                                        )
-                                        .map((b) => (
-                                            <SelectItem key={b.batch_id} value={b.batch_id}>
-                                                {b.batch_id} - Rp{" "}
-                                                {(
-                                                    (b.final_premium_amount ||
-                                                        0) / 1000000
-                                                ).toFixed(1)}
-                                                M ✓
-                                            </SelectItem>
-                                        ))}
-                                    {batches
-                                        .filter(
-                                            (b) =>
-                                                !b.debtor_review_completed ||
-                                                !b.batch_ready_for_nota ||
-                                                b.status !== "Approved" ||
-                                                (b.final_premium_amount ||
-                                                    0) === 0,
-                                        )
-                                        .map((b) => (
-                                            <SelectItem
-                                                key={b.id}
-                                                value={b.id}
-                                                disabled
-                                            >
-                                                {b.batch_id} -{" "}
-                                                {!b.debtor_review_completed
-                                                    ? "❌ Review Incomplete"
-                                                    : !b.batch_ready_for_nota
-                                                      ? "❌ No Approved"
-                                                      : b.status !== "Approved"
-                                                        ? `❌ ${b.status}`
-                                                        : "❌ Zero Premium"}
-                                            </SelectItem>
-                                        ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        {selectedBatch && (
-                            <div className="p-4 bg-gray-50 rounded-lg">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Final Exposure:
-                                        </span>
-                                        <span className="ml-2 font-bold">
-                                            Rp{" "}
-                                            {(
-                                                (selectedBatch.final_exposure_amount ||
-                                                    0) / 1000000
-                                            ).toFixed(1)}
-                                            M
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Final Premium:
-                                        </span>
-                                        <span className="ml-2 font-bold text-green-600">
-                                            Rp{" "}
-                                            {(
-                                                (selectedBatch.final_premium_amount ||
-                                                    0) / 1000000
-                                            ).toFixed(1)}
-                                            M
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Review Complete:
-                                        </span>
-                                        <span className="ml-2 font-bold text-blue-600">
-                                            {selectedBatch.debtor_review_completed
-                                                ? "✓ YES"
-                                                : "❌ NO"}
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Ready for Nota:
-                                        </span>
-                                        <span className="ml-2 font-bold text-blue-600">
-                                            {selectedBatch.batch_ready_for_nota
-                                                ? "✓ YES"
-                                                : "❌ NO"}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowGenerateNotaDialog(false);
-                                setSelectedBatch(null);
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleGenerateNota}
-                            disabled={
-                                processing ||
-                                !selectedBatch?.debtor_review_completed ||
-                                !selectedBatch?.batch_ready_for_nota ||
-                                selectedBatch?.status !== "Approved" ||
-                                (selectedBatch?.final_premium_amount || 0) === 0
-                            }
-                            className="bg-blue-600"
-                        >
-                            {processing ? (
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                                <Plus className="w-4 h-4 mr-2" />
-                            )}
-                            Generate Nota
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {/* Note: Generate Nota Dialog removed - notas are now auto-created per batch */}
 
             {/* Record Payment Dialog */}
             <Dialog
@@ -2763,7 +2523,7 @@ export default function NotaManagement() {
                         </DialogDescription>
                     </DialogHeader>
                     <div className="py-4 space-y-4">
-                        {getNextStatus(selectedNota?.status) === "Issued" && (
+                        {getNextStatus(selectedNota?.status) === "Final" && (
                             <Alert variant="destructive">
                                 <Lock className="h-4 w-4" />
                                 <AlertDescription>
@@ -2869,10 +2629,9 @@ export default function NotaManagement() {
                                             Amount:
                                         </span>
                                         <span className="ml-2 font-medium">
-                                            Rp{" "}
-                                            {(
-                                                selectedNota.amount || 0
-                                            ).toLocaleString("id-ID")}
+                                            {formatRupiahAdaptive(
+                                                selectedNota.amount,
+                                            )}
                                         </span>
                                     </div>
                                     <div>

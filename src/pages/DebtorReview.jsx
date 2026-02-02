@@ -64,14 +64,14 @@ const hasReviewRemark = (debtor) =>
 const isDebtorReviewed = (debtor) => {
     const status = (debtor?.status || "").toUpperCase();
     return (
-        status === "APPROVED" || status === "REJECTED" || hasReviewRemark(debtor)
+        status === "APPROVED" || status === "REVISION" || hasReviewRemark(debtor)
     );
 };
 
 const isDebtorApproved = (debtor) => {
     const status = (debtor?.status || "").toUpperCase();
     if (status === "APPROVED") return true;
-    if (status === "REJECTED") return false;
+    if (status === "REVISION") return false;
     return hasReviewRemark(debtor);
 };
 
@@ -161,7 +161,8 @@ export default function DebtorReview() {
             const action = isBulk
                 ? approvalAction.replace("bulk_", "")
                 : approvalAction;
-            const newStatus = action === "approve" ? "APPROVED" : "REJECTED";
+            // No more REJECTED - map non-approve actions to REVISION
+            const newStatus = action === "approve" ? "APPROVED" : "REVISION";
 
             // Get debtors to process
             const debtorsToProcess = isBulk
@@ -372,9 +373,9 @@ export default function DebtorReview() {
                                 "Batch",
                                 batchRecord.batch_id,
                                 {
-                                    status: "Rejected",
+                                    status: "Revision",
                                     rejection_reason:
-                                        "All debtors rejected in review",
+                                        "All debtors marked for revision in review",
                                     debtor_review_completed: true,
                                     batch_ready_for_nota: false,
                                 },
@@ -383,8 +384,8 @@ export default function DebtorReview() {
                             // Create notification
                             try {
                                 await backend.create("Notification", {
-                                    title: "Batch Rejected - All Debtors Rejected",
-                                    message: `Batch ${batchId}: All debtors rejected. Batch blocked. BRINS must revise and resubmit.`,
+                                    title: "Batch Requires Revision - All Debtors Marked",
+                                    message: `Batch ${batchId}: All debtors marked for revision. BRINS must revise and resubmit.`,
                                     type: "WARNING",
                                     module: "DEBTOR",
                                     reference_id: batchRecord.batch_id,
@@ -424,10 +425,11 @@ export default function DebtorReview() {
                 console.warn("Failed to create notification:", notifError);
             }
 
+            const actionDisplay = action === "approve" ? (isBulk ? `${debtorsToProcess.length} approved` : "approved") : (isBulk ? `${debtorsToProcess.length} marked for revision` : "marked for revision");
             setSuccessMessage(
                 isBulk
-                    ? `${debtorsToProcess.length} debtors ${action}d successfully. Batch final amounts updated.`
-                    : `Debtor ${action}d successfully. Batch final amounts updated.`,
+                    ? `${actionDisplay}. Batch final amounts updated.`
+                    : `Debtor ${actionDisplay}. Batch final amounts updated.`,
             );
             setShowApprovalDialog(false);
             setSelectedDebtor(null);
@@ -495,7 +497,7 @@ export default function DebtorReview() {
 
     const pendingCount = debtors.filter((d) => d.status === "SUBMITTED").length;
     const approvedCount = debtors.filter((d) => d.status === "APPROVED").length;
-    const rejectedCount = debtors.filter((d) => d.status === "REJECTED").length;
+    const rejectedCount = debtors.filter((d) => d.status === "REVISION").length;
     const conditionalCount = debtors.filter(
         (d) => d.status === "CONDITIONAL",
     ).length;
@@ -587,7 +589,7 @@ export default function DebtorReview() {
                         <>
                             <Button
                                 size="sm"
-                                className="bg-green-600"
+                                className="bg-green-600 hover:bg-green-600"
                                 onClick={() => {
                                     setSelectedDebtor(row);
                                     setApprovalAction("approve");
@@ -598,7 +600,7 @@ export default function DebtorReview() {
                             </Button>
                             <Button
                                 size="sm"
-                                variant="destructive"
+                                className="bg-orange-600 hover:bg-orange-600"
                                 onClick={() => {
                                     setSelectedDebtor(row);
                                     setApprovalAction("reject");
@@ -628,7 +630,7 @@ export default function DebtorReview() {
                         {selectedDebtors.length > 0 && (
                             <>
                                 <Button
-                                    className="bg-green-600"
+                                    className="bg-green-600 hover:bg-green-600"
                                     onClick={() => {
                                         setApprovalAction("bulk_approve");
                                         setShowApprovalDialog(true);
@@ -638,14 +640,14 @@ export default function DebtorReview() {
                                     Approve ({selectedDebtors.length})
                                 </Button>
                                 <Button
-                                    variant="destructive"
+                                    className="bg-orange-600 hover:bg-orange-600"
                                     onClick={() => {
                                         setApprovalAction("bulk_reject");
                                         setShowApprovalDialog(true);
                                     }}
                                 >
                                     <X className="w-4 h-4 mr-2" />
-                                    Reject ({selectedDebtors.length})
+                                    Revision ({selectedDebtors.length})
                                 </Button>
                             </>
                         )}
@@ -689,11 +691,11 @@ export default function DebtorReview() {
                     color="green"
                 />
                 <ModernKPI
-                    title="Rejected"
+                    title="Revision"
                     value={rejectedCount}
                     subtitle="Requires revision"
                     icon={AlertCircle}
-                    color="red"
+                    color="orange"
                 />
                 <ModernKPI
                     title="Conditional"
@@ -827,8 +829,8 @@ export default function DebtorReview() {
                                     <SelectItem value="APPROVED">
                                         Approved
                                     </SelectItem>
-                                    <SelectItem value="REJECTED">
-                                        Rejected
+                                    <SelectItem value="REVISION">
+                                        Revision
                                     </SelectItem>
                                 </SelectContent>
                             </Select>
@@ -905,10 +907,9 @@ export default function DebtorReview() {
                             <div>
                                 <span className="text-gray-500">Plafon:</span>
                                 <p className="font-medium">
-                                    Rp{" "}
-                                    {(
-                                        selectedDebtor?.plafon || 0
-                                    ).toLocaleString("id-ID")}
+                                    {formatRupiahAdaptive(
+                                        selectedDebtor?.plafon,
+                                    )}
                                 </p>
                             </div>
                             <div>
@@ -916,10 +917,9 @@ export default function DebtorReview() {
                                     Net Premi:
                                 </span>
                                 <p className="font-medium">
-                                    Rp{" "}
-                                    {(
-                                        selectedDebtor?.net_premi || 0
-                                    ).toLocaleString("id-ID")}
+                                    {formatRupiahAdaptive(
+                                        selectedDebtor?.net_premi,
+                                    )}
                                 </p>
                             </div>
                             <div>
@@ -952,13 +952,13 @@ export default function DebtorReview() {
                 onOpenChange={setShowApprovalDialog}
             >
                 <DialogContent>
-                    <DialogHeader>
+                        <DialogHeader>
                         <DialogTitle>
                             {approvalAction?.includes("bulk")
-                                ? `Bulk ${approvalAction.includes("approve") ? "Approve" : "Reject"} (${selectedDebtors.length} debtors)`
+                                ? `Bulk ${approvalAction.includes("approve") ? "Approve" : "Revision"} (${selectedDebtors.length} debtors)`
                                 : approvalAction === "approve"
                                   ? "Approve Debtor"
-                                  : "Reject Debtor"}
+                                  : "Request Revision"}
                         </DialogTitle>
                         <DialogDescription>
                             {approvalAction?.includes("bulk")
@@ -1000,12 +1000,12 @@ export default function DebtorReview() {
 
                         {(approvalAction === "reject" ||
                             approvalAction === "bulk_reject") && (
-                            <Alert variant="destructive">
-                                <AlertCircle className="h-4 w-4" />
+                            <Alert>
+                                <AlertCircle className="h-4 w-4 text-orange-600" />
                                 <AlertDescription>
                                     {approvalAction === "bulk_reject"
-                                        ? `Rejecting ${selectedDebtors.length} debtors will allow them to be revised and resubmitted.`
-                                        : "Rejecting will allow revision and resubmission."}
+                                        ? `Marking ${selectedDebtors.length} debtors for revision will allow them to be revised and resubmitted.`
+                                        : "Marking debtor for revision will allow revision and resubmission."}
                                 </AlertDescription>
                             </Alert>
                         )}
@@ -1023,7 +1023,7 @@ export default function DebtorReview() {
                                     approvalAction === "approve" ||
                                     approvalAction === "bulk_approve"
                                         ? "Enter approval notes..."
-                                        : "Enter rejection reason (for revision)..."
+                                            : "Enter revision reason..."
                                 }
                                 rows={4}
                             />
@@ -1042,8 +1042,8 @@ export default function DebtorReview() {
                             className={
                                 approvalAction === "approve" ||
                                 approvalAction === "bulk_approve"
-                                    ? "bg-green-600"
-                                    : "bg-red-600"
+                                    ? "bg-green-600 hover:bg-green-600"
+                                    : "bg-orange-600 hover:bg-orange-600"
                             }
                         >
                             {processing ? (
@@ -1062,7 +1062,7 @@ export default function DebtorReview() {
                                     {approvalAction === "approve" ||
                                     approvalAction === "bulk_approve"
                                         ? "Approve"
-                                        : "Reject"}
+                                        : "Revision"}
                                 </>
                             )}
                         </Button>

@@ -46,7 +46,7 @@ export default function MasterContractManagement() {
   const [uploadFile, setUploadFile] = useState(null);
 
   const isTugure = user?.role === 'TUGURE' || user?.role === 'admin';
-  const isAdmin = user?.role === 'admin';
+  // Single-approval workflow: approvals happen only from Tugure side
 
   useEffect(() => {
     loadUser();
@@ -224,18 +224,17 @@ export default function MasterContractManagement() {
 
     setProcessing(true);
     try {
-      const updates = { rejection_reason: approvalRemarks };
+      const updates = {};
 
-      if (approvalAction === 'FIRST_APPROVE') {
-        updates.effective_status = 'Pending Second Approval';
+      if (approvalAction === 'APPROVE') {
+        updates.effective_status = 'Active';
+        // Keep existing fields for backward compatibility with stored schema
         updates.first_approved_by = user?.email;
         updates.first_approved_date = new Date().toISOString();
-      } else if (approvalAction === 'SECOND_APPROVE') {
-        updates.effective_status = 'Active';
-        updates.second_approved_by = user?.email;
-        updates.second_approved_date = new Date().toISOString();
+        if (approvalRemarks) updates.remark = approvalRemarks;
       } else if (approvalAction === 'REJECT') {
-        updates.effective_status = 'Inactive';
+        // Rejection should send back for revision (not inactivate)
+        updates.effective_status = 'Revision';
         updates.rejection_reason = approvalRemarks;
       }
 
@@ -263,18 +262,22 @@ export default function MasterContractManagement() {
       // Create notification if Notification entity exists
       try {
         await backend.create('Notification', {
-          title: `Contract ${approvalAction === 'REJECT' ? 'Rejected' : 'Approved'}`,
-          message: `Master Contract ${selectedContract.contract_id} - ${approvalAction === 'FIRST_APPROVE' ? 'First approval completed, awaiting admin approval' : approvalAction === 'SECOND_APPROVE' ? 'Activated and ready for use' : 'Rejected: ' + approvalRemarks}`,
+          title: `Contract ${approvalAction === 'REJECT' ? 'Needs Revision' : 'Approved'}`,
+          message: `Master Contract ${selectedContract.contract_id} - ${approvalAction === 'APPROVE' ? 'Activated and ready for use' : 'Sent for revision: ' + approvalRemarks}`,
           type: approvalAction === 'REJECT' ? 'WARNING' : 'INFO',
           module: 'CONFIG',
           reference_id: contractId,
-          target_role: approvalAction === 'FIRST_APPROVE' ? 'ADMIN' : 'ALL'
+          target_role: 'ALL'
         });
       } catch (notifError) {
         console.warn('Failed to create notification:', notifError);
       }
 
-      setSuccessMessage(`Contract ${approvalAction.toLowerCase().replace('_', ' ')} successfully`);
+      if (approvalAction === 'REJECT') {
+        setSuccessMessage('Contract sent for revision successfully');
+      } else {
+        setSuccessMessage('Contract approved successfully');
+      }
       setShowApprovalDialog(false);
       setSelectedContract(null);
       setApprovalAction('');
@@ -299,7 +302,8 @@ export default function MasterContractManagement() {
   const stats = {
     total: contracts.length,
     active: activeContracts.length,
-    pending: contracts.filter(c => c.effective_status?.includes('Pending')).length,
+    // Single-approval workflow: contracts needing action are Draft/Revision
+    pending: contracts.filter(c => ['Draft', 'Revision'].includes(c.effective_status)).length,
     draft: contracts.filter(c => c.effective_status === 'Draft').length
   };
 
@@ -369,15 +373,16 @@ export default function MasterContractManagement() {
                 className="bg-blue-600"
                 onClick={() => {
                   setSelectedContract(row);
-                  setApprovalAction('FIRST_APPROVE');
+                  setApprovalAction('APPROVE');
                   setShowApprovalDialog(true);
                 }}
               >
-                1st Approve
+                Approve
               </Button>
               <Button
                 size="sm"
                 variant="destructive"
+                className="bg-orange-500 hover:bg-orange-600"
                 onClick={() => {
                   setSelectedContract(row);
                   setApprovalAction('REJECT');
@@ -385,35 +390,7 @@ export default function MasterContractManagement() {
                 }}
               >
                 <XCircle className="w-4 h-4 mr-1" />
-                Reject
-              </Button>
-            </>
-          )}
-          
-          {isAdmin && row.effective_status === 'Pending Second Approval' && (
-            <>
-              <Button
-                size="sm"
-                className="bg-green-600"
-                onClick={() => {
-                  setSelectedContract(row);
-                  setApprovalAction('SECOND_APPROVE');
-                  setShowApprovalDialog(true);
-                }}
-              >
-                2nd Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => {
-                  setSelectedContract(row);
-                  setApprovalAction('REJECT');
-                  setShowApprovalDialog(true);
-                }}
-              >
-                <XCircle className="w-4 h-4 mr-1" />
-                Reject
+                Revision
               </Button>
             </>
           )}
@@ -541,7 +518,7 @@ export default function MasterContractManagement() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-orange-100 text-sm font-medium mb-1">Pending Approval</p>
+                <p className="text-orange-100 text-sm font-medium mb-1">Needs Action</p>
                 <h3 className="text-3xl font-bold">{stats.pending}</h3>
                 <p className="text-orange-100 text-xs mt-2">Requires action</p>
               </div>
@@ -607,8 +584,7 @@ export default function MasterContractManagement() {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="Draft">Draft</SelectItem>
-                <SelectItem value="Pending First Approval">Pending First Approval</SelectItem>
-                <SelectItem value="Pending Second Approval">Pending Second Approval</SelectItem>
+                <SelectItem value="Revision">Revision</SelectItem>
                 <SelectItem value="Active">Active</SelectItem>
                 <SelectItem value="Inactive">Inactive</SelectItem>
                 <SelectItem value="Archived">Archived</SelectItem>
@@ -819,7 +795,7 @@ export default function MasterContractManagement() {
       <Dialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{approvalAction === 'REJECT' ? 'Reject' : 'Approve'} Contract</DialogTitle>
+            <DialogTitle>{approvalAction === 'REJECT' ? 'Send for Revision' : 'Approve'} Contract</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <label className="text-sm font-medium">Remarks</label>

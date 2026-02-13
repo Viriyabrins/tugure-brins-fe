@@ -45,6 +45,8 @@ import {
     createNotification,
     createAuditLog,
 } from "@/components/utils/emailTemplateHelper";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
+import FilterTab from "@/components/common/FilterTab";
 
 export default function ClaimReview() {
     const [user, setUser] = useState(null);
@@ -544,14 +546,15 @@ export default function ClaimReview() {
                 </Alert>
             )}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <ModernKPI
+
+                <GradientStatCard
                     title="Pending Review"
                     value={pendingClaims.length}
                     subtitle="Awaiting action"
                     icon={FileText}
-                    color="orange"
+                    gradient="from-orange-500 to-orange-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Total Claims"
                     value={claims.length}
                     subtitle={formatRupiahAdaptive(
@@ -561,9 +564,9 @@ export default function ClaimReview() {
                         ),
                     )}
                     icon={DollarSign}
-                    color="blue"
+                    gradient="from-blue-500 to-blue-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Invoiced"
                     value={
                         claims.filter((c) => c.claim_status === "Invoiced")
@@ -571,20 +574,76 @@ export default function ClaimReview() {
                     }
                     subtitle="Nota created"
                     icon={CheckCircle2}
-                    color="purple"
+                    gradient="from-purple-500 to-purple-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Paid"
                     value={
                         claims.filter((c) => c.claim_status === "Paid").length
                     }
                     subtitle="Completed"
                     icon={CheckCircle2}
-                    color="green"
+                    gradient="from-green-500 to-green-600"
                 />
             </div>
-
-            <Card>
+            
+            {/* Filters */}
+            <FilterTab
+                filters={filters}
+                onFilterChange={setFilters}
+                defaultFilters={{ 
+                    contract: "all", 
+                    batch: "all", 
+                    claimStatus: "all", 
+                    subrogationStatus: "all" }}
+                filterConfig={[
+                    {
+                        key: "contract",
+                        placeholder: "Contract",
+                        options: [
+                            { value: "all", label: "All Contracts"},
+                            ...contracts.map((c) => ({ 
+                                value:c.id, 
+                                label: c.contract_number
+                            })),
+                        ],
+                    },
+                    {
+                        key: "batch",
+                        placeholder: "Batch ID",
+                        options: [
+                            { value: "all", label: "All Batches"},
+                            ...batches.map((b) => ({ 
+                                value:b.batch_id, 
+                                label: b.batch_id
+                            })),
+                        ],
+                    },
+                    {
+                        key: "claimStatus",
+                        placeholder: "Claim Status",
+                        options: [
+                            { value: "all", label: "All Status"},
+                            { value: "Draft", label: "Draft"},
+                            { value: "Checked", label: "Checked"},
+                            { value: "Doc Verified", label: "Doc Verified"},
+                            { value: "Invoiced", label: "Invoiced"},
+                            { value: "Paid", label: "Paid"},
+                        ],
+                    },
+                    {
+                        key: "subrogationStatus",
+                        placeholder: "Subrogation Status",
+                        options: [
+                            { value: "all", label: "All Status"},
+                            { value: "Draft", label: "Draft"},
+                            { value: "Invoiced", label: "Invoiced"},
+                            { value: "Paid / Closed", label: "Paid / Closed"},
+                        ],
+                    }
+                ]}
+            /> 
+            {/* <Card>
                 <CardContent className="p-4">
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                         <Select
@@ -677,14 +736,17 @@ export default function ClaimReview() {
                         </Button>
                     </div>
                 </CardContent>
-            </Card>
+            </Card> */}
 
+            {/* Table */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList>
                     <TabsTrigger value="review">
                         Pending ({pendingClaims.length})
                     </TabsTrigger>
-                    <TabsTrigger value="all">All ({claims.length})</TabsTrigger>
+                    <TabsTrigger value="all">
+                        All ({claims.length})
+                        </TabsTrigger>
                     <TabsTrigger value="subrogation">
                         Subrogation ({subrogations.length})
                     </TabsTrigger>

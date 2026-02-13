@@ -92,7 +92,7 @@ export default function Layout({ children, currentPageName }) {
       { name: 'Dashboard Analytics', icon: LayoutDashboard, path: 'Dashboard', roles: [] } // all users
     ],
     operations: [
-      { name: 'Submit Debtor', icon: Upload, path: 'SubmitDebtor', roles: ['BRINS'] },
+      { name: 'Debtor Submit', icon: Upload, path: 'SubmitDebtor', roles: ['BRINS'] },
       // { name: 'Batch Processing', icon: FileText, path: 'BatchProcessing', roles: ['TUGURE'] },
       // { name: 'Document Eligibility', icon: FileCheck, path: 'DocumentEligibilityBatch', roles: ['BRINS'] },
       { name: 'Debtor Review', icon: FileCheck, path: 'DebtorReview', roles: ['TUGURE'] },
@@ -136,7 +136,7 @@ export default function Layout({ children, currentPageName }) {
         to={createPageUrl(item.path)}
         className={`flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
           isActive 
-            ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md' 
+            ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md' 
             : 'text-gray-700 hover:bg-gray-100'
         }`}
       >

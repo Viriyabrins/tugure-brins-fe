@@ -37,6 +37,7 @@ import {
     RefreshCw,
     FileText,
     Users,
+    Pen,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -44,6 +45,9 @@ import {
     sendTemplatedEmail,
 } from "@/components/utils/emailTemplateHelper";
 import { formatRupiahAdaptive } from "@/utils/currency";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
+import FilterTab from "@/components/common/FilterTab";
+import { filter } from "lodash";
 
 export default function SubmitDebtor() {
     const [user, setUser] = useState(null);
@@ -59,12 +63,6 @@ export default function SubmitDebtor() {
     const [uploadFile, setUploadFile] = useState(null);
     const [uploading, setUploading] = useState(false);
 
-    // Filter state
-    const [filterContract, setFilterContract] = useState("all");
-    const [filterBatch, setFilterBatch] = useState("all");
-    const [filterStatus, setFilterStatus] = useState("all");
-    const [searchTerm, setSearchTerm] = useState("");
-
     // Dialog state
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
@@ -76,6 +74,13 @@ export default function SubmitDebtor() {
     // Message state
     const [successMessage, setSuccessMessage] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
+
+    const [filters, setFilters] = useState({
+        contract: "all",
+        batch: "",
+        status: "all",
+        name: "",
+    });
 
     useEffect(() => {
         loadUser();
@@ -494,20 +499,20 @@ export default function SubmitDebtor() {
     // Filter debtors
     const filteredDebtors = debtors.filter((debtor) => {
         const contractMatch =
-            filterContract === "all" || debtor.contract_id === filterContract;
+            filters.contract === "all" || debtor.contract_id === filters.contract;
         const batchMatch =
-            filterBatch === "all" || debtor.batch_id === filterBatch;
+            filters.batch === "all" || !filters.batch || debtor.batch_id === filters.batch;
         const statusMatch =
-            filterStatus === "all" || debtor.status === filterStatus;
+            filters.status === "all" || debtor.status === filters.status;
         const searchMatch =
-            !searchTerm ||
+            !filters.name ||
             debtor.nama_peserta
                 ?.toLowerCase()
-                .includes(searchTerm.toLowerCase()) ||
+                .includes(filters.name.toLowerCase()) ||
             debtor.nomor_peserta
                 ?.toLowerCase()
-                .includes(searchTerm.toLowerCase()) ||
-            debtor.batch_id?.toLowerCase().includes(searchTerm.toLowerCase());
+                .includes(filters.name.toLowerCase()) ||
+            debtor.batch_id?.toLowerCase().includes(filters.name.toLowerCase());
 
         return contractMatch && batchMatch && statusMatch && searchMatch;
     });
@@ -515,7 +520,23 @@ export default function SubmitDebtor() {
     // Table columns
     const columns = [
         {
-            header: "Select",
+            header: (
+                <Checkbox
+                    checked={
+                        selectedDebtors.length === filteredDebtors.length &&
+                        filteredDebtors.length > 0
+                    }
+                    onCheckedChange={(checked) => {
+                        if (checked) {
+                            setSelectedDebtors(
+                                filteredDebtors.map((d) => d.id),
+                            );
+                        } else {
+                            setSelectedDebtors([]);
+                        }
+                    }}
+                />
+            ),
             cell: (row) => (
                 <Checkbox
                     checked={selectedDebtors.includes(row.id)}
@@ -619,8 +640,9 @@ export default function SubmitDebtor() {
         (c) => c.effective_status === "Active",
     );
 
+    // Update userBatches to depend on filters.contract
     const userBatches = batches.filter(
-        (b) => filterContract === "all" || b.contract_id === filterContract,
+        (b) => filters.contract === "all" || b.contract_id === filters.contract,
     );
 
     if (loading) {
@@ -632,6 +654,7 @@ export default function SubmitDebtor() {
     }
 
     return (
+        // Header and Actions
         <div className="space-y-6">
             <PageHeader
                 title="Submit Debtor"
@@ -642,11 +665,24 @@ export default function SubmitDebtor() {
                 ]}
                 actions={
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleRefresh}>
+                        <Button 
+                            variant="outline" 
+                            onClick={handleRefresh}
+                        >
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Refresh
                         </Button>
-                        <Button onClick={() => setUploadDialogOpen(true)}>
+                        <Button
+                            variant="outline"
+                            onClick={handleDownloadTemplate}
+                        >
+                            <Download className="w-4 h-4 mr-2" />
+                            Download Template
+                        </Button>
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setUploadDialogOpen(true)}
+                        >
                             <Upload className="w-4 h-4 mr-2" />
                             Upload Debtors
                         </Button>
@@ -673,214 +709,135 @@ export default function SubmitDebtor() {
                 </Alert>
             )}
 
-            {/* KPIs */}
+            {/* Gradient Card */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-600">
-                            Total Debtors
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-blue-600">
-                            {kpis.total}
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-600">
-                            Submitted
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-yellow-600">
-                            {kpis.submitted}
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-600">
-                            Approved
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-green-600">
-                            {kpis.approved}
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-600">
-                            Rejected
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-red-600">
-                            {kpis.rejected}
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-600">
-                            Conditional
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-orange-600">
-                            {kpis.conditional}
-                        </div>
-                    </CardContent>
-                </Card>
+                <GradientStatCard
+                    title="Debtors"
+                    value={kpis.total}
+                    // subtitle="Total Debtors"
+                    // icon={Users}
+                    gradient="from-blue-500 to-blue-600"
+                />
+                <GradientStatCard
+                    title="Submitted Debtors"
+                    value={kpis.submitted}
+                    // subtitle="Total Debtors"
+                    // icon={Users}
+                    gradient="from-yellow-500 to-yellow-600"
+                />
+                <GradientStatCard
+                    title="Approved Debtors"
+                    value={kpis.approved}
+                    // subtitle="Total Debtors"
+                    // icon={Users}
+                    gradient="from-green-500 to-green-600"
+                />
+                <GradientStatCard
+                    title="Rejected Debtors"
+                    value={kpis.rejected}
+                    // subtitle="Total Debtors"
+                    // icon={Users}
+                    gradient="from-red-500 to-red-600"
+                />
+                <GradientStatCard
+                    title="Conditional Debtors"
+                    value={kpis.conditional}
+                    // subtitle="Total Debtors"
+                    // icon={Users}
+                    gradient="from-orange-500 to-orange-600"
+                />
             </div>
 
-            {/* Filters & Actions */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Filter & Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div>
-                            <Label>Contract</Label>
-                            <Select
-                                value={filterContract}
-                                onValueChange={setFilterContract}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="All Contracts" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">
-                                        All Contracts
-                                    </SelectItem>
-                                    {contracts.map((c) => (
-                                        <SelectItem
-                                            key={c.id}
-                                            value={c.contract_id}
-                                        >
-                                            {c.contract_id}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+            {/* Filters */}
+            <FilterTab
+                filters={filters}
+                onFilterChange={setFilters}
+                defaultFilters={{
+                    contract: "all",
+                    batch: "",
+                    status: "all",
+                    name: "",
+                }}
+                filterConfig={[
+                    {
+                        key: "contract",
+                        placeholder: "Contract",
+                        options: [
+                            { value: "all", label: "All Contracts"},
+                            ...contracts.map((c) => ({
+                                value: c.contract_id,
+                                label: c.contract_id
+                            })),
+                        ],
+                    },
+                    {
+                        key: "batch",
+                        placeholder: "Batch",
+                        options: [
+                            { value: "all", label: "All Batches"},
+                            ...userBatches.map((b) => ({
+                                value: b.batch_id,
+                                label: `${b.batch_id} - ${b.status}`
+                            })),
+                        ],
+                    },
+                    {
+                        key: "status",
+                        placeholder: "Status",
+                        options: [
+                            { value: "all", label: "All Status"},
+                            { value: "SUBMITTED", label: "Submitted"},
+                            { value: "APPROVED", label: "Approved"},
+                            { value: "REJECTED", label: "Rejected"},
+                            { value: "CONDITIONAL", label: "Conditional"},
+                        ]
+                    },
+                    {
+                        key: "name",
+                        placeholder: "Search",
+                        type: "input",
+                        // inputType: 
+                    }
+                ]}
 
-                        <div>
-                            <Label>Batch</Label>
-                            <Select
-                                value={filterBatch}
-                                onValueChange={setFilterBatch}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="All Batches" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">
-                                        All Batches
-                                    </SelectItem>
-                                    {Array.isArray(userBatches) &&
-                                        userBatches.map((b) => (
-                                            <SelectItem
-                                                key={b.id}
-                                                value={b.batch_id}
-                                            >
-                                                {b.batch_id} - {b.status}
-                                            </SelectItem>
-                                        ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+            />
 
-                        <div>
-                            <Label>Status</Label>
-                            <Select
-                                value={filterStatus}
-                                onValueChange={setFilterStatus}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="All Status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">
-                                        All Status
-                                    </SelectItem>
-                                    <SelectItem value="SUBMITTED">
-                                        Submitted
-                                    </SelectItem>
-                                    <SelectItem value="APPROVED">
-                                        Approved
-                                    </SelectItem>
-                                    <SelectItem value="REJECTED">
-                                        Rejected
-                                    </SelectItem>
-                                    <SelectItem value="CONDITIONAL">
-                                        Conditional
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div>
-                            <Label>Search</Label>
-                            <Input
-                                placeholder="Search by name, participant no..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
+            {/* Actions */}
+            <div className="flex flex-wrap gap-2">
+                {selectedDebtors.length >= 0 && (
+                    <>
                         <Button
                             variant="outline"
-                            onClick={handleDownloadTemplate}
+                            onClick={() => 
+                                setRevisionDialogOpen(true)}
                         >
-                            <Download className="w-4 h-4 mr-2" />
-                            Download Template
+                        <Pen className="w-4 h-4 mr-2" />
+                            Revision {selectedDebtors.length > 0 ? `(${selectedDebtors.length})` : ""}
                         </Button>
-
-                        {selectedDebtors.length > 0 && (
-                            <>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setRevisionDialogOpen(true)}
-                                >
-                                    <RefreshCw className="w-4 h-4 mr-2" />
-                                    Request Revision ({selectedDebtors.length})
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setSelectedDebtors([])}
-                                >
-                                    Clear Selection
-                                </Button>
-                            </>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
+                        {/* <Button>
+                            variant="outline"
+                            onClick={}
+                        </Button> */}
+                        
+                        {/* <Button
+                            variant="outline"
+                            onClick={() => setSelectedDebtors([])}
+                        >
+                            Clear Selection
+                        </Button> */}
+                    </>
+                )}
+            </div>
 
             {/* Data Table */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Debtor Submissions</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <DataTable
-                        columns={columns}
-                        data={filteredDebtors}
-                        emptyMessage="No debtors found. Upload your first batch to get started."
-                    />
-                </CardContent>
-            </Card>
+            <div>
+                <DataTable
+                    columns={columns}
+                    data={filteredDebtors}
+                    isLoading={loading}
+                    emptyMessage="No debtors found. Upload your first batch to get started."
+                />
+            </div>
 
             {/* Upload Dialog */}
             <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>

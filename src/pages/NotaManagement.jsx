@@ -43,12 +43,14 @@ import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import ModernKPI from "@/components/dashboard/ModernKPI";
+import FilterTab from "@/components/common/FilterTab";
 import {
     sendTemplatedEmail,
     createNotification,
     createAuditLog,
 } from "@/components/utils/emailTemplateHelper";
 import { formatRupiahAdaptive } from "@/utils/currency";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
 
 const normalizeRemark = (value) =>
     typeof value === "string" ? value.trim() : "";
@@ -405,7 +407,7 @@ export default function NotaManagement() {
     const getActionLabel = (status) => {
         const labels = {
             Draft: "Process",
-            Final: "Confirm Receipt",
+            Final: "Paid",
             Confirmed: "Mark Paid",
         };
         return labels[status] || "Process";
@@ -1139,20 +1141,20 @@ export default function NotaManagement() {
                     <TabsTrigger value="reconciliation">
                         Reconciliation
                     </TabsTrigger>
-                    <TabsTrigger value="dncn">DN / CN</TabsTrigger>
+                    <TabsTrigger value="dncn">Exception</TabsTrigger>
                 </TabsList>
 
                 {/* NOTAS TAB */}
                 <TabsContent value="notas" className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <ModernKPI
+                        <GradientStatCard
                             title="Total Notas"
                             value={notas.length}
                             subtitle={`${notas.filter((n) => n.nota_type === "Batch").length} batch / ${notas.filter((n) => n.nota_type === "Claim").length} claim`}
                             icon={FileText}
-                            color="blue"
+                            gradient="from-blue-500 to-blue-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Pending Confirmation"
                             value={
                                 notas.filter((n) => n.status === "Final")
@@ -1160,9 +1162,9 @@ export default function NotaManagement() {
                             }
                             subtitle="Awaiting branch"
                             icon={Clock}
-                            color="orange"
+                            gradient="from-orange-500 to-orange-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Total Amount"
                             value={
                                 formatRupiahAdaptive(
@@ -1171,9 +1173,9 @@ export default function NotaManagement() {
                             }
                             subtitle="All notas"
                             icon={DollarSign}
-                            color="green"
+                            gradient="from-green-500 to-green-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Paid Notas"
                             value={notas.filter((n) => n.status === "Paid").length}
                             subtitle={
@@ -1184,105 +1186,46 @@ export default function NotaManagement() {
                                 )
                             }
                             icon={CheckCircle2}
-                            color="purple"
+                            gradient="from-purple-500 to-purple-600"
                         />
                     </div>
 
-                    <Card>
-                        <CardContent className="p-4">
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <Select
-                                    value={filters.contract}
-                                    onValueChange={(val) =>
-                                        setFilters({
-                                            ...filters,
-                                            contract: val,
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Contract" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">
-                                            All Contracts
-                                        </SelectItem>
-                                        {contracts.map((c) => (
-                                            <SelectItem key={c.id} value={c.id}>
-                                                {c.contract_number}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <Select
-                                    value={filters.notaType}
-                                    onValueChange={(val) =>
-                                        setFilters({
-                                            ...filters,
-                                            notaType: val,
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Nota Type" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">
-                                            All Types
-                                        </SelectItem>
-                                        <SelectItem value="Batch">
-                                            Batch
-                                        </SelectItem>
-                                        <SelectItem value="Claim">
-                                            Claim
-                                        </SelectItem>
-                                        <SelectItem value="Subrogation">
-                                            Subrogation
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Select
-                                    value={filters.status}
-                                    onValueChange={(val) =>
-                                        setFilters({ ...filters, status: val })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">
-                                            All Status
-                                        </SelectItem>
-                                        <SelectItem value="Draft">
-                                            Draft
-                                        </SelectItem>
-                                        <SelectItem value="Final">
-                                            Final
-                                        </SelectItem>
-                                        <SelectItem value="Confirmed">
-                                            Confirmed
-                                        </SelectItem>
-                                        <SelectItem value="Paid">
-                                            Paid
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Button
-                                    variant="outline"
-                                    onClick={() =>
-                                        setFilters({
-                                            contract: "all",
-                                            notaType: "all",
-                                            status: "all",
-                                        })
-                                    }
-                                >
-                                    Clear Filters
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
+                    <FilterTab
+                        filters={filters}
+                        onFilterChange={setFilters}
+                        defaultFilters={{ contract: "all", notaType: "all", status: "all" }}
+                        filterConfig={[
+                            {
+                                key: "contract",
+                                placeholder: "Contract",
+                                options: [
+                                    { value: "all", label: "All Contracts" },
+                                    ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
+                                ],
+                            },
+                            {
+                                key: "notaType",
+                                placeholder: "Nota Type",
+                                options: [
+                                    { value: "all", label: "All Types" },
+                                    { value: "Batch", label: "Batch" },
+                                    { value: "Claim", label: "Claim" },
+                                    { value: "Subrogation", label: "Subrogation" },
+                                ],
+                            },
+                            {
+                                key: "status",
+                                placeholder: "Status",
+                                options: [
+                                    { value: "all", label: "All Status" },
+                                    { value: "Draft", label: "Draft" },
+                                    { value: "Final", label: "Final" },
+                                    { value: "Confirmed", label: "Confirmed" },
+                                    { value: "Paid", label: "Paid" },
+                                ],
+                            },
+                        ]}
+                    />
 
                     <DataTable
                         columns={[
@@ -1404,35 +1347,35 @@ export default function NotaManagement() {
                 {/* RECONCILIATION TAB */}
                 <TabsContent value="reconciliation" className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                        <ModernKPI
+                        <GradientStatCard
                             title="All Notas"
                             value={reconciliationItems.length}
                             subtitle={`${reconciliationItems.filter((r) => r.nota_type === "Batch").length} batch / ${reconciliationItems.filter((r) => r.nota_type === "Claim").length} claim`}
                             icon={FileText}
-                            color="purple"
+                            gradient="from-purple-500 to-purple-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Total Invoiced"
                             value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + toNumber(r.amount), 0))}
                             subtitle="Nota amounts"
                             icon={FileText}
-                            color="blue"
+                            gradient="from-blue-500 to-blue-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Total Paid"
                             value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + toNumber(r.total_actual_paid), 0))}
                             subtitle="Actual payments"
                             icon={CheckCircle2}
-                            color="green"
+                            gradient="from-green-500 to-green-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Difference"
                             value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + ((toNumber(r.amount) || 0) - (toNumber(r.total_actual_paid) || 0)), 0))}
                             subtitle="To reconcile"
                             icon={AlertTriangle}
-                            color="orange"
+                            gradient="from-orange-500 to-orange-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Exceptions"
                             value={
                                 reconciliationItems.filter(
@@ -1443,103 +1386,45 @@ export default function NotaManagement() {
                             }
                             subtitle="Requires DN/CN"
                             icon={AlertTriangle}
-                            color="red"
+                            gradient="from-red-500 to-red-600"
                         />
                     </div>
 
-                    <Card>
-                        <CardContent className="p-4">
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <Select
-                                    value={reconFilters.contract}
-                                    onValueChange={(val) =>
-                                        setReconFilters({
-                                            ...reconFilters,
-                                            contract: val,
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Contract" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">
-                                            All Contracts
-                                        </SelectItem>
-                                        {contracts.map((c) => (
-                                            <SelectItem key={c.id} value={c.id}>
-                                                {c.contract_number}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <Select
-                                    value={reconFilters.status}
-                                    onValueChange={(val) =>
-                                        setReconFilters({
-                                            ...reconFilters,
-                                            status: val,
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Nota Status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">
-                                            All Status
-                                        </SelectItem>
-                                        <SelectItem value="Draft">
-                                            Draft
-                                        </SelectItem>
-                                        <SelectItem value="Final">
-                                            Final
-                                        </SelectItem>
-                                        <SelectItem value="Confirmed">
-                                            Confirmed
-                                        </SelectItem>
-                                        <SelectItem value="Paid">
-                                            Paid
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Select
-                                    value={reconFilters.hasException}
-                                    onValueChange={(val) =>
-                                        setReconFilters({
-                                            ...reconFilters,
-                                            hasException: val,
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Exception" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All</SelectItem>
-                                        <SelectItem value="yes">
-                                            Has Exception
-                                        </SelectItem>
-                                        <SelectItem value="no">
-                                            No Exception
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Button
-                                    variant="outline"
-                                    onClick={() =>
-                                        setReconFilters({
-                                            contract: "all",
-                                            status: "all",
-                                            hasException: "all",
-                                        })
-                                    }
-                                >
-                                    Clear Filters
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
+                    <FilterTab
+                        filters={reconFilters}
+                        onFilterChange={setReconFilters}
+                        defaultFilters={{ contract: "all", status: "all", hasException: "all" }}
+                        filterConfig={[
+                            {
+                                key: "contract",
+                                placeholder: "Contract",
+                                options: [
+                                    { value: "all", label: "All Contracts" },
+                                    ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
+                                ],
+                            },
+                            {
+                                key: "status",
+                                placeholder: "Status",
+                                options: [
+                                    { value: "all", label: "All Status" },
+                                    { value: "Draft", label: "Draft" },
+                                    { value: "Final", label: "Final" },
+                                    { value: "Confirmed", label: "Confirmed" },
+                                    { value: "Paid", label: "Paid" },
+                                ],
+                            },
+                            {
+                                key: "hasException",
+                                placeholder: "Exception Status",
+                                options: [
+                                    { value: "all", label: "All" },
+                                    { value: "yes", label: "Has Exception" },
+                                    { value: "no", label: "No Exception" },
+                                ],
+                            },
+                        ]}
+                    />
 
                     <DataTable
                         columns={[
@@ -1743,14 +1628,14 @@ export default function NotaManagement() {
                 {/* DN/CN TAB */}
                 <TabsContent value="dncn" className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <ModernKPI
+                        <GradientStatCard
                             title="Total DN/CN"
                             value={dnCnRecords.length}
                             subtitle={`${dnCnRecords.filter((d) => d.note_type === "Debit Note").length} DN / ${dnCnRecords.filter((d) => d.note_type === "Credit Note").length} CN`}
                             icon={FileText}
-                            color="blue"
+                            gradient="from-blue-500 to-blue-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Pending Review"
                             value={
                                 dnCnRecords.filter(
@@ -1761,9 +1646,9 @@ export default function NotaManagement() {
                             }
                             subtitle="Awaiting action"
                             icon={Clock}
-                            color="orange"
+                            gradient="from-orange-500 to-orange-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Approved"
                             value={
                                 dnCnRecords.filter(
@@ -1772,115 +1657,53 @@ export default function NotaManagement() {
                             }
                             subtitle="Ready for acknowledgment"
                             icon={CheckCircle2}
-                            color="green"
+                            gradient="from-green-500 to-green-600"
                         />
-                        <ModernKPI
+                        <GradientStatCard
                             title="Total Adjustment"
                             value={formatRupiahAdaptive(dnCnRecords.reduce((sum, d) => sum + toNumber(d.adjustment_amount), 0))}
+                            subtitle="adjustment"
                             icon={DollarSign}
-                            color="purple"
+                            gradient="from-purple-500 to-purple-600"
                         />
                     </div>
 
-                    <Card>
-                        <CardContent className="p-4">
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                <Select
-                                    value={dnCnFilters.contract}
-                                    onValueChange={(val) =>
-                                        setDnCnFilters({
-                                            ...dnCnFilters,
-                                            contract: val,
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Contract" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">
-                                            All Contracts
-                                        </SelectItem>
-                                        {contracts.map((c) => (
-                                            <SelectItem key={c.id} value={c.id}>
-                                                {c.contract_number}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <Select
-                                    value={dnCnFilters.noteType}
-                                    onValueChange={(val) =>
-                                        setDnCnFilters({
-                                            ...dnCnFilters,
-                                            noteType: val,
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Note Type" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">
-                                            All Types
-                                        </SelectItem>
-                                        <SelectItem value="Debit Note">
-                                            Debit Note
-                                        </SelectItem>
-                                        <SelectItem value="Credit Note">
-                                            Credit Note
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Select
-                                    value={dnCnFilters.status}
-                                    onValueChange={(val) =>
-                                        setDnCnFilters({
-                                            ...dnCnFilters,
-                                            status: val,
-                                        })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">
-                                            All Status
-                                        </SelectItem>
-                                        <SelectItem value="Draft">
-                                            Draft
-                                        </SelectItem>
-                                        <SelectItem value="Under Review">
-                                            Under Review
-                                        </SelectItem>
-                                        <SelectItem value="Approved">
-                                            Approved
-                                        </SelectItem>
-                                        <SelectItem value="Acknowledged">
-                                            Acknowledged
-                                        </SelectItem>
-                                        <SelectItem value="Rejected">
-                                            Rejected
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Button
-                                    variant="outline"
-                                    onClick={() =>
-                                        setDnCnFilters({
-                                            contract: "all",
-                                            noteType: "all",
-                                            status: "all",
-                                        })
-                                    }
-                                >
-                                    Clear Filters
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-
+                    <FilterTab
+                        filters={dnCnFilters}
+                        onFilterChange={setDnCnFilters}
+                        defaultFilters={{ contract: "all", noteType: "all", status: "all" }}
+                        filterConfig={[
+                            {
+                                key: "contract",
+                                placeholder: "Contract",
+                                options: [
+                                    { value: "all", label: "All Contracts" },
+                                    ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
+                                ],
+                            },
+                            {
+                                key: "noteType",
+                                placeholder: "Note Type",
+                                options: [
+                                    { value: "all", label: "All Status" },
+                                    { value: "Debit Note", label: "Debit Note" },
+                                    { value: "Credit Note", label: "Credit Note" },
+                                ],
+                            },
+                            {
+                                key: "status",
+                                placeholder: "Status",
+                                options: [
+                                    { value: "all", label: "All" },
+                                    { value: "Draft", label: "Draft" },
+                                    { value: "Under Review", label: "Under Review" },
+                                    { value: "Approved", label: "Approved" },
+                                    { value: "Acknowledged", label: "Acknowledged" },
+                                    { value: "Rejected", label: "Rejected" },
+                                ],
+                            },
+                        ]}
+                    />
                     <DataTable
                         columns={[
                             {

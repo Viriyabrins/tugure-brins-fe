@@ -41,6 +41,7 @@ import ModernKPI from "@/components/dashboard/ModernKPI";
 import { backend } from "@/api/backendClient";
 import { useAuth } from "@/lib/AuthContext";
 import { formatRupiahAdaptive } from "@/utils/currency";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
 
 const COLORS = [
     "#3B82F6",
@@ -650,62 +651,62 @@ export default function Dashboard() {
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <ModernKPI
+                <GradientStatCard
                     title="Total Exposure"
                     value={formatRupiahAdaptive(stats.totalExposure)}
                     subtitle={`${stats.approvedDebtors} approved debtors`}
                     icon={TrendingUp}
-                    color="blue"
+                    gradient="from-blue-500 to-blue-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Total Premium"
                     value={formatRupiahAdaptive(stats.totalPremium)}
                     subtitle="Net premium collected"
                     icon={DollarSign}
-                    color="green"
+                    gradient="from-green-500 to-green-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Claims Paid"
                     value={formatRupiahAdaptive(stats.claimsPaid)}
                     subtitle={`${claimsArray.filter((c) => c.status === "Paid").length} claims settled`}
                     icon={FileText}
-                    color="orange"
+                    gradient="from-orange-500 to-orange-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Loss Ratio"
                     value={`${stats.lossRatio}%`}
                     subtitle="Claims vs Premium"
                     icon={BarChart3}
-                    color="purple"
+                    gradient="from-purple-500 to-purple-600"
                 />
             </div>
 
             {/* Secondary Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <ModernKPI
+                <GradientStatCard
                     title="Total Debtors"
                     value={stats.totalDebtors}
                     icon={Users}
-                    color="blue"
+                    gradient="from-blue-500 to-blue-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Pending Approval"
                     value={stats.pendingDebtors}
                     subtitle="Awaiting review"
                     icon={Clock}
-                    color="orange"
+                    gradient="from-orange-500 to-orange-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="OS Recovery"
                     value={formatRupiahAdaptive(stats.osRecovery)}
                     icon={AlertTriangle}
-                    color="red"
+                    gradient="from-red-500 to-red-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Total Claims"
                     value={stats.totalClaims}
                     icon={FileText}
-                    color="purple"
+                    gradient="from-purple-500 to-purple-600"
                 />
             </div>
 

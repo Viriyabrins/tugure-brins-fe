@@ -23,6 +23,15 @@ import { formatRupiahAdaptive } from '@/utils/currency';
 import FilterTab from '@/components/common/FilterTab';
 import { Checkbox } from "@/components/ui/checkbox";
 
+const defaultFilter = {
+  status: 'all',
+  contractId: '',
+  productType: 'all',
+  creditType: 'all',
+  startDate: '',
+  endDate: ''
+}
+
 export default function MasterContractManagement() {
   const [user, setUser] = useState(null);
   const [contracts, setContracts] = useState([]);
@@ -35,14 +44,7 @@ export default function MasterContractManagement() {
   const [selectedContractForRevision, setSelectedContractForRevision] = useState('');
   const [actionType, setActionType] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [filters, setFilters] = useState({
-    status: 'all',
-    contractId: '',
-    productType: 'all',
-    creditType: 'all',
-    startDate: '',
-    endDate: ''
-  });
+  const [filters, setFilters] = useState(defaultFilter);
   const [selectedContract, setSelectedContract] = useState(null);
   const [selectedContractIds, setSelectedContractIds] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -565,24 +567,18 @@ export default function MasterContractManagement() {
       <FilterTab
         filters = {filters}
         onFilterChange={setFilters}
-        defaultFilters={{
-          status: 'all',
-          contractId: '',
-          productType: 'all',
-          creditType: 'all',
-          startDate: '',
-          endDate: ''
-        }}
+        defaultFilters={defaultFilter}
         filterConfig={[
           {
             key: "contractId",
-            placeholder: "Contract ID",
+            placeholder: "Search contract...",
+            label: 'Contract ID',
             type: "input",
             inputType: "text"
           },
           {
             key: "productType",
-            placeholder: "Product Type",
+            label: 'Product Type',
             options: [
               { value: "all", label: "All Product Type"},
               { value: "Treaty", label: "Treaty"},
@@ -592,7 +588,7 @@ export default function MasterContractManagement() {
           },
           {
             key: "creditType",
-            placeholder: "Credit Type",
+            label: 'Credit Type',
             options: [
               { value: "all", label: "All Credit Type"},
               { value: "Individual", label: "Individual"},
@@ -601,7 +597,7 @@ export default function MasterContractManagement() {
           },
           {
             key: "status",
-            placeholder: "All Status",
+            label: "All Status",
             options: [
               { value: "all", label: "All Status"},
               { value: "Draft", label: "Draft"},
@@ -614,11 +610,13 @@ export default function MasterContractManagement() {
           {
             key: "startDate",
             placeholder: "Start Date",
+            label: "Start Date",
             type: "date"
           },
           {
             key: "endDate",
             placeholder: "End Date",
+            label: "End Date",
             type: "date"
           }
         ]}

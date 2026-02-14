@@ -49,6 +49,7 @@ import {
 import { formatRupiahAdaptive } from "@/utils/currency";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
+import SuccessAlert from "@/components/common/SuccessAlert";
 
 const normalizeRemark = (value) =>
     typeof value === "string" ? value.trim() : "";
@@ -83,6 +84,15 @@ const toNumber = (value) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const defaultFilter = {
+    contract: "all",
+    batch: "",
+    submitStatus: "all",
+    status: "all",
+    startDate: "",
+    endDate: "",
+}
+
 export default function DebtorReview() {
     const [user, setUser] = useState(null);
     const [debtors, setDebtors] = useState([]);
@@ -98,14 +108,7 @@ export default function DebtorReview() {
     const [approvalRemarks, setApprovalRemarks] = useState("");
     const [processing, setProcessing] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
-    const [filters, setFilters] = useState({
-        contract: "all",
-        batch: "",
-        submitStatus: "all",
-        status: "all",
-        startDate: "",
-        endDate: "",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     useEffect(() => {
         loadUser();
@@ -451,17 +454,6 @@ export default function DebtorReview() {
         setProcessing(false);
     };
 
-    const clearFilters = () => {
-        setFilters({
-            contract: "all",
-            batch: "",
-            submitStatus: "all",
-            status: "all",
-            startDate: "",
-            endDate: "",
-        });
-    };
-
     const filteredDebtors = Array.isArray(debtors)
         ? debtors.filter((d) => {
               if (
@@ -643,12 +635,7 @@ export default function DebtorReview() {
             />
 
             {successMessage && (
-                <Alert className="bg-green-50 border-green-200">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <AlertDescription className="text-green-700">
-                        {successMessage}
-                    </AlertDescription>
-                </Alert>
+                <SuccessAlert message={successMessage} />
             )}
 
             {/* Gradient Stat Card */}
@@ -694,18 +681,11 @@ export default function DebtorReview() {
             <FilterTab
                 filters = {filters}
                 onFilterChange={setFilters}
-                defaultFilters={{
-                    contract: "all",
-                    batch: "",
-                    submitStatus: "all",
-                    status: "all",
-                    startDate: "",
-                    endDate: "",
-                }}
+                defaultFilters={defaultFilter}
                 filterConfig={[
                     {
                         key: "contract",
-                        placeholder: "Contract",
+                        label: "Contract",
                         options: [
                             { value: "all", label: "All Contracts" },
                             ...contracts.map((c) => ({
@@ -716,23 +696,24 @@ export default function DebtorReview() {
                     },
                     {
                         key: "batch",
-                        placeholder: "Batch ID",
+                        label: "Batch ID",
+                        placeholder: "Search Batch...",
                         type: "input",
                         inputType: "text"
                     },
                     {
                         key: "startDate",
-                        placeholder: "Start Date",
+                        label: "Start Date",
                         type: "date"
                     },
                     {
                         key: "endDate",
-                        placeholder: "End Date",
+                        label: "End Date",
                         type: "date"
                     },
                     {
                         key: "submitStatus",
-                        placeholder: "Underwriting Status",
+                        label: "Underwriting Status",
                         options: [
                             { value: "all", label: "All Statuses" },
                             { value: "DRAFT", label: "Draft" },
@@ -743,7 +724,7 @@ export default function DebtorReview() {
                     },
                     {
                         key: "status",
-                        placeholder: "Batch Status",
+                        label: "Batch Status",
                         options: [
                             { value: "all", label: "All Statuses" },
                             { value: "Uploaded", label: "Uploaded" },
@@ -760,7 +741,6 @@ export default function DebtorReview() {
                 <div className="flex flex-wrap gap-2">
                     <>
                         <Button
-                            // className="bg-green-500 hover:bg-green-600"
                             variant = "outline"
                             onClick={() => {
                                 setApprovalAction("bulk_approve");
@@ -771,7 +751,6 @@ export default function DebtorReview() {
                             Approve {selectedDebtors.length > 0 ? `(${selectedDebtors.length})` : ""}
                         </Button>
                         <Button
-                            // className="bg-orange-600 hover:bg-orange-600"
                             variant = "outline"
                             onClick={() => {
                                 setApprovalAction("bulk_reject");

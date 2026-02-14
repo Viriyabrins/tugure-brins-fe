@@ -39,6 +39,17 @@ import { formatRupiahAdaptive } from "@/utils/currency";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 
+const defaultFilter = {
+    contract: "all",
+    batch: "",
+    submitStatus: "all",
+    reconStatus: "all",
+    claimStatus: "all",
+    subrogationStatus: "all",
+    startDate: "",
+    endDate: "",
+}
+
 export default function BorderoManagement() {
     const [user, setUser] = useState(null);
     const [activeTab, setActiveTab] = useState("debtors");
@@ -56,16 +67,7 @@ export default function BorderoManagement() {
     const [processing, setProcessing] = useState(false);
     const [actionType, setActionType] = useState("");
     const [successMessage, setSuccessMessage] = useState("");
-    const [filters, setFilters] = useState({
-        contract: "all",
-        batch: "",
-        submitStatus: "all",
-        reconStatus: "all",
-        claimStatus: "all",
-        subrogationStatus: "all",
-        startDate: "",
-        endDate: "",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     const { bypassAuth } = useAuth();
     const useBackendApi = import.meta.env.VITE_USE_BACKEND_API === "true";
@@ -277,19 +279,6 @@ export default function BorderoManagement() {
         a.download = `bordero-${activeTab}-${new Date().toISOString().split("T")[0]}.csv`;
         a.click();
     }
-
-    const clearFilters = () => {
-        setFilters({
-            contract: "all",
-            batch: "",
-            submitStatus: "all",
-            reconStatus: "all",
-            claimStatus: "all",
-            subrogationStatus: "all",
-            startDate: "",
-            endDate: "",
-        });
-    };
 
     const openDetailDialog = (item) => {
         setSelectedItem(item);
@@ -699,35 +688,28 @@ export default function BorderoManagement() {
             <FilterTab
                 filters = {filters}
                 onFilterChange={setFilters}
-                defaultFilters={{
-                    contract: "all",
-                    batch: "",
-                    submitStatus: "all",
-                    reconStatus: "all",
-                    claimStatus: "all",
-                    subrogationStatus: "all",
-                    startDate: "",
-                    endDate: "",
-                }}
+                defaultFilters={defaultFilter}
                 filterConfig={[
                     {
                         key: "batch",
-                        placeholder: "Batch ID",
+                        label: "Batch ID",
+                        placeholder: "Search batch",
                         type: "input",
                         inputType: "text"
                     },
                     {
                         key: "startDate",
-                        placeholder: "Start Date",
+                        label: "Start Date",
                         type: "date",
                     },
                     {
                         key: "endDate",
-                        placeholder: "End Date",
+                        label: "End Date",
                         type: "date",
                     },
                     {
                         key:"submitStatus",
+                        label: "Submit Status",
                         placeholder: "Submit Status",
                         options: [
                             { value: "all", label: "All"},
@@ -740,6 +722,7 @@ export default function BorderoManagement() {
                     {
                         key: "reconStatus",
                         placeholder: "All Status",
+                        label: "Reconciliation Status",
                         options: [
                             { value: "all", label: "All"},
                             { value: "IN_PROGRESS", label: "In Progress"},

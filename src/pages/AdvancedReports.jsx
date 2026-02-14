@@ -512,19 +512,19 @@ export default function AdvancedReports() {
 
     return (
       <div className="flex gap-2">
+        <Button variant="outline" onClick={loadData}>
+          <RefreshCw className="mr-2 h-4 w-4" /> 
+          Refresh
+        </Button>
         {excelAction && (
           <Button variant="outline" onClick={excelAction}>
             <Download className="mr-2 h-4 w-4" />
-            Excel
+            Download Excel
           </Button>
         )}
         <Button variant="outline" onClick={() => exportToPDF(activeTab)}>
           <Download className="mr-2 h-4 w-4" />
-          PDF
-        </Button>
-        <Button variant="outline" onClick={loadData}>
-          <RefreshCw className="mr-2 h-4 w-4" /> 
-          Refresh Data
+          Download PDF
         </Button>
       </div>
     );

@@ -8,6 +8,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, Filter, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 
 /**
  * FilterTab - A reusable filter bar component.
@@ -104,7 +105,7 @@ export default function FilterTab({
               const dateValue = filters[filter.key];
               return (
                 <div key={filter.key}>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">{filter.placeholder}</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">{filter.label}</label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -115,7 +116,8 @@ export default function FilterTab({
                         )}
                       >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {dateValue ? new Date(dateValue).toLocaleDateString() : filter.placeholder || 'Select Date'}
+                        {/* {dateValue ? new Date(dateValue).toLocaleDateString() : filter.placeholder || 'Select Date'} */}
+                        {dateValue ? format(new Date(dateValue), 'PP') : filter.placeholder || 'Select Date'}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -135,7 +137,7 @@ export default function FilterTab({
             if (filter.type === "input") {
               return (
                 <div key={filter.key}>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">{filter.placeholder}</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">{filter.label}</label>
                   <Input
                     type={filter.inputType || "text"}
                     placeholder={filter.placeholder}
@@ -149,40 +151,10 @@ export default function FilterTab({
               );
             }
 
-            // Date Range Type (Keep existing)
-            if (filter.type === "dateRange") {
-              return (
-                <div key={filter.key} className="flex gap-2">
-                  <div className="flex-1">
-                     <label className="text-xs font-medium text-gray-500 mb-1 block">From</label>
-                     <Input
-                      type="date"
-                      value={filters[filter.key]?.from || ""}
-                      onChange={(e) =>
-                        handleDateRangeChange(filter.key, "from", e.target.value)
-                      }
-                      className="h-9"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-xs font-medium text-gray-500 mb-1 block">To</label>
-                    <Input
-                      type="date"
-                      value={filters[filter.key]?.to || ""}
-                      onChange={(e) =>
-                        handleDateRangeChange(filter.key, "to", e.target.value)
-                      }
-                      className="h-9"
-                    />
-                  </div>
-                </div>
-              );
-            }
-
             // Default: Select
             return (
               <div key={filter.key}>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">{filter.placeholder}</label>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">{filter.label}</label>
                 <Select
                   value={filters[filter.key]}
                   onValueChange={(val) => handleSelectChange(filter.key, val)}

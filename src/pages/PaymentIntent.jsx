@@ -43,6 +43,12 @@ import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 import { Checkbox } from "@/components/ui/checkbox";
 
+const defaultFilter = {
+    contract: "all",
+    notaType: "all",
+    status: "all",
+}
+
 export default function PaymentIntent() {
     const [user, setUser] = useState(null);
     const [notas, setNotas] = useState([]);
@@ -59,11 +65,7 @@ export default function PaymentIntent() {
     const [plannedAmount, setPlannedAmount] = useState("");
     const [plannedDate, setPlannedDate] = useState("");
     const [remarks, setRemarks] = useState("");
-    const [filters, setFilters] = useState({
-        contract: "all",
-        notaType: "all",
-        status: "all",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     const isBrins = user?.role === "BRINS" || user?.role === "admin";
     const isTugure = user?.role === "TUGURE" || user?.role === "admin";
@@ -534,15 +536,11 @@ export default function PaymentIntent() {
             <FilterTab
                 filters={filters}
                 onFilterChange={setFilters}
-                defaultFilters={{
-                    contract: "all",
-                    notaType: "all",
-                    status: "all",
-                }}
+                defaultFilters={defaultFilter}
                 filterConfig={[
                     {
                         key: "contract",
-                        placeholder: "Contract",
+                        label: "Contract",
                         options: [
                             { value: "all", label: "All Contracts" },
                             ...contracts.map((c) => ({
@@ -553,7 +551,7 @@ export default function PaymentIntent() {
                     },
                     {
                         key: "notaType",
-                        placeholder: "Nota Type",
+                        label: "Nota Type",
                         options: [
                             { value: "all", label: "All Types" },
                             { value: "Batch", label: "Batch" },
@@ -563,7 +561,7 @@ export default function PaymentIntent() {
                     },
                     {
                         key: "status",
-                        placeholder: "Intent Status",
+                        label: "Intent Status",
                         options: [
                             { value: "all", label: "All Status" },
                             { value: "DRAFT", label: "Draft" },

@@ -106,6 +106,24 @@ const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
         }
     };
 
+const defaultFilter = {
+        contract: "all",
+        notaType: "all",
+        status: "all"
+}
+
+const defaultFilterRecon = {
+        contract: "all",
+        status: "all",
+        hasException: "all"
+}
+
+const defaultFilterDnCn = {
+        contract: "all",
+        noteType: "all",
+        status: "all"
+}
+
 export default function NotaManagement() {
     const [user, setUser] = useState(null);
     const [notas, setNotas] = useState([]);
@@ -141,21 +159,9 @@ export default function NotaManagement() {
         reason_code: "Payment Difference",
         reason_description: "",
     });
-    const [filters, setFilters] = useState({
-        contract: "all",
-        notaType: "all",
-        status: "all",
-    });
-    const [reconFilters, setReconFilters] = useState({
-        contract: "all",
-        status: "all",
-        hasException: "all",
-    });
-    const [dnCnFilters, setDnCnFilters] = useState({
-        contract: "all",
-        noteType: "all",
-        status: "all",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
+    const [reconFilters, setReconFilters] = useState(defaultFilterRecon);
+    const [dnCnFilters, setDnCnFilters] = useState(defaultFilterDnCn);
 
     const isTugure = user?.role === "TUGURE" || user?.role === "admin";
     const isBrins = user?.role === "BRINS" || user?.role === "admin";
@@ -1193,11 +1199,11 @@ export default function NotaManagement() {
                     <FilterTab
                         filters={filters}
                         onFilterChange={setFilters}
-                        defaultFilters={{ contract: "all", notaType: "all", status: "all" }}
+                        defaultFilters={defaultFilter}
                         filterConfig={[
                             {
                                 key: "contract",
-                                placeholder: "Contract",
+                                label: "Contract",
                                 options: [
                                     { value: "all", label: "All Contracts" },
                                     ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
@@ -1205,7 +1211,7 @@ export default function NotaManagement() {
                             },
                             {
                                 key: "notaType",
-                                placeholder: "Nota Type",
+                                label: "Nota Type",
                                 options: [
                                     { value: "all", label: "All Types" },
                                     { value: "Batch", label: "Batch" },
@@ -1215,7 +1221,7 @@ export default function NotaManagement() {
                             },
                             {
                                 key: "status",
-                                placeholder: "Status",
+                                label: "Status",
                                 options: [
                                     { value: "all", label: "All Status" },
                                     { value: "Draft", label: "Draft" },
@@ -1393,11 +1399,11 @@ export default function NotaManagement() {
                     <FilterTab
                         filters={reconFilters}
                         onFilterChange={setReconFilters}
-                        defaultFilters={{ contract: "all", status: "all", hasException: "all" }}
+                        defaultFilters={defaultFilterRecon}
                         filterConfig={[
                             {
                                 key: "contract",
-                                placeholder: "Contract",
+                                label: "Contract",
                                 options: [
                                     { value: "all", label: "All Contracts" },
                                     ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
@@ -1405,7 +1411,7 @@ export default function NotaManagement() {
                             },
                             {
                                 key: "status",
-                                placeholder: "Status",
+                                label: "Status",
                                 options: [
                                     { value: "all", label: "All Status" },
                                     { value: "Draft", label: "Draft" },
@@ -1416,7 +1422,7 @@ export default function NotaManagement() {
                             },
                             {
                                 key: "hasException",
-                                placeholder: "Exception Status",
+                                label: "Exception Status",
                                 options: [
                                     { value: "all", label: "All" },
                                     { value: "yes", label: "Has Exception" },
@@ -1671,11 +1677,11 @@ export default function NotaManagement() {
                     <FilterTab
                         filters={dnCnFilters}
                         onFilterChange={setDnCnFilters}
-                        defaultFilters={{ contract: "all", noteType: "all", status: "all" }}
+                        defaultFilters={defaultFilterDnCn}
                         filterConfig={[
                             {
                                 key: "contract",
-                                placeholder: "Contract",
+                                label: "Contract",
                                 options: [
                                     { value: "all", label: "All Contracts" },
                                     ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
@@ -1683,7 +1689,7 @@ export default function NotaManagement() {
                             },
                             {
                                 key: "noteType",
-                                placeholder: "Note Type",
+                                label: "Note Type",
                                 options: [
                                     { value: "all", label: "All Status" },
                                     { value: "Debit Note", label: "Debit Note" },
@@ -1692,7 +1698,7 @@ export default function NotaManagement() {
                             },
                             {
                                 key: "status",
-                                placeholder: "Status",
+                                label: "Status",
                                 options: [
                                     { value: "all", label: "All" },
                                     { value: "Draft", label: "Draft" },

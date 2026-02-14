@@ -283,11 +283,11 @@ export default function Dashboard() {
             value: debtorsArray.filter((d) => d.status === "APPROVED").length,
             color: "#10b981",
         },
-        {
-            name: "Rejected",
-            value: debtorsArray.filter((d) => d.status === "REJECTED").length,
-            color: "#ef4444",
-        },
+        // {
+        //     name: "Rejected",
+        //     value: debtorsArray.filter((d) => d.status === "REJECTED").length,
+        //     color: "#ef4444",
+        // },
         {
             name: "Draft",
             value: debtorsArray.filter((d) => d.status === "DRAFT").length,
@@ -392,11 +392,11 @@ export default function Dashboard() {
             value: premiumByStatusBuckets.pending,
             color: "#F59E0B",
         },
-        {
-            name: "Rejected",
-            value: premiumByStatusBuckets.rejected,
-            color: "#EF4444",
-        },
+        // {
+        //     name: "Rejected",
+        //     value: premiumByStatusBuckets.rejected,
+        //     color: "#EF4444",
+        // },
         {
             name: "Revision",
             value: premiumByStatusBuckets.revision,

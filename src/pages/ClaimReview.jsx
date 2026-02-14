@@ -48,6 +48,13 @@ import {
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 
+const defaultFilter = {
+    contract: "all",
+    batch: "all",
+    claimStatus: "all",
+    subrogationStatus: "all",
+}
+
 export default function ClaimReview() {
     const [user, setUser] = useState(null);
     const [claims, setClaims] = useState([]);
@@ -67,12 +74,7 @@ export default function ClaimReview() {
     const [successMessage, setSuccessMessage] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
     const [remarks, setRemarks] = useState("");
-    const [filters, setFilters] = useState({
-        contract: "all",
-        batch: "",
-        claimStatus: "all",
-        subrogationStatus: "all",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     useEffect(() => {
         loadUser();
@@ -591,15 +593,11 @@ export default function ClaimReview() {
             <FilterTab
                 filters={filters}
                 onFilterChange={setFilters}
-                defaultFilters={{ 
-                    contract: "all", 
-                    batch: "all", 
-                    claimStatus: "all", 
-                    subrogationStatus: "all" }}
+                defaultFilters={defaultFilter}
                 filterConfig={[
                     {
                         key: "contract",
-                        placeholder: "Contract",
+                        label: "Contract",
                         options: [
                             { value: "all", label: "All Contracts"},
                             ...contracts.map((c) => ({ 
@@ -610,7 +608,7 @@ export default function ClaimReview() {
                     },
                     {
                         key: "batch",
-                        placeholder: "Batch ID",
+                        label: "Batch ID",
                         options: [
                             { value: "all", label: "All Batches"},
                             ...batches.map((b) => ({ 
@@ -621,7 +619,7 @@ export default function ClaimReview() {
                     },
                     {
                         key: "claimStatus",
-                        placeholder: "Claim Status",
+                        label: "Claim Status",
                         options: [
                             { value: "all", label: "All Status"},
                             { value: "Draft", label: "Draft"},
@@ -633,7 +631,7 @@ export default function ClaimReview() {
                     },
                     {
                         key: "subrogationStatus",
-                        placeholder: "Subrogation Status",
+                        label: "Subrogation Status",
                         options: [
                             { value: "all", label: "All Status"},
                             { value: "Draft", label: "Draft"},

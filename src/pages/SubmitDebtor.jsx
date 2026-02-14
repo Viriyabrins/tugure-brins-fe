@@ -49,6 +49,13 @@ import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 import { filter } from "lodash";
 
+const defaultFilter = {
+    contract: "all",
+    batch: "",
+    status: "all",
+    name: "",
+}
+
 export default function SubmitDebtor() {
     const [user, setUser] = useState(null);
     const [contracts, setContracts] = useState([]);
@@ -75,12 +82,7 @@ export default function SubmitDebtor() {
     const [successMessage, setSuccessMessage] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
 
-    const [filters, setFilters] = useState({
-        contract: "all",
-        batch: "",
-        status: "all",
-        name: "",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     useEffect(() => {
         loadUser();
@@ -752,16 +754,11 @@ export default function SubmitDebtor() {
             <FilterTab
                 filters={filters}
                 onFilterChange={setFilters}
-                defaultFilters={{
-                    contract: "all",
-                    batch: "",
-                    status: "all",
-                    name: "",
-                }}
+                defaultFilters={defaultFilter}
                 filterConfig={[
                     {
                         key: "contract",
-                        placeholder: "Contract",
+                        label: "Contract",
                         options: [
                             { value: "all", label: "All Contracts"},
                             ...contracts.map((c) => ({
@@ -773,6 +770,7 @@ export default function SubmitDebtor() {
                     {
                         key: "batch",
                         placeholder: "Batch",
+                        label: "Batch",
                         options: [
                             { value: "all", label: "All Batches"},
                             ...userBatches.map((b) => ({
@@ -783,7 +781,7 @@ export default function SubmitDebtor() {
                     },
                     {
                         key: "status",
-                        placeholder: "Status",
+                        label: "Status",
                         options: [
                             { value: "all", label: "All Status"},
                             { value: "SUBMITTED", label: "Submitted"},
@@ -794,9 +792,9 @@ export default function SubmitDebtor() {
                     },
                     {
                         key: "name",
-                        placeholder: "Search",
+                        placeholder: "Search by name, nomor peserta, or batch",
+                        label: "Search",
                         type: "input",
-                        // inputType: 
                     }
                 ]}
 

@@ -44,6 +44,13 @@ import ModernKPI from "@/components/dashboard/ModernKPI";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 
+const defaultFilter = {
+    contract: "all",
+    batch: "",
+    claimStatus: "all",
+    subrogationStatus: "all",
+}
+
 export default function ClaimSubmit() {
     const [user, setUser] = useState(null);
     const [claims, setClaims] = useState([]);
@@ -67,12 +74,7 @@ export default function ClaimSubmit() {
     const [activeTab, setActiveTab] = useState("claims");
     const [uploadFile, setUploadFile] = useState(null);
     const [parsedClaims, setParsedClaims] = useState([]);
-    const [filters, setFilters] = useState({
-        contract: "all",
-        batch: "",
-        claimStatus: "all",
-        subrogationStatus: "all",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     useEffect(() => {
         loadUser();
@@ -614,16 +616,11 @@ export default function ClaimSubmit() {
             <FilterTab
                 filters={filters}
                 onFilterChange={setFilters}
-                defaultFilters={{
-                    contract: "all",
-                    batch: "",
-                    claimStatus: "all",
-                    subrogationStatus: "all",
-                }}
+                defaultFilters={defaultFilter}
                 filterConfig={[
                     {
                         key: "contract",
-                        placeholder: "Contract",
+                        label: "Contract",
                         options: [
                             { value: "all", label: "All Contracts" },
                             ...contracts.map((c) => ({
@@ -635,6 +632,7 @@ export default function ClaimSubmit() {
                     {
                         key: "batch",
                         placeholder: "Batch ID",
+                        label: "Batch ID",
                         options: [
                             { value: "all", label: "All Batches" },
                             ...batches.map((b) => ({
@@ -645,7 +643,7 @@ export default function ClaimSubmit() {
                     },
                     {
                         key: "claimStatus",
-                        placeholder: "Claim Status",
+                        label: "Claim Status",
                         options: [
                             { value: "all", label: "    All Claim Status" },
                             { value: "Draft", label: "Draft" },
@@ -657,7 +655,7 @@ export default function ClaimSubmit() {
                     },
                     {
                         key: "subrogationStatus",
-                        placeholder: "Subrogation Status",
+                        label: "Subrogation Status",
                         options: [
                             { value: "all", label: "All Subrogation" },
                             { value: "Draft", label: "Draft" },

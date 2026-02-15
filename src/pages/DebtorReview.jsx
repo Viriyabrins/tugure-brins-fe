@@ -32,6 +32,7 @@ import {
     Filter,
     Clock,
     AlertCircle,
+    Pen,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { backend } from "@/api/backendClient";
@@ -46,6 +47,9 @@ import {
     createAuditLog,
 } from "@/components/utils/emailTemplateHelper";
 import { formatRupiahAdaptive } from "@/utils/currency";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
+import FilterTab from "@/components/common/FilterTab";
+import SuccessAlert from "@/components/common/SuccessAlert";
 
 const normalizeRemark = (value) =>
     typeof value === "string" ? value.trim() : "";
@@ -80,6 +84,15 @@ const toNumber = (value) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const defaultFilter = {
+    contract: "all",
+    batch: "",
+    submitStatus: "all",
+    status: "all",
+    startDate: "",
+    endDate: "",
+}
+
 export default function DebtorReview() {
     const [user, setUser] = useState(null);
     const [debtors, setDebtors] = useState([]);
@@ -95,19 +108,14 @@ export default function DebtorReview() {
     const [approvalRemarks, setApprovalRemarks] = useState("");
     const [processing, setProcessing] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
-    const [filters, setFilters] = useState({
-        contract: "all",
-        batch: "",
-        submitStatus: "all",
-        status: "all",
-        startDate: "",
-        endDate: "",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     useEffect(() => {
         loadUser();
         loadData();
     }, []);
+
+    const isTugure = user?.role === "TUGURE" || user?.role === "admin";
 
     const loadUser = async () => {
         try {
@@ -446,17 +454,6 @@ export default function DebtorReview() {
         setProcessing(false);
     };
 
-    const clearFilters = () => {
-        setFilters({
-            contract: "all",
-            batch: "",
-            submitStatus: "all",
-            status: "all",
-            startDate: "",
-            endDate: "",
-        });
-    };
-
     const filteredDebtors = Array.isArray(debtors)
         ? debtors.filter((d) => {
               if (
@@ -585,11 +582,13 @@ export default function DebtorReview() {
                     >
                         <Eye className="w-4 h-4" />
                     </Button>
-                    {row.status === "SUBMITTED" && (
+
+                    {/* actions dalam tabel */}
+                    {/* {isTugure && row.status === "SUBMITTED" && (
                         <>
                             <Button
                                 size="sm"
-                                className="bg-green-600 hover:bg-green-600"
+                                className="bg-green-500 hover:bg-green-600"
                                 onClick={() => {
                                     setSelectedDebtor(row);
                                     setApprovalAction("approve");
@@ -600,17 +599,17 @@ export default function DebtorReview() {
                             </Button>
                             <Button
                                 size="sm"
-                                className="bg-orange-600 hover:bg-orange-600"
+                                className="bg-orange-500 hover:bg-orange-600"
                                 onClick={() => {
                                     setSelectedDebtor(row);
                                     setApprovalAction("reject");
                                     setShowApprovalDialog(true);
                                 }}
                             >
-                                <X className="w-4 h-4" />
+                                <Pen className="w-4 h-4" />
                             </Button>
                         </>
-                    )}
+                    )} */}
                 </div>
             ),
         },
@@ -627,37 +626,6 @@ export default function DebtorReview() {
                 ]}
                 actions={
                     <div className="flex gap-2">
-                        {selectedDebtors.length > 0 && (
-                            <>
-                                <Button
-                                    className="bg-green-600 hover:bg-green-600"
-                                    onClick={() => {
-                                        setApprovalAction("bulk_approve");
-                                        setShowApprovalDialog(true);
-                                    }}
-                                >
-                                    <Check className="w-4 h-4 mr-2" />
-                                    Approve ({selectedDebtors.length})
-                                </Button>
-                                <Button
-                                    className="bg-orange-600 hover:bg-orange-600"
-                                    onClick={() => {
-                                        setApprovalAction("bulk_reject");
-                                        setShowApprovalDialog(true);
-                                    }}
-                                >
-                                    <X className="w-4 h-4 mr-2" />
-                                    Revision ({selectedDebtors.length})
-                                </Button>
-                            </>
-                        )}
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowFilterDialog(true)}
-                        >
-                            <Filter className="w-4 h-4 mr-2" />
-                            Filters
-                        </Button>
                         <Button variant="outline" onClick={loadData}>
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Refresh
@@ -667,217 +635,142 @@ export default function DebtorReview() {
             />
 
             {successMessage && (
-                <Alert className="bg-green-50 border-green-200">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <AlertDescription className="text-green-700">
-                        {successMessage}
-                    </AlertDescription>
-                </Alert>
+                <SuccessAlert message={successMessage} />
             )}
 
+            {/* Gradient Stat Card */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <ModernKPI
+                <GradientStatCard
                     title="Pending Review"
                     value={pendingCount}
                     subtitle="Awaiting approval"
                     icon={FileText}
-                    color="orange"
+                    gradient="from-blue-500 to-blue-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Approved"
                     value={approvedCount}
                     subtitle="Ready for nota"
                     icon={CheckCircle2}
-                    color="green"
+                    gradient="from-green-500 to-green-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Revision"
                     value={rejectedCount}
                     subtitle="Requires revision"
                     icon={AlertCircle}
-                    color="orange"
+                    gradient="from-red-500 to-red-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Conditional"
                     value={conditionalCount}
                     subtitle="Additional docs needed"
                     icon={Clock}
-                    color="purple"
+                    gradient="from-yellow-500 to-yellow-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Total Plafon"
                     value={formatRupiahAdaptive(totalPlafond)}
                     subtitle="Approved only"
                     icon={DollarSign}
-                    color="blue"
+                    gradient="from-purple-500 to-purple-600"
                 />
             </div>
 
+            {/* Filters */}
+            <FilterTab
+                filters = {filters}
+                onFilterChange={setFilters}
+                defaultFilters={defaultFilter}
+                filterConfig={[
+                    {
+                        key: "contract",
+                        label: "Contract",
+                        options: [
+                            { value: "all", label: "All Contracts" },
+                            ...contracts.map((c) => ({
+                                value: c.id,
+                                label: c.contract_id
+                            }))
+                        ]
+                    },
+                    {
+                        key: "batch",
+                        label: "Batch ID",
+                        placeholder: "Search Batch...",
+                        type: "input",
+                        inputType: "text"
+                    },
+                    {
+                        key: "startDate",
+                        label: "Start Date",
+                        type: "date"
+                    },
+                    {
+                        key: "endDate",
+                        label: "End Date",
+                        type: "date"
+                    },
+                    {
+                        key: "submitStatus",
+                        label: "Underwriting Status",
+                        options: [
+                            { value: "all", label: "All Statuses" },
+                            { value: "DRAFT", label: "Draft" },
+                            { value: "SUBMITTED", label: "Submitted" },
+                            { value: "APPROVED", label: "Approved" },
+                            { value: "REVISION", label: "Revision" },
+                        ]
+                    },
+                    {
+                        key: "status",
+                        label: "Batch Status",
+                        options: [
+                            { value: "all", label: "All Statuses" },
+                            { value: "Uploaded", label: "Uploaded" },
+                            { value: "Validated", label: "Validated" },
+                            { value: "Matched", label: "Matched" },
+                            { value: "Approved", label: "Approved" },
+                        ]
+                    },
+                ]}
+            />
+
+            {/* Bulk Actions */}
+            {isTugure && selectedDebtors.length >= 0 && (
+                <div className="flex flex-wrap gap-2">
+                    <>
+                        <Button
+                            variant = "outline"
+                            onClick={() => {
+                                setApprovalAction("bulk_approve");
+                                setShowApprovalDialog(true);
+                            }}
+                        >
+                            <Check className="w-4 h-4 mr-2" />
+                            Approve {selectedDebtors.length > 0 ? `(${selectedDebtors.length})` : ""}
+                        </Button>
+                        <Button
+                            variant = "outline"
+                            onClick={() => {
+                                setApprovalAction("bulk_reject");
+                                setShowApprovalDialog(true);
+                            }}
+                        >
+                            <Pen className="w-4 h-4 mr-2" />
+                            Revision {selectedDebtors.length > 0 ? `(${selectedDebtors.length})` : ""}
+                        </Button>
+                    </>
+                </div>
+            )}
+
+            {/* Data Table */}
             <DataTable
                 columns={columns}
                 data={filteredDebtors}
                 isLoading={loading}
                 emptyMessage="No debtors to review"
             />
-
-            {/* Filter Dialog */}
-            <Dialog open={showFilterDialog} onOpenChange={setShowFilterDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Filter Debtors</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <label className="text-sm font-medium">
-                                Contract
-                            </label>
-                            <Select
-                                value={filters.contract}
-                                onValueChange={(val) =>
-                                    setFilters({ ...filters, contract: val })
-                                }
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">
-                                        All Contracts
-                                    </SelectItem>
-                                    {Array.isArray(contracts) &&
-                                        contracts.map((c) => (
-                                            <SelectItem key={c.id} value={c.id}>
-                                                {c.contract_id ||
-                                                    c.contract_number ||
-                                                    "Unknown"}
-                                            </SelectItem>
-                                        ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium">
-                                Batch ID
-                            </label>
-                            <Input
-                                placeholder="Search batch..."
-                                value={filters.batch}
-                                onChange={(e) =>
-                                    setFilters({
-                                        ...filters,
-                                        batch: e.target.value,
-                                    })
-                                }
-                            />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-sm font-medium">
-                                    Start Date
-                                </label>
-                                <Input
-                                    type="date"
-                                    value={filters.startDate}
-                                    onChange={(e) =>
-                                        setFilters({
-                                            ...filters,
-                                            startDate: e.target.value,
-                                        })
-                                    }
-                                />
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium">
-                                    End Date
-                                </label>
-                                <Input
-                                    type="date"
-                                    value={filters.endDate}
-                                    onChange={(e) =>
-                                        setFilters({
-                                            ...filters,
-                                            endDate: e.target.value,
-                                        })
-                                    }
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium">
-                                Underwriting Status
-                            </label>
-                            <Select
-                                value={filters.submitStatus}
-                                onValueChange={(val) =>
-                                    setFilters({
-                                        ...filters,
-                                        submitStatus: val,
-                                    })
-                                }
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">
-                                        All Status
-                                    </SelectItem>
-                                    <SelectItem value="DRAFT">Draft</SelectItem>
-                                    <SelectItem value="SUBMITTED">
-                                        Submitted
-                                    </SelectItem>
-                                    <SelectItem value="APPROVED">
-                                        Approved
-                                    </SelectItem>
-                                    <SelectItem value="REVISION">
-                                        Revision
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium">
-                                Batch Status
-                            </label>
-                            <Select
-                                value={filters.status}
-                                onValueChange={(val) =>
-                                    setFilters({ ...filters, status: val })
-                                }
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">
-                                        All Status
-                                    </SelectItem>
-                                    <SelectItem value="Uploaded">
-                                        Uploaded
-                                    </SelectItem>
-                                    <SelectItem value="Validated">
-                                        Validated
-                                    </SelectItem>
-                                    <SelectItem value="Matched">
-                                        Matched
-                                    </SelectItem>
-                                    <SelectItem value="Approved">
-                                        Approved
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={clearFilters}>
-                            Clear
-                        </Button>
-                        <Button onClick={() => setShowFilterDialog(false)}>
-                            Apply
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             {/* Detail Dialog */}
             <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>

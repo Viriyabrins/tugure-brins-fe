@@ -9,14 +9,28 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { 
   FileText, Upload, RefreshCw, CheckCircle2, 
-  Clock, Download, History, AlertCircle, XCircle
+  Clock, Download, History, AlertCircle, XCircle,
+  Pen,
+  Check
 } from "lucide-react";
 import { backend } from '@/api/backendClient';
 import Papa from 'papaparse';
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import { formatRupiahAdaptive } from '@/utils/currency';
+import FilterTab from '@/components/common/FilterTab';
+import { Checkbox } from "@/components/ui/checkbox";
+
+const defaultFilter = {
+  status: 'all',
+  contractId: '',
+  productType: 'all',
+  creditType: 'all',
+  startDate: '',
+  endDate: ''
+}
 
 export default function MasterContractManagement() {
   const [user, setUser] = useState(null);
@@ -30,15 +44,9 @@ export default function MasterContractManagement() {
   const [selectedContractForRevision, setSelectedContractForRevision] = useState('');
   const [actionType, setActionType] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [filters, setFilters] = useState({
-    status: 'all',
-    contractId: '',
-    productType: 'all',
-    creditType: 'all',
-    startDate: '',
-    endDate: ''
-  });
+  const [filters, setFilters] = useState(defaultFilter);
   const [selectedContract, setSelectedContract] = useState(null);
+  const [selectedContractIds, setSelectedContractIds] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [approvalAction, setApprovalAction] = useState('');
@@ -74,6 +82,20 @@ export default function MasterContractManagement() {
       setContracts([]);
     }
     setLoading(false);
+  };
+
+  const handleDownloadTemplate = () => {
+    const csv = [
+      ['contract_id', 'policy_no', 'program_id', 'product_type', 'credit_type', 'loan_type', 'loan_type_desc', 'coverage_start_date', 'coverage_end_date', 'max_tenor_month', 'max_plafond', 'share_tugure_percentage', 'premium_rate', 'ric_rate', 'bf_rate', 'allowed_kolektabilitas', 'allowed_region', 'currency', 'remark'].join(','),
+      ['MC-001', 'POL-2025-001', 'PRG-001', 'Treaty', 'Individual', 'KPR', 'Kredit Pemilikan Rumah', '2025-01-01', '2030-12-31', '240', '1000000000', '75', '1.0', '0.1', '0.05', '1,2,3', 'DKI Jakarta,Jawa Barat', 'IDR', 'Housing credit treaty'].join(','),
+      ['MC-002', 'POL-2025-002', 'PRG-002', 'Treaty', 'Corporate', 'KMK', 'Kredit Modal Kerja', '2025-02-01', '2026-02-01', '12', '1500000000', '80', '1.0', '0.15', '0.08', '1,2', 'Jawa Timur,Jawa Tengah', 'IDR', 'Working capital treaty'].join(',')
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'master_contract_template.csv';
+    a.click();
   };
 
   const handleUploadExcel = async () => {
@@ -307,17 +329,51 @@ export default function MasterContractManagement() {
     draft: contracts.filter(c => c.effective_status === 'Draft').length
   };
 
-  const filteredContracts = contracts.filter(c => {
-    if (filters.status !== 'all' && c.effective_status !== filters.status) return false;
-    if (filters.contractId && !c.contract_id.includes(filters.contractId)) return false;
-    if (filters.productType !== 'all' && c.product_type !== filters.productType) return false;
-    if (filters.creditType !== 'all' && c.credit_type !== filters.creditType) return false;
-    if (filters.startDate && c.coverage_start_date < filters.startDate) return false;
-    if (filters.endDate && c.coverage_end_date > filters.endDate) return false;
-    return true;
-  });
+  const filteredContracts = Array.isArray(contracts)
+    ? contracts.filter((c) => {
+      if (filters.status !== 'all' && c.effective_status !== filters.status) return false;
+      if (filters.contractId && !c.contract_id.includes(filters.contractId)) return false;
+      if (filters.productType !== 'all' && c.product_type !== filters.productType) return false;
+      if (filters.creditType !== 'all' && c.credit_type !== filters.creditType) return false;
+      if (filters.startDate && c.coverage_start_date < filters.startDate) return false;
+      if (filters.endDate && c.coverage_end_date > filters.endDate) return false;
+      return true;
+    })
+    : [];
+
+  const toggleContractSelection = (contractId) => {
+    if (selectedContractIds.includes(contractId)) {
+      setSelectedContractIds(selectedContractIds.filter(id => id !== contractId));
+    } else{
+      setSelectedContractIds([...selectedContractIds, contractId]);
+    }
+  }
 
   const columns = [
+    {
+      header: (
+        <Checkbox
+          checked={
+            selectedContractIds.length === filteredContracts.length && 
+            filteredContracts.length > 0
+          }
+          onCheckedChange={(checked) => {
+            if (checked) {
+              setSelectedContractIds(filteredContracts.map(c => c.id));
+            } else {
+              setSelectedContractIds([]);
+            }
+          }}
+        />
+      ),
+      cell: (row) => (
+        <Checkbox
+          checked={selectedContractIds.includes(row.id)}
+          onCheckedChange={() => toggleContractSelection(row.id)}
+        />
+      ),
+      width: "40px"
+    },
     { 
       header: 'Contract ID', 
       accessorKey: 'contract_id',
@@ -326,7 +382,8 @@ export default function MasterContractManagement() {
           <div className="font-medium">{row.contract_id}</div>
           <div className="text-xs text-gray-500">v{row.version || 1}</div>
         </div>
-      )
+      ),
+      width: "40px"
     },
     { header: 'Policy Number', accessorKey: 'policy_no' },
     { header: 'Product Type', accessorKey: 'product_type' },
@@ -337,7 +394,9 @@ export default function MasterContractManagement() {
         <div className="text-sm">
           {row.coverage_start_date} to {row.coverage_end_date}
         </div>
-      )
+      ),
+      width: "40px"
+
     },
     { 
       header: 'Max Plafond', 
@@ -443,23 +502,11 @@ export default function MasterContractManagement() {
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
-            <Button variant="outline" onClick={() => {
-              const csv = [
-                ['contract_id', 'policy_no', 'program_id', 'product_type', 'credit_type', 'loan_type', 'loan_type_desc', 'coverage_start_date', 'coverage_end_date', 'max_tenor_month', 'max_plafond', 'share_tugure_percentage', 'premium_rate', 'ric_rate', 'bf_rate', 'allowed_kolektabilitas', 'allowed_region', 'currency', 'remark'].join(','),
-                ['MC-001', 'POL-2025-001', 'PRG-001', 'Treaty', 'Individual', 'KPR', 'Kredit Pemilikan Rumah', '2025-01-01', '2030-12-31', '240', '1000000000', '75', '1.0', '0.1', '0.05', '1,2,3', 'DKI Jakarta,Jawa Barat', 'IDR', 'Housing credit treaty'].join(','),
-                ['MC-002', 'POL-2025-002', 'PRG-002', 'Treaty', 'Corporate', 'KMK', 'Kredit Modal Kerja', '2025-02-01', '2026-02-01', '12', '1500000000', '80', '1.0', '0.15', '0.08', '1,2', 'Jawa Timur,Jawa Tengah', 'IDR', 'Working capital treaty'].join(',')
-              ].join('\n');
-              const blob = new Blob([csv], { type: 'text/csv' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = 'master_contract_template.csv';
-              a.click();
-            }}>
+            <Button variant="outline" onClick={handleDownloadTemplate}>
               <Download className="w-4 h-4 mr-2" />
               Download Template
             </Button>
-            <Button onClick={() => setShowUploadDialog(true)} className="bg-blue-600">
+            <Button onClick={() => setShowUploadDialog(true)} variant="outline">
               <Upload className="w-4 h-4 mr-2" />
               Upload Excel
             </Button>
@@ -482,149 +529,124 @@ export default function MasterContractManagement() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white overflow-hidden relative">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-blue-100 text-sm font-medium mb-1">Total Contracts</p>
-                <h3 className="text-3xl font-bold">{stats.total}</h3>
-                <p className="text-blue-100 text-xs mt-2">All versions</p>
-              </div>
-              <div className="h-16 w-16 rounded-full bg-white/20 flex items-center justify-center">
-                <FileText className="w-8 h-8 text-white" />
-              </div>
-            </div>
-          </CardContent>
-          <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/10 rounded-tl-full"></div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white overflow-hidden relative">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-green-100 text-sm font-medium mb-1">Active Contracts</p>
-                <h3 className="text-3xl font-bold">{stats.active}</h3>
-                <p className="text-green-100 text-xs mt-2">{stats.active > 0 ? ((stats.active / stats.total) * 100).toFixed(0) : 0}% of total</p>
-              </div>
-              <div className="h-16 w-16 rounded-full bg-white/20 flex items-center justify-center">
-                <CheckCircle2 className="w-8 h-8 text-white" />
-              </div>
-            </div>
-          </CardContent>
-          <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/10 rounded-tl-full"></div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white overflow-hidden relative">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-orange-100 text-sm font-medium mb-1">Needs Action</p>
-                <h3 className="text-3xl font-bold">{stats.pending}</h3>
-                <p className="text-orange-100 text-xs mt-2">Requires action</p>
-              </div>
-              <div className="h-16 w-16 rounded-full bg-white/20 flex items-center justify-center">
-                <Clock className="w-8 h-8 text-white" />
-              </div>
-            </div>
-          </CardContent>
-          <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/10 rounded-tl-full"></div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-gray-500 to-gray-600 text-white overflow-hidden relative">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-100 text-sm font-medium mb-1">Draft Status</p>
-                <h3 className="text-3xl font-bold">{stats.draft}</h3>
-                <p className="text-gray-100 text-xs mt-2">Not yet submitted</p>
-              </div>
-              <div className="h-16 w-16 rounded-full bg-white/20 flex items-center justify-center">
-                <FileText className="w-8 h-8 text-white" />
-              </div>
-            </div>
-          </CardContent>
-          <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/10 rounded-tl-full"></div>
-        </Card>
+        <GradientStatCard
+          title="Total Contracts"
+          value={stats.total}
+          subtitle="All versions"
+          icon={FileText}
+          gradient="from-blue-500 to-blue-600"
+          subtitleColor="text-blue-100"
+        />
+        <GradientStatCard
+          title="Active Contracts"
+          value={stats.active}
+          subtitle={`${stats.active > 0 ? ((stats.active / stats.total) * 100).toFixed(0) : 0}% of total`}
+          icon={CheckCircle2}
+          gradient="from-green-500 to-green-600"
+          subtitleColor="text-green-100"
+        />
+        <GradientStatCard
+          title="Needs Action"
+          value={stats.pending}
+          subtitle="Requires action"
+          icon={Clock}
+          gradient="from-orange-500 to-orange-600"
+          subtitleColor="text-orange-100"
+        />
+        <GradientStatCard
+          title="Draft Status"
+          value={stats.draft}
+          subtitle="Not yet submitted"
+          icon={FileText}
+          gradient="from-gray-500 to-gray-600"
+          subtitleColor="text-gray-100"
+        />
       </div>
 
       {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-            <Input
-              placeholder="Contract ID..."
-              value={filters.contractId}
-              onChange={(e) => setFilters({...filters, contractId: e.target.value})}
-            />
-            <Select value={filters.productType} onValueChange={(val) => setFilters({...filters, productType: val})}>
-              <SelectTrigger>
-                <SelectValue placeholder="Product Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Product Types</SelectItem>
-                <SelectItem value="Treaty">Treaty</SelectItem>
-                <SelectItem value="Facultative">Facultative</SelectItem>
-                <SelectItem value="Retro">Retro</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filters.creditType} onValueChange={(val) => setFilters({...filters, creditType: val})}>
-              <SelectTrigger>
-                <SelectValue placeholder="Credit Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Credit Types</SelectItem>
-                <SelectItem value="Individual">Individual</SelectItem>
-                <SelectItem value="Corporate">Corporate</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filters.status} onValueChange={(val) => setFilters({...filters, status: val})}>
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="Draft">Draft</SelectItem>
-                <SelectItem value="Revision">Revision</SelectItem>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Inactive">Inactive</SelectItem>
-                <SelectItem value="Archived">Archived</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              type="date"
-              placeholder="Start Date"
-              value={filters.startDate}
-              onChange={(e) => setFilters({...filters, startDate: e.target.value})}
-            />
-            <Input
-              type="date"
-              placeholder="End Date"
-              value={filters.endDate}
-              onChange={(e) => setFilters({...filters, endDate: e.target.value})}
-            />
-          </div>
-          <div className="mt-3 flex justify-end">
-            <Button variant="outline" size="sm" onClick={() => setFilters({ status: 'all', contractId: '', productType: 'all', creditType: 'all', startDate: '', endDate: '' })}>
-              Clear Filters
+      <FilterTab
+        filters = {filters}
+        onFilterChange={setFilters}
+        defaultFilters={defaultFilter}
+        filterConfig={[
+          {
+            key: "contractId",
+            placeholder: "Search contract...",
+            label: 'Contract ID',
+            type: "input",
+            inputType: "text"
+          },
+          {
+            key: "productType",
+            label: 'Product Type',
+            options: [
+              { value: "all", label: "All Product Type"},
+              { value: "Treaty", label: "Treaty"},
+              { value: "Facultative", label: "Facultative"},
+              { value: "Retro", label: "Retro"},
+            ]
+          },
+          {
+            key: "creditType",
+            label: 'Credit Type',
+            options: [
+              { value: "all", label: "All Credit Type"},
+              { value: "Individual", label: "Individual"},
+              { value: "Corporate", label: "Corporate"},
+            ]
+          },
+          {
+            key: "status",
+            label: "All Status",
+            options: [
+              { value: "all", label: "All Status"},
+              { value: "Draft", label: "Draft"},
+              { value: "Revision", label: "Revision"},
+              { value: "Active", label: "Active"},
+              { value: "Inactive", label: "Inactive"},
+              { value: "Archived", label: "Archived"},
+            ]
+          },
+          {
+            key: "startDate",
+            placeholder: "Start Date",
+            label: "Start Date",
+            type: "date"
+          },
+          {
+            key: "endDate",
+            placeholder: "End Date",
+            label: "End Date",
+            type: "date"
+          }
+        ]}
+      />
+
+      {/* Bulk Actions */}
+      <div className="flex flex-wrap gap-2">
+          {/* <>
+            <Button
+                // className="bg-green-500 hover:bg-green-600"
+                variant = "outline"
+                onClick={() => {
+                    setApprovalAction("bulk_approve");
+                    setShowApprovalDialog(true);
+                }}
+            >
+                <Check className="w-4 h-4 mr-2" />
+                Approve {selectedContract.length > 0 ? `(${selectedContract.length})` : ""}
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </> */}
+      </div>
 
       {/* Main Table with Version Column */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Master Contracts</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={columns}
-            data={filteredContracts}
-            isLoading={loading}
-            emptyMessage="No master contracts found"
-          />
-        </CardContent>
-      </Card>
+      <DataTable
+        columns={columns}
+        data={filteredContracts}
+        isLoading={loading}
+        emptyMessage="No master contracts found"
+      />
+
 
       {/* Contract Action Dialog (Close/Invalidate) */}
       <Dialog open={showActionDialog} onOpenChange={setShowActionDialog}>

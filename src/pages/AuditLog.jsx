@@ -15,17 +15,23 @@ import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import { format } from 'date-fns';
 import { cn } from "@/lib/utils";
+import GradientStatCard from '@/components/dashboard/GradientStatCard';
+import FilterTab from '@/components/common/FilterTab';
+
+const defaultFilter = {
+  contract: "all",
+  batch: "",
+  submitStatus: "all",
+  status: "all",
+  startDate: "",
+  endDate: "",
+  module: "all",
+}
 
 export default function AuditLog() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({
-    startDate: null,
-    endDate: null,
-    user: '',
-    module: 'all',
-    action: ''
-  });
+  const [filters, setFilters] = useState(defaultFilter);
 
   useEffect(() => {
     loadData();
@@ -49,20 +55,6 @@ export default function AuditLog() {
       console.error('Failed to load audit logs:', error);
     }
     setLoading(false);
-  };
-
-  const handleFilterChange = (key, value) => {
-    setFilters({ ...filters, [key]: value });
-  };
-
-  const clearFilters = () => {
-    setFilters({
-      startDate: null,
-      endDate: null,
-      user: '',
-      module: 'all',
-      action: ''
-    });
   };
 
   const handleExport = () => {
@@ -188,142 +180,84 @@ export default function AuditLog() {
         }
       />
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Start Date</label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full h-9 justify-start text-left font-normal",
-                      !filters.startDate && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {filters.startDate ? format(filters.startDate, 'PP') : 'Select'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={filters.startDate}
-                    onSelect={(d) => handleFilterChange('startDate', d)}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">End Date</label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full h-9 justify-start text-left font-normal",
-                      !filters.endDate && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {filters.endDate ? format(filters.endDate, 'PP') : 'Select'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={filters.endDate}
-                    onSelect={(d) => handleFilterChange('endDate', d)}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">User</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder="Search user..."
-                  value={filters.user}
-                  onChange={(e) => handleFilterChange('user', e.target.value)}
-                  className="pl-10 h-9"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Module</label>
-              <Select value={filters.module} onValueChange={(v) => handleFilterChange('module', v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Modules</SelectItem>
-                  <SelectItem value="AUTH">Authentication</SelectItem>
-                  <SelectItem value="DEBTOR">Debtor</SelectItem>
-                  <SelectItem value="BORDERO">Bordero</SelectItem>
-                  <SelectItem value="PAYMENT">Payment</SelectItem>
-                  <SelectItem value="RECONCILIATION">Reconciliation</SelectItem>
-                  <SelectItem value="CLAIM">Claim</SelectItem>
-                  <SelectItem value="CONFIG">Configuration</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end">
-              <Button variant="outline" onClick={clearFilters} className="w-full h-9">
-                Clear Filters
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Stats */}
+      {/* Gradient Stat Card */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Total Logs</p>
-              <p className="text-2xl font-bold">{logs.length}</p>
-            </div>
-            <Shield className="w-8 h-8 text-blue-500" />
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Filtered Results</p>
-              <p className="text-2xl font-bold">{filteredLogs.length}</p>
-            </div>
-            <Filter className="w-8 h-8 text-green-500" />
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Unique Users</p>
-              <p className="text-2xl font-bold">{new Set(logs.map(l => l.user_email)).size}</p>
-            </div>
-            <User className="w-8 h-8 text-purple-500" />
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">Today's Activity</p>
-              <p className="text-2xl font-bold">
-                {logs.filter(l => {
-                  const today = new Date();
-                  const logDate = new Date(l.created_date);
-                  return logDate.toDateString() === today.toDateString();
-                }).length}
-              </p>
-            </div>
-            <FileText className="w-8 h-8 text-orange-500" />
-          </div>
-        </Card>
+        <GradientStatCard
+          title="Total Logs"
+          value={logs.length}
+          subtitle="All recorded activities"
+          icon={Shield}
+          gradient="from-blue-500 to-blue-600"
+        />
+        <GradientStatCard
+          title="Filtered Results"
+          value={filteredLogs.length}
+          subtitle="Filtered audit logs count"
+          icon={Filter}
+          gradient="from-green-500 to-green-600"
+        />
+        <GradientStatCard
+          title="Unique Users"
+          value={new Set(logs.map(l => l.user_email)).size}
+          subtitle="Number of unique users"
+          icon={User}
+          gradient="from-purple-500 to-purple-600"
+        />
+        <GradientStatCard
+          title="Today's Activity"
+          value={logs.filter(l => {
+            const today = new Date();
+            const logDate = new Date(l.created_date);
+            return logDate.toDateString() === today.toDateString();
+          }).length}
+          subtitle="Today's audit log count"
+          icon={FileText}
+          gradient="from-orange-500 to-orange-600"
+        />
       </div>
+
+      {/* Filters */}
+      <FilterTab
+        filters={filters}
+        onFilterChange={setFilters}
+        defaultFilters={defaultFilter}
+        filterConfig={[
+          {
+            key:"user",
+            placeholder:"Search user...",
+            label: "User",
+            icon: Search,
+            type: "input"
+          },
+          {
+            key:"module",
+            label: "Module",
+            icon: Filter,
+            options: [
+              { value: 'all', label: 'All Modules' },
+              { value: 'AUTH', label: 'Authentication' },
+              { value: 'DEBTOR', label: 'Debtor' },
+              { value: 'BORDERO', label: 'Bordero' },
+              { value: 'PAYMENT', label: 'Payment' },
+              { value: 'RECONCILIATION', label: 'Reconciliation' },
+              { value: 'CLAIM', label: 'Claim' },
+              { value: 'CONFIG', label: 'Configuration' },
+            ]
+          },
+          {
+              key: "startDate",
+              placeholder: "Start Date",
+              label: "Start Date",
+              type: "date"
+          },
+          {
+              key: "endDate",
+              placeholder: "End Date",
+              label: "End Date",
+              type: "date"
+          },
+        ]}
+      />
 
       {/* Audit Log Table */}
       <DataTable

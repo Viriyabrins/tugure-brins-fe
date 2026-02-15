@@ -6,16 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, FileText, RefreshCw, Download, Filter, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, FileText, RefreshCw, Download, Filter, Clock, CreditCard, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/dashboard/StatCard';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+import FilterTab from '@/components/common/FilterTab';
+import DataTable from '@/components/common/DataTable';
+import GradientStatCard from '@/components/dashboard/GradientStatCard';
 
 export default function AdvancedReports() {
+  const [activeTab, setActiveTab] = useState('loss-ratio');
   const [loading, setLoading] = useState(true);
   const [debtors, setDebtors] = useState([]);
   const [batches, setBatches] = useState([]);
@@ -488,8 +490,48 @@ export default function AdvancedReports() {
   const claimStatuses = ['Draft', 'Checked', 'Doc Verified', 'Invoiced', 'Paid'];
   const creditTypes = ['Individual', 'Corporate'];
 
+  const getHeaderActions = () => {
+    let excelAction = null;
+
+    switch (activeTab) {
+      case 'loss-ratio':
+        excelAction = () => exportToExcel(lossRatio.trend, 'loss-ratio');
+        break;
+      case 'premium-status':
+        excelAction = () => exportToExcel(premiumStatus.byStatus, 'premium-status');
+        break;
+      case 'claim-paid':
+        excelAction = () => exportToExcel(claimPaid.statusData, 'claim-paid');
+        break;
+      case 'subrogation':
+        excelAction = () => exportToExcel(subrogation.statusData, 'subrogation');
+        break;
+      default:
+        break;
+    }
+
+    return (
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={loadData}>
+          <RefreshCw className="mr-2 h-4 w-4" /> 
+          Refresh
+        </Button>
+        {excelAction && (
+          <Button variant="outline" onClick={excelAction}>
+            <Download className="mr-2 h-4 w-4" />
+            Download Excel
+          </Button>
+        )}
+        <Button variant="outline" onClick={() => exportToPDF(activeTab)}>
+          <Download className="mr-2 h-4 w-4" />
+          Download PDF
+        </Button>
+      </div>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
+    <div className="space-y-6">
       <PageHeader
         title="Advanced Reports"
         subtitle="Executive summary and analytics dashboard"
@@ -497,12 +539,7 @@ export default function AdvancedReports() {
           { label: 'Dashboard', url: 'Dashboard' },
           { label: 'Advanced Reports' }
         ]}
-        actions={
-          <Button onClick={loadData} variant="outline" className="bg-white hover:bg-gray-50">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
-        }
+        actions={getHeaderActions()}
       />
 
       {/* Filter Panel */}
@@ -607,66 +644,52 @@ export default function AdvancedReports() {
         </CardContent>
       </Card>
 
+      {/* New Page */}
       <div id="report-content">
-        <Tabs defaultValue="loss-ratio" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 bg-white border-2 shadow-lg p-2">
-            <TabsTrigger value="loss-ratio" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white text-gray-900 font-bold">Loss Ratio</TabsTrigger>
-            <TabsTrigger value="premium-status" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-pink-600 data-[state=active]:text-white text-gray-900 font-bold">Premium by Status</TabsTrigger>
-            <TabsTrigger value="claim-paid" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white text-gray-900 font-bold">Claim Paid</TabsTrigger>
-            <TabsTrigger value="recovery" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-500 data-[state=active]:to-red-600 data-[state=active]:text-white text-gray-900 font-bold">OS Recovery</TabsTrigger>
-            <TabsTrigger value="subrogation" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-600 data-[state=active]:text-white text-gray-900 font-bold">Subrogation</TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full max-w-3xl grid-cols-5">
+            <TabsTrigger value="loss-ratio">Loss Ratio</TabsTrigger>
+            <TabsTrigger value="premium-status">Premium by  Status</TabsTrigger>
+            <TabsTrigger value="claim-paid">Claim Paid</TabsTrigger>
+            <TabsTrigger value="outstanding-recovery">OS Recovery</TabsTrigger>
+            <TabsTrigger value="subrogation">Subrogation</TabsTrigger>
+        </TabsList>
 
-          {/* Loss Ratio Tab */}
-          <TabsContent value="loss-ratio" className="space-y-6">
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => exportToPDF('loss-ratio')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                PDF
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => exportToExcel(lossRatio.trend, 'loss-ratio')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                Excel
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <StatCard
-                title="Premium Earned"
-                value={`Rp ${(lossRatio.premiumEarned / 1000000).toFixed(1)}M`}
-                subtitle="Batch Paid/Closed only"
-                icon={DollarSign}
-                gradient
-                className="from-blue-500 to-indigo-600"
-              />
-              <StatCard
+        {/* Loss Ratio */}
+        <TabsContent value={"loss-ratio"} className="space-y-6">
+          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+            <GradientStatCard
+              title="Premium Earned"
+              value={`Rp ${(lossRatio.premiumEarned / 1000000).toFixed(1)}M`}
+              subtitle="Batch Paid/Closed only"
+              icon={DollarSign}
+              gradient="from-blue-500 to-indigo-600"
+            />
+            <GradientStatCard
                 title="Claim Paid"
                 value={`Rp ${(lossRatio.claimPaid / 1000000).toFixed(1)}M`}
                 subtitle="Paid claims only"
                 icon={FileText}
-                gradient
-                className="from-red-500 to-pink-600"
-              />
-              <StatCard
-                title="Loss Ratio"
+                gradient="from-red-500 to-red-600"
+            />
+            <GradientStatCard
+              title="Loss Ratio"
                 value={`${lossRatio.lossRatio.toFixed(2)}%`}
                 subtitle={lossRatio.lossRatio < 70 ? 'Healthy' : lossRatio.lossRatio < 85 ? 'Warning' : 'Critical'}
                 icon={lossRatio.lossRatio < 70 ? TrendingDown : TrendingUp}
-                gradient
-                className={lossRatio.lossRatio < 70 ? 'from-green-500 to-emerald-600' : lossRatio.lossRatio < 85 ? 'from-yellow-500 to-orange-600' : 'from-red-500 to-red-700'}
-              />
-              <StatCard
-                title="Claim Payment Rate"
+                gradient={lossRatio.lossRatio < 70 ? 'from-green-500 to-emerald-600' : lossRatio.lossRatio < 85 ? 'from-yellow-500 to-orange-600' : 'from-red-500 to-red-700'}
+            />
+            <GradientStatCard
+              title="Claim Payment Rate"
                 value={`${lossRatio.claimPaymentRate.toFixed(1)}%`}
                 subtitle="Claims paid vs invoiced"
                 icon={TrendingUp}
-                gradient
-                className="from-purple-500 to-purple-600"
-              />
-            </div>
-
-            {/* Process Health Summary */}
-            <Card className="shadow-lg border-2 bg-gradient-to-br from-white to-slate-50">
+                gradient="from-purple-500 to-purple-600"
+            />
+          </div>
+          
+          {/* Process Health Summary */}
+          <Card className="shadow-lg border-2 bg-gradient-to-br from-white to-slate-50">
               <CardHeader className="bg-gradient-to-r from-slate-600 to-slate-700 text-white border-b-2">
                 <CardTitle className="text-white font-bold">📋 Process Health Summary</CardTitle>
               </CardHeader>
@@ -682,10 +705,10 @@ export default function AdvancedReports() {
                   </div>
                 </div>
               </CardContent>
-            </Card>
+          </Card>
 
-            {/* Claim Status Trend */}
-            <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-blue-50">
+          {/* Claim Status Trend */}
+          <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-blue-50">
               <CardHeader className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white border-b-4 border-indigo-700">
                 <CardTitle className="text-white font-bold text-xl">📊 Claim Movement by Status Over Time</CardTitle>
               </CardHeader>
@@ -709,10 +732,10 @@ export default function AdvancedReports() {
                   </ResponsiveContainer>
                 )}
               </CardContent>
-            </Card>
+          </Card>
 
-            {/* Distribution Charts */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Distribution Charts */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-green-50">
                 <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white border-b-4 border-emerald-700">
                   <CardTitle className="text-white font-bold text-xl">📈 Loss Ratio by Credit Type</CardTitle>
@@ -750,59 +773,43 @@ export default function AdvancedReports() {
                   )}
                 </CardContent>
               </Card>
-            </div>
-          </TabsContent>
+          </div>
+        </TabsContent>
 
-          {/* Premium by Status Tab */}
-          <TabsContent value="premium-status" className="space-y-6">
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => exportToPDF('premium-status')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                PDF
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => exportToExcel(premiumStatus.byStatus, 'premium-status')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                Excel
-              </Button>
-            </div>
-
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <StatCard
-                title="Total Gross Premium"
-                value={`Rp ${(premiumStatus.totalGrossPremium / 1000000).toFixed(1)}M`}
-                subtitle="All batches"
-                icon={DollarSign}
-                gradient
-                className="from-blue-500 to-indigo-600"
-              />
-              <StatCard
+        {/* Premium by Status */}
+        <TabsContent value={"premium-status"} className="space-y-6">
+          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+            <GradientStatCard
+              title="Total Gross Premium"
+              value={`Rp ${(premiumStatus.totalGrossPremium / 1000000).toFixed(1)}M`}
+              subtitle="All batches"
+              icon={DollarSign}
+              gradient="from-blue-500 to-indigo-600"
+            />
+            <GradientStatCard
                 title="Net Premium"
                 value={`Rp ${(premiumStatus.netPremium / 1000000).toFixed(1)}M`}
-                subtitle="After reinsurance"
-                icon={DollarSign}
-                gradient
-                className="from-purple-500 to-purple-600"
-              />
-              <StatCard
-                title="Paid Premium"
-                value={`${premiumStatus.paidPercentage.toFixed(1)}%`}
-                subtitle={`Rp ${(premiumStatus.paidPremium / 1000000).toFixed(1)}M`}
-                icon={TrendingUp}
-                gradient
-                className="from-green-500 to-emerald-600"
-              />
-              <StatCard
-                title="Outstanding Premium"
-                value={`${premiumStatus.outstandingPercentage.toFixed(1)}%`}
-                subtitle={`Rp ${(premiumStatus.outstandingPremium / 1000000).toFixed(1)}M`}
-                icon={TrendingDown}
-                gradient
-                className="from-orange-500 to-red-600"
-              />
-            </div>
+                subtitle="After deductions"
+                icon={CreditCard}
+                gradient="from-green-500 to-emerald-600"
+            />
+            <GradientStatCard
+              title="Paid Premium"
+                value={`Rp ${(premiumStatus.paidPremium / 1000000).toFixed(1)}M`}
+                subtitle={`${premiumStatus.paidPercentage.toFixed(1)}% of Gross`}
+                icon={CheckCircle}
+                gradient="from-purple-500 to-purple-600"
+            />
+            <GradientStatCard
+              title="Outstanding Premium"
+                value={`Rp ${(premiumStatus.outstandingPremium / 1000000).toFixed(1)}M`}
+                subtitle={`${premiumStatus.outstandingPercentage.toFixed(1)}% of Gross`}
+                icon={Clock}
+                gradient="from-orange-500 to-red-600"
+            />
+          </div>
 
-            {/* Process Health Summary */}
+                 {/* Process Health Summary */}
             <Card className="shadow-lg border-2 bg-gradient-to-br from-white to-slate-50">
               <CardHeader className="bg-gradient-to-r from-slate-600 to-slate-700 text-white border-b-2">
                 <CardTitle className="text-white font-bold">⚠️ Bottleneck Analysis</CardTitle>
@@ -884,58 +891,42 @@ export default function AdvancedReports() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
+        </TabsContent>
 
-          {/* Claim Paid Tab */}
-          <TabsContent value="claim-paid" className="space-y-6">
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => exportToPDF('claim-paid')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                PDF
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => exportToExcel(claimPaid.statusData, 'claim-paid')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                Excel
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <StatCard
-                title="Total Claim Paid"
-                value={`Rp ${(claimPaid.totalPaid / 1000000).toFixed(1)}M`}
-                subtitle={`${claimPaid.count} claims`}
-                icon={FileText}
-                gradient
-                className="from-green-500 to-emerald-600"
-              />
-              <StatCard
-                title="Claims In Progress"
+        {/* Claim Paid */}
+        <TabsContent value={"claim-paid"} className="space-y-6">
+          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+            <GradientStatCard
+              title="Total Claim Paid"
+              value={`Rp ${(claimPaid.totalPaid / 1000000).toFixed(1)}M`}
+              subtitle="All paid claims"
+              icon={FileText}
+              gradient="from-red-500 to-red-600"
+            />
+            <GradientStatCard
+                title="Number of Claims Paid"
+                value={claimPaid.count}
+                subtitle="Total paid claims"
+                icon={CheckCircle}
+                gradient="from-green-500 to-emerald-600"
+            />
+            <GradientStatCard
+              title="Claims In Progress"
                 value={claimPaid.inProgress}
-                subtitle="Draft + Checked + Doc Verified"
+                subtitle="Draft/Checked/Doc Verified"
                 icon={Clock}
-                gradient
-                className="from-orange-500 to-orange-600"
-              />
-              <StatCard
-                title="Invoiced Not Paid"
-                value={claimPaid.invoicedNotPaid}
-                subtitle="Awaiting payment"
+                gradient="from-orange-500 to-orange-600"
+            />
+            <GradientStatCard
+              title="Avg. Settlement Time"
+                value={`${claimPaid.avgSettlementDays} Days`}
+                subtitle="For paid claims"
                 icon={TrendingUp}
-                gradient
-                className="from-yellow-500 to-yellow-600"
-              />
-              <StatCard
-                title="Avg Settlement Time"
-                value={`${claimPaid.avgSettlementDays} days`}
-                subtitle="Draft → Paid"
-                icon={TrendingDown}
-                gradient
-                className="from-blue-500 to-indigo-600"
-              />
-            </div>
+                gradient="from-indigo-500 to-indigo-600"
+            />
+          </div>
 
-            {/* Lifecycle Trend */}
-            <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-green-50">
+          <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-green-50">
               <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white border-b-4 border-emerald-700">
                 <CardTitle className="text-white font-bold text-xl">🔄 Claim Lifecycle Movement by Status</CardTitle>
               </CardHeader>
@@ -998,45 +989,42 @@ export default function AdvancedReports() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
+        </TabsContent> 
 
-          {/* Outstanding Recovery Tab */}
-          <TabsContent value="recovery" className="space-y-6">
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => exportToPDF('recovery')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                PDF
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <StatCard
-                title="Total Claim Paid"
-                value={`Rp ${(recovery.totalClaimPaid / 1000000).toFixed(1)}M`}
-                subtitle="Paid claims"
-                icon={FileText}
-                gradient
-                className="from-red-500 to-pink-600"
-              />
-              <StatCard
+        {/* Outstanding Recovery */}
+        <TabsContent value={"outstanding-recovery"} className="space-y-6">
+          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+            <GradientStatCard
+              title="Total Claim Paid"
+              value={`Rp ${(recovery.totalClaimPaid / 1000000).toFixed(1)}M`}
+              subtitle="All paid claims"
+              icon={FileText}
+              gradient="from-red-500 to-red-600"
+            />
+            <GradientStatCard
                 title="Total Recovered"
                 value={`Rp ${(recovery.totalRecovered / 1000000).toFixed(1)}M`}
-                subtitle="Subrogation paid"
+                subtitle="Via subrogation"
                 icon={DollarSign}
-                gradient
-                className="from-green-500 to-emerald-600"
-              />
-              <StatCard
-                title="Outstanding Recovery"
+                gradient="from-green-500 to-emerald-600"
+            />
+            <GradientStatCard
+              title="Outstanding Recovery"
                 value={`Rp ${(recovery.outstanding / 1000000).toFixed(1)}M`}
-                subtitle="Exposure remaining"
+                subtitle="Yet to be recovered"
+                icon={Clock}
+                gradient="from-orange-500 to-red-600"
+            />
+            <GradientStatCard
+              title="Recovery Rate"
+                value={`${((recovery.totalRecovered / recovery.totalClaimPaid) * 100).toFixed(1)}%`}
+                subtitle="of claim paid"
                 icon={TrendingUp}
-                gradient
-                className="from-orange-500 to-red-600"
-              />
-            </div>
+                gradient="from-indigo-500 to-indigo-600"
+            />
+          </div>
 
-            {/* Trend */}
+          {/* Trend */}
             <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-orange-50">
               <CardHeader className="bg-gradient-to-r from-orange-500 to-red-600 text-white border-b-4 border-red-700">
                 <CardTitle className="text-white font-bold text-xl">📈 Outstanding Recovery Trend Over Time</CardTitle>
@@ -1075,57 +1063,42 @@ export default function AdvancedReports() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
+        </TabsContent>
 
-          {/* Subrogation Tab */}
-          <TabsContent value="subrogation" className="space-y-6">
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => exportToPDF('subrogation')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                PDF
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => exportToExcel(subrogation.statusData, 'subrogation')} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold border-2">
-                <Download className="w-4 h-4 mr-2" />
-                Excel
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <StatCard
-                title="Total Amount"
-                value={`Rp ${(subrogation.totalAmount / 1000000).toFixed(1)}M`}
-                subtitle="All subrogations"
-                icon={DollarSign}
-                gradient
-                className="from-blue-500 to-indigo-600"
-              />
-              <StatCard
-                title="Recovered Amount"
+        {/* Subrogation */}
+        <TabsContent value={"subrogation"} className="space-y-6">
+          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+            <GradientStatCard
+              title="Total Subrogation Amount"
+              value={`Rp ${(subrogation.totalAmount / 1000000).toFixed(1)}M`}
+              subtitle="All subrogations"
+              icon={FileText}
+              gradient="from-blue-500 to-indigo-600"
+            />
+            <GradientStatCard
+                title="Total Recovered Amount"
                 value={`Rp ${(subrogation.recoveredAmount / 1000000).toFixed(1)}M`}
                 subtitle="Paid / Closed"
-                icon={TrendingUp}
-                gradient
-                className="from-green-500 to-emerald-600"
-              />
-              <StatCard
-                title="Pending Amount"
+                icon={DollarSign}
+                gradient="from-green-500 to-emerald-600"
+            />
+            <GradientStatCard
+              title="Pending Amount"
                 value={`Rp ${(subrogation.pendingAmount / 1000000).toFixed(1)}M`}
-                subtitle="Draft + Invoiced"
+                subtitle="Yet to be recovered"
                 icon={Clock}
-                gradient
-                className="from-orange-500 to-orange-600"
-              />
-              <StatCard
-                title="Recovery Rate"
+                gradient="from-orange-500 to-red-600"
+            />
+            <GradientStatCard
+              title="Recovery Rate"
                 value={`${subrogation.recoveryRate.toFixed(1)}%`}
-                subtitle="Success rate"
-                icon={TrendingDown}
-                gradient
-                className="from-purple-500 to-purple-600"
-              />
-            </div>
-
-            {/* Trend */}
+                subtitle="of subrogation amount"
+                icon={TrendingUp}
+                gradient="from-purple-500 to-purple-600"
+            />
+          </div>
+          
+          {/* Trend */}
             <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-purple-50">
               <CardHeader className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white border-b-4 border-indigo-700">
                 <CardTitle className="text-white font-bold text-xl">📈 Subrogation Amount by Status Over Time</CardTitle>
@@ -1187,8 +1160,8 @@ export default function AdvancedReports() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
-        </Tabs>
+        </TabsContent>
+      </Tabs>
       </div>
     </div>
   );

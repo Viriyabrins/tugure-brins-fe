@@ -36,11 +36,25 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/AuthContext";
 import { backend } from "@/api/backendClient";
 import { formatRupiahAdaptive } from "@/utils/currency";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
+import FilterTab from "@/components/common/FilterTab";
+
+const defaultFilter = {
+    contract: "all",
+    batch: "",
+    submitStatus: "all",
+    reconStatus: "all",
+    claimStatus: "all",
+    subrogationStatus: "all",
+    startDate: "",
+    endDate: "",
+}
 
 export default function BorderoManagement() {
     const [user, setUser] = useState(null);
     const [activeTab, setActiveTab] = useState("debtors");
     const [debtors, setDebtors] = useState([]);
+    const [batches, setBatches] = useState([]);
     const [borderos, setBorderos] = useState([]);
     const [contracts, setContracts] = useState([]);
     const [claims, setClaims] = useState([]);
@@ -53,16 +67,7 @@ export default function BorderoManagement() {
     const [processing, setProcessing] = useState(false);
     const [actionType, setActionType] = useState("");
     const [successMessage, setSuccessMessage] = useState("");
-    const [filters, setFilters] = useState({
-        contract: "all",
-        batch: "",
-        submitStatus: "all",
-        reconStatus: "all",
-        claimStatus: "all",
-        subrogationStatus: "all",
-        startDate: "",
-        endDate: "",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     const { bypassAuth } = useAuth();
     const useBackendApi = import.meta.env.VITE_USE_BACKEND_API === "true";
@@ -180,18 +185,100 @@ export default function BorderoManagement() {
         setFilters({ ...filters, [key]: value });
     };
 
-    const clearFilters = () => {
-        setFilters({
-            contract: "all",
-            batch: "",
-            submitStatus: "all",
-            reconStatus: "all",
-            claimStatus: "all",
-            subrogationStatus: "all",
-            startDate: "",
-            endDate: "",
+    const handleExportExcel = () => {
+        let data = [];
+        let headers = [];
+        let sourceData = [];
+        if (activeTab === "debtors") {
+            sourceData =
+                selectedItems.length > 0
+                    ? filteredDebtors.filter((d) =>
+                          selectedItems.includes(d.id),
+                      )
+                    : filteredDebtors;
+            headers = [
+                "Debtor",
+                "Batch",
+                "Plafond",
+                "Net Premi",
+                "Status",
+            ];
+            data = sourceData.map((d) => [
+                d.nama_peserta,
+                d.batch_id,
+                d.plafon,
+                d.net_premi,
+                d.status,
+            ]);
+        } else if (activeTab === "borderos") {
+            sourceData =
+                selectedItems.length > 0
+                    ? borderos.filter((b) =>
+                          selectedItems.includes(b.id),
+                      )
+                    : borderos;
+            headers = [
+                "Bordero ID",
+                "Period",
+                "Total Debtors",
+                "Total Exposure",
+                "Total Premium",
+                "Status",
+            ];
+            data = sourceData.map((b) => [
+                b.bordero_id,
+                b.period,
+                b.total_debtors,
+                b.total_exposure,
+                b.total_premium,
+                b.status,
+            ]);
+        } else if (activeTab === "claims") {
+            sourceData = filteredClaims;
+            headers = [
+                "Claim No",
+                "Debtor",
+                "DOL",
+                "Claim Amount",
+                "Status",
+            ];
+            data = sourceData.map((c) => [
+                c.claim_no,
+                c.nama_tertanggung,
+                c.dol,
+                c.nilai_klaim,
+                c.claim_status,
+            ]);
+        } else if (activeTab === "subrogation") {
+            sourceData = filteredSubrogations;
+            headers = [
+                "Subrogation ID",
+                "Claim ID",
+                "Recovery Amount",
+                "Recovery Date",
+                "Status",
+            ];
+            data = sourceData.map((s) => [
+                s.subrogation_id,
+                s.claim_id,
+                s.recovery_amount,
+                s.recovery_date,
+                s.status,
+            ]);
+        }
+        const csv = [
+            headers.join(","),
+            ...data.map((row) => row.join(",")),
+        ].join("\n");
+        const blob = new Blob([csv], {
+            type: "text/csv",
         });
-    };
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `bordero-${activeTab}-${new Date().toISOString().split("T")[0]}.csv`;
+        a.click();
+    }
 
     const openDetailDialog = (item) => {
         setSelectedItem(item);
@@ -245,31 +332,24 @@ export default function BorderoManagement() {
     // Filter per tab based on workflow status
     const getTabDebtors = () => {
         let filtered = debtors.filter((d) => {
-            if (
-                filters.contract !== "all" &&
-                d.contract_id !== filters.contract
-            )
-                return false;
-            if (filters.batch && !d.batch_id?.includes(filters.batch))
-                return false;
-            if (
-                filters.submitStatus !== "all" &&
-                d.status !== filters.submitStatus
-            )
-                return false;
-            if (filters.startDate && d.created_date < filters.startDate)
-                return false;
-            if (filters.endDate && d.created_date > filters.endDate)
-                return false;
+            if (filters.contract !== "all" && d.contract_id !== filters.contract) return false;
+            if (filters.batch && !d.batch_id?.includes(filters.batch)) return false;
+            // Filter global berdasarkan submitStatus jika ada
+            if (filters.submitStatus !== "all" && d.status !== filters.submitStatus) return false;
+            if (filters.startDate && d.created_date < filters.startDate) return false;
+            if (filters.endDate && d.created_date > filters.endDate) return false;
             return true;
         });
 
         // Apply tab-specific filters
         if (activeTab === "debtors") {
-            // All approved debtors
-            return filtered.filter((d) => d.status === "APPROVED");
+            // Allow all statuses if filtered, otherwise default behavior (or just return filtered)
+            // The user requested "filtering based on submit status", so we return the filtered list directly.
+            return filtered;
         } else if (activeTab === "exposure") {
-            // Only approved
+            // Exposure usually implies Approved, but if user filters, we should probably respect it?
+            // For now, let's keep Exposure strictly Approved as it implies risk calculation on valid policies.
+            // But if the user filters by "SUBMITTED", this tab might end up empty, which is correct.
             return filtered.filter((d) => d.status === "APPROVED");
         } else if (activeTab === "borderos") {
             // Handled separately
@@ -279,6 +359,9 @@ export default function BorderoManagement() {
     };
 
     const filteredDebtors = getTabDebtors();
+
+    // Use filteredDebtors for KPIs to ensure they match the table and filter selection
+    const kpiDebtors = filteredDebtors;
 
     const filteredClaims = claims.filter((c) => {
         if (
@@ -469,104 +552,9 @@ export default function BorderoManagement() {
                             Refresh
                         </Button>
                         <Button
+                            // className="bg-green-600 hover:bg-green-700 text-white"
                             variant="outline"
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                            onClick={() => {
-                                let data = [];
-                                let headers = [];
-                                let sourceData = [];
-
-                                if (activeTab === "debtors") {
-                                    sourceData =
-                                        selectedItems.length > 0
-                                            ? filteredDebtors.filter((d) =>
-                                                  selectedItems.includes(d.id),
-                                              )
-                                            : filteredDebtors;
-                                    headers = [
-                                        "Debtor",
-                                        "Batch",
-                                        "Plafond",
-                                        "Net Premi",
-                                        "Status",
-                                    ];
-                                    data = sourceData.map((d) => [
-                                        d.nama_peserta,
-                                        d.batch_id,
-                                        d.plafon,
-                                        d.net_premi,
-                                        d.status,
-                                    ]);
-                                } else if (activeTab === "borderos") {
-                                    sourceData =
-                                        selectedItems.length > 0
-                                            ? borderos.filter((b) =>
-                                                  selectedItems.includes(b.id),
-                                              )
-                                            : borderos;
-                                    headers = [
-                                        "Bordero ID",
-                                        "Period",
-                                        "Total Debtors",
-                                        "Total Exposure",
-                                        "Total Premium",
-                                        "Status",
-                                    ];
-                                    data = sourceData.map((b) => [
-                                        b.bordero_id,
-                                        b.period,
-                                        b.total_debtors,
-                                        b.total_exposure,
-                                        b.total_premium,
-                                        b.status,
-                                    ]);
-                                } else if (activeTab === "claims") {
-                                    sourceData = filteredClaims;
-                                    headers = [
-                                        "Claim No",
-                                        "Debtor",
-                                        "DOL",
-                                        "Claim Amount",
-                                        "Status",
-                                    ];
-                                    data = sourceData.map((c) => [
-                                        c.claim_no,
-                                        c.nama_tertanggung,
-                                        c.dol,
-                                        c.nilai_klaim,
-                                        c.claim_status,
-                                    ]);
-                                } else if (activeTab === "subrogation") {
-                                    sourceData = filteredSubrogations;
-                                    headers = [
-                                        "Subrogation ID",
-                                        "Claim ID",
-                                        "Recovery Amount",
-                                        "Recovery Date",
-                                        "Status",
-                                    ];
-                                    data = sourceData.map((s) => [
-                                        s.subrogation_id,
-                                        s.claim_id,
-                                        s.recovery_amount,
-                                        s.recovery_date,
-                                        s.status,
-                                    ]);
-                                }
-
-                                const csv = [
-                                    headers.join(","),
-                                    ...data.map((row) => row.join(",")),
-                                ].join("\n");
-                                const blob = new Blob([csv], {
-                                    type: "text/csv",
-                                });
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement("a");
-                                a.href = url;
-                                a.download = `bordero-${activeTab}-${new Date().toISOString().split("T")[0]}.csv`;
-                                a.click();
-                            }}
+                            onClick={handleExportExcel}
                         >
                             <Download className="w-4 h-4 mr-2" />
                             Export Excel
@@ -650,149 +638,99 @@ export default function BorderoManagement() {
                 </DialogContent>
             </Dialog>
 
-            {/* KPI Cards */}
+            {/* Gradient Card */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white overflow-hidden relative">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-blue-100 text-sm font-medium mb-1">
-                                    Total Debtors
-                                </p>
-                                <h3 className="text-3xl font-bold">
-                                    {/* Hitung hanya yang APPROVED seperti Dashboard */}
-                                    {
-                                        debtors.filter(
-                                            (d) => d.status === "APPROVED",
-                                        ).length
-                                    }
-                                </h3>
-                                <p className="text-blue-100 text-xs mt-2">
-                                    {debtors.length} total •{" "}
-                                    {
-                                        debtors.filter(
-                                            (d) => d.status === "SUBMITTED",
-                                        ).length
-                                    }{" "}
-                                    pending
-                                </p>
-                            </div>
-                            <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center">
-                                <FileText className="w-6 h-6 text-white" />
-                            </div>
-                        </div>
-                    </CardContent>
-                    <div className="absolute bottom-0 right-0 w-24 h-24 bg-white/10 rounded-tl-full"></div>
-                </Card>
-
-                <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white overflow-hidden relative">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-purple-100 text-sm font-medium mb-1">
-                                    Borderos
-                                </p>
-                                <h3 className="text-3xl font-bold">
-                                    {borderos.length}
-                                </h3>
-                                <p className="text-purple-100 text-xs mt-2">
-                                    {
-                                        borderos.filter(
-                                            (b) => b.status === "FINAL",
-                                        ).length
-                                    }{" "}
-                                    finalized
-                                </p>
-                            </div>
-                            <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center">
-                                <FileText className="w-6 h-6 text-white" />
-                            </div>
-                        </div>
-                    </CardContent>
-                    <div className="absolute bottom-0 right-0 w-24 h-24 bg-white/10 rounded-tl-full"></div>
-                </Card>
-
-                <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white overflow-hidden relative">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-green-100 text-sm font-medium mb-1">
-                                    Total Premi
-                                </p>
-                                <h3 className="text-2xl font-bold">
-                                    {formatRupiahAdaptive(
-                                        debtors
-                                            .reduce((sum, debtor) => {
-                                                const netPremi =
-                                                    parseFloat(
-                                                        debtor.net_premi,
-                                                    ) || 0;
-                                                return sum + netPremi;
-                                            }, 0),
-                                    )}
-                                </h3>
-                                <p className="text-green-100 text-xs mt-2">
-                                    IDR
-                                </p>
-                            </div>
-                            <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center">
-                                <DollarSign className="w-6 h-6 text-white" />
-                            </div>
-                        </div>
-                    </CardContent>
-                    <div className="absolute bottom-0 right-0 w-24 h-24 bg-white/10 rounded-tl-full"></div>
-                </Card>
-
-                <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white overflow-hidden relative">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-orange-100 text-sm font-medium mb-1">
-                                    Total Claims
-                                </p>
-                                <h3 className="text-3xl font-bold">
-                                    {claims.length}
-                                </h3>
-                                <p className="text-orange-100 text-xs mt-2">
-                                    All statuses
-                                </p>
-                            </div>
-                            <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center">
-                                <AlertCircle className="w-6 h-6 text-white" />
-                            </div>
-                        </div>
-                    </CardContent>
-                    <div className="absolute bottom-0 right-0 w-24 h-24 bg-white/10 rounded-tl-full"></div>
-                </Card>
-
-                <Card className="bg-gradient-to-br from-teal-500 to-teal-600 text-white overflow-hidden relative">
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-teal-100 text-sm font-medium mb-1">
-                                    Subrogations
-                                </p>
-                                <h3 className="text-3xl font-bold">
-                                    {subrogations.length}
-                                </h3>
-                                <p className="text-teal-100 text-xs mt-2">
-                                    Recovery cases
-                                </p>
-                            </div>
-                            <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center">
-                                <RefreshCw className="w-6 h-6 text-white" />
-                            </div>
-                        </div>
-                    </CardContent>
-                    <div className="absolute bottom-0 right-0 w-24 h-24 bg-white/10 rounded-tl-full"></div>
-                </Card>
+                <GradientStatCard
+                    title="Total Debtors"
+                    value={kpiDebtors.length}
+                    subtitle={`${debtors.length} total • ${debtors.filter(
+                        (d) => d.status === "SUBMITTED",
+                    ).length} pending`}
+                    icon={FileText}
+                    gradient="from-blue-500 to-blue-600"
+                />
+                <GradientStatCard
+                    title="Borderos"
+                    value={borderos.length}
+                    subtitle={`${borderos.filter(
+                        (b) => b.status === "FINAL",
+                    ).length} finalized`}
+                    icon={FileText}
+                    gradient="from-purple-500 to-purple-600"
+                />
+                <GradientStatCard
+                    title="Total Premi"
+                    value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => {
+                        const netPremi = parseFloat(debtor.net_premi) || 0;
+                        return sum + netPremi;
+                    }, 0))}
+                    subtitle="IDR"
+                    icon={DollarSign}
+                    gradient="from-green-500 to-green-600"
+                />
+                <GradientStatCard
+                    title="Total Claims"
+                    value={claims.length}
+                    subtitle="All statuses"
+                    icon={AlertCircle}
+                    gradient="from-orange-500 to-orange-600"
+                />
+                <GradientStatCard
+                    title="Subrogrations"
+                    value={subrogations.length}
+                    subtitle="Recovery cases"
+                    icon={RefreshCw}
+                    gradient="from-teal-500 to-teal-600"
+                />
             </div>
 
-            <FilterPanel
-                filters={filters}
-                onFilterChange={handleFilterChange}
-                onClear={clearFilters}
-                contracts={contracts}
+            {/* Filters */}
+            <FilterTab
+                filters = {filters}
+                onFilterChange={setFilters}
+                defaultFilters={defaultFilter}
+                filterConfig={[
+                    {
+                        key: "batch",
+                        label: "Batch ID",
+                        placeholder: "Search batch",
+                        type: "input",
+                        inputType: "text"
+                    },
+                    {
+                        key: "startDate",
+                        label: "Start Date",
+                        type: "date",
+                    },
+                    {
+                        key: "endDate",
+                        label: "End Date",
+                        type: "date",
+                    },
+                    {
+                        key:"submitStatus",
+                        label: "Submit Status",
+                        placeholder: "Submit Status",
+                        options: [
+                            { value: "all", label: "All"},
+                            { value: "DRAFT", label: "Draft"},
+                            { value: "SUBMITTED", label: "Submitted"},
+                            { value: "APPROVED", label: "Approved"},
+                            { value: "REJECTED", label: "Rejected"},
+                        ]
+                    },
+                    {
+                        key: "reconStatus",
+                        placeholder: "All Status",
+                        label: "Reconciliation Status",
+                        options: [
+                            { value: "all", label: "All"},
+                            { value: "IN_PROGRESS", label: "In Progress"},
+                            { value: "EXCEPTION", label: "Exception"},
+                            { value: "CLOSED", label: "Closed"}
+                        ]
+                    }
+                ]}
             />
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>

@@ -41,6 +41,15 @@ import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import ModernKPI from "@/components/dashboard/ModernKPI";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
+import FilterTab from "@/components/common/FilterTab";
+
+const defaultFilter = {
+    contract: "all",
+    batch: "",
+    claimStatus: "all",
+    subrogationStatus: "all",
+}
 
 export default function ClaimSubmit() {
     const [user, setUser] = useState(null);
@@ -65,12 +74,7 @@ export default function ClaimSubmit() {
     const [activeTab, setActiveTab] = useState("claims");
     const [uploadFile, setUploadFile] = useState(null);
     const [parsedClaims, setParsedClaims] = useState([]);
-    const [filters, setFilters] = useState({
-        contract: "all",
-        batch: "",
-        claimStatus: "all",
-        subrogationStatus: "all",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     useEffect(() => {
         loadUser();
@@ -486,17 +490,23 @@ export default function ClaimSubmit() {
                 ]}
                 actions={
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={loadData}>
+                        <Button 
+                            variant="outline" 
+                            onClick={loadData}
+                        >
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Refresh
                         </Button>
-                        <Button variant="outline" onClick={downloadTemplate}>
+                        <Button 
+                            variant="outline" 
+                            onClick={downloadTemplate}
+                        >
                             <Download className="w-4 h-4 mr-2" />
-                            Template
+                            Download Template
                         </Button>
-                        <Button
+                        <Button 
+                            variant="outline"
                             onClick={() => setShowUploadDialog(true)}
-                            className="bg-blue-600"
                         >
                             <Upload className="w-4 h-4 mr-2" />
                             Bulk Upload
@@ -557,9 +567,9 @@ export default function ClaimSubmit() {
                 </Card>
             )}
 
-            {/* KPI Cards */}
+            {/* Gradient Card */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <ModernKPI
+                <GradientStatCard
                     title="Total Claims"
                     value={claims.length}
                     subtitle={formatRupiahAdaptive(
@@ -569,16 +579,16 @@ export default function ClaimSubmit() {
                         ),
                     )}
                     icon={FileText}
-                    color="blue"
+                    gradient="from-blue-500 to-blue-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Draft Claims"
                     value={claims.filter((c) => c.status === "Draft").length}
                     subtitle="Pending check"
                     icon={Clock}
-                    color="orange"
+                    gradient="from-orange-500 to-orange-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Total Subrogation"
                     value={subrogations.length}
                     subtitle={formatRupiahAdaptive(
@@ -588,9 +598,9 @@ export default function ClaimSubmit() {
                         ),
                     )}
                     icon={DollarSign}
-                    color="green"
+                    gradient="from-green-500 to-green-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Recovered"
                     value={
                         subrogations.filter((s) => s.status === "Paid / Closed")
@@ -598,113 +608,63 @@ export default function ClaimSubmit() {
                     }
                     subtitle="Completed"
                     icon={CheckCircle2}
-                    color="purple"
+                    gradient="from-purple-500 to-purple-600"
                 />
             </div>
 
             {/* Filters */}
-            <Card>
-                <CardContent className="p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                        <Select
-                            value={filters.contract}
-                            onValueChange={(val) =>
-                                setFilters({ ...filters, contract: val })
-                            }
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Contract" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">
-                                    All Contracts
-                                </SelectItem>
-                                {contracts.map((c) => (
-                                    <SelectItem
-                                        key={c.contract_number}
-                                        value={c.contract_number}
-                                    >
-                                        {c.contract_number}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Input
-                            placeholder="Batch ID..."
-                            value={filters.batch}
-                            onChange={(e) =>
-                                setFilters({
-                                    ...filters,
-                                    batch: e.target.value,
-                                })
-                            }
-                        />
-                        <Select
-                            value={filters.claimStatus}
-                            onValueChange={(val) =>
-                                setFilters({ ...filters, claimStatus: val })
-                            }
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Claim Status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">
-                                    All Claim Status
-                                </SelectItem>
-                                <SelectItem value="Draft">Draft</SelectItem>
-                                <SelectItem value="Checked">Checked</SelectItem>
-                                <SelectItem value="Doc Verified">
-                                    Doc Verified
-                                </SelectItem>
-                                <SelectItem value="Invoiced">
-                                    Invoiced
-                                </SelectItem>
-                                <SelectItem value="Paid">Paid</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            value={filters.subrogationStatus}
-                            onValueChange={(val) =>
-                                setFilters({
-                                    ...filters,
-                                    subrogationStatus: val,
-                                })
-                            }
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Subrogation" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">
-                                    All Subrogation
-                                </SelectItem>
-                                <SelectItem value="Draft">Draft</SelectItem>
-                                <SelectItem value="Invoiced">
-                                    Invoiced
-                                </SelectItem>
-                                <SelectItem value="Paid / Closed">
-                                    Paid / Closed
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                                setFilters({
-                                    contract: "all",
-                                    batch: "",
-                                    claimStatus: "all",
-                                    subrogationStatus: "all",
-                                })
-                            }
-                        >
-                            Clear Filters
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
+            <FilterTab
+                filters={filters}
+                onFilterChange={setFilters}
+                defaultFilters={defaultFilter}
+                filterConfig={[
+                    {
+                        key: "contract",
+                        label: "Contract",
+                        options: [
+                            { value: "all", label: "All Contracts" },
+                            ...contracts.map((c) => ({
+                                value: c.contract_id,
+                                label: c.contract_number,
+                            })),
+                        ],
+                    },
+                    {
+                        key: "batch",
+                        placeholder: "Batch ID",
+                        label: "Batch ID",
+                        options: [
+                            { value: "all", label: "All Batches" },
+                            ...batches.map((b) => ({
+                                value: b.batch_id,
+                                label: b.batch_id,
+                            })),
+                        ],
+                    },
+                    {
+                        key: "claimStatus",
+                        label: "Claim Status",
+                        options: [
+                            { value: "all", label: "    All Claim Status" },
+                            { value: "Draft", label: "Draft" },
+                            { value: "Checked", label: "Checked" },
+                            { value: "Doc Verified", label: "Doc Verified" },
+                            { value: "Invoiced", label: "Invoiced" },
+                            { value: "Paid", label: "Paid" },
+                        ],
+                    },
+                    {
+                        key: "subrogationStatus",
+                        label: "Subrogation Status",
+                        options: [
+                            { value: "all", label: "All Subrogation" },
+                            { value: "Draft", label: "Draft" },
+                            { value: "Invoiced", label: "Invoiced" },
+                            { value: "Paid / Closed", label: "Paid / Closed" },
+                        ],
+                    },
+                ]}
+            />
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList>

@@ -30,6 +30,7 @@ import {
     Eye,
     AlertCircle,
     Clock,
+    Check,
 } from "lucide-react";
 import { backend } from "@/api/backendClient";
 import PageHeader from "@/components/common/PageHeader";
@@ -38,6 +39,15 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import StatCard from "@/components/dashboard/StatCard";
 import ModernKPI from "@/components/dashboard/ModernKPI";
 import { formatRupiahAdaptive } from "@/utils/currency";
+import GradientStatCard from "@/components/dashboard/GradientStatCard";
+import FilterTab from "@/components/common/FilterTab";
+import { Checkbox } from "@/components/ui/checkbox";
+
+const defaultFilter = {
+    contract: "all",
+    notaType: "all",
+    status: "all",
+}
 
 export default function PaymentIntent() {
     const [user, setUser] = useState(null);
@@ -47,6 +57,7 @@ export default function PaymentIntent() {
     const [loading, setLoading] = useState(true);
     const [showCreateDialog, setShowCreateDialog] = useState(false);
     const [selectedNota, setSelectedNota] = useState("");
+    const [selectedIntents, setSelectedIntents] = useState([]);
     const [processing, setProcessing] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
@@ -54,11 +65,7 @@ export default function PaymentIntent() {
     const [plannedAmount, setPlannedAmount] = useState("");
     const [plannedDate, setPlannedDate] = useState("");
     const [remarks, setRemarks] = useState("");
-    const [filters, setFilters] = useState({
-        contract: "all",
-        notaType: "all",
-        status: "all",
-    });
+    const [filters, setFilters] = useState(defaultFilter);
 
     const isBrins = user?.role === "BRINS" || user?.role === "admin";
     const isTugure = user?.role === "TUGURE" || user?.role === "admin";
@@ -297,10 +304,64 @@ export default function PaymentIntent() {
         setProcessing(false);
     };
 
-    const intentColumns = [
+    // Filter data berdasarkan filter yang dipilih
+    const filteredIntents = paymentIntents.filter((p) => {
+        if (filters.contract !== "all" && p.contract_id !== filters.contract)
+            return false;
+        if (filters.status !== "all" && p.status !== filters.status)
+            return false;
+
+        // Filter by nota type jika ada
+        if (filters.notaType !== "all") {
+            const nota = notas.find(
+                (n) => n.id === p.invoice_id || n.nota_number === p.invoice_id,
+            );
+            if (!nota || nota.nota_type !== filters.notaType) return false;
+        }
+
+        return true;
+    });
+
+    const toggleIntentSelection = (intentId) => {
+        if (selectedIntents.includes(intentId)) {
+            setSelectedIntents(selectedIntents.filter((id) => id !== intentId));
+        } else {
+            setSelectedIntents([...selectedIntents, intentId]);
+        }
+    };
+
+    const columns = [
+        {
+            header: (
+                <Checkbox
+                    checked={
+                        selectedIntents.length === filteredIntents.length &&
+                        filteredIntents.length > 0
+                    }
+                    onCheckedChange={(checked) => {
+                        if (checked) {
+                            setSelectedIntents(
+                                filteredIntents.map((p) => p.intent_id || p.id),
+                            );
+                        } else {
+                            setSelectedIntents([]);
+                        }
+                    }}
+                />
+            ),
+            cell: (row) => (
+                <Checkbox
+                    checked={selectedIntents.includes(row.intent_id || row.id)}
+                    onCheckedChange={() =>
+                        toggleIntentSelection(row.intent_id || row.id)
+                    }
+                />
+            ),
+            width: "40px",
+        },
         {
             header: "Intent ID",
-            cell: (row) => row.intent_id || row.id,
+            cell: (row) => row.intent_id || row.id
         },
         {
             header: "Nota Reference",
@@ -371,26 +432,11 @@ export default function PaymentIntent() {
         },
     ];
 
-    // Filter data berdasarkan filter yang dipilih
-    const filteredIntents = paymentIntents.filter((p) => {
-        if (filters.contract !== "all" && p.contract_id !== filters.contract)
-            return false;
-        if (filters.status !== "all" && p.status !== filters.status)
-            return false;
 
-        // Filter by nota type jika ada
-        if (filters.notaType !== "all") {
-            const nota = notas.find(
-                (n) => n.id === p.invoice_id || n.nota_number === p.invoice_id,
-            );
-            if (!nota || nota.nota_type !== filters.notaType) return false;
-        }
-
-        return true;
-    });
 
     return (
         <div className="space-y-6">
+            {/* Page Header  */}
             <PageHeader
                 title="Payment Intent - Planning Stage"
                 subtitle="⚠️ Payment Intent is PLANNING ONLY - does not mark payment as done. Record actual payments in Reconciliation."
@@ -406,8 +452,8 @@ export default function PaymentIntent() {
                         </Button>
                         {isBrins && (
                             <Button
-                                className="bg-blue-600"
                                 onClick={() => setShowCreateDialog(true)}
+                                variant="outline"
                             >
                                 <DollarSign className="w-4 h-4 mr-2" />
                                 Create Intent
@@ -443,15 +489,16 @@ export default function PaymentIntent() {
                 </Alert>
             )}
 
+            {/* Gradient Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <ModernKPI
+                <GradientStatCard
                     title="Available Notas"
                     value={notas.length}
                     subtitle="Final/Confirmed"
                     icon={DollarSign}
-                    color="blue"
+                    gradient="from-blue-500 to-blue-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Draft Intents"
                     value={
                         paymentIntents.filter((p) => p.status === "DRAFT")
@@ -459,9 +506,9 @@ export default function PaymentIntent() {
                     }
                     subtitle="Pending submission"
                     icon={Clock}
-                    color="orange"
+                    gradient="from-orange-500 to-orange-600"
                 />
-                <ModernKPI
+                <GradientStatCard
                     title="Approved Intents"
                     value={
                         paymentIntents.filter((p) => p.status === "APPROVED")
@@ -469,9 +516,9 @@ export default function PaymentIntent() {
                     }
                     subtitle="Ready for matching"
                     icon={CheckCircle2}
-                    color="green"
+                    gradient="from-green-500 to-green-600"
                 />
-                <ModernKPI
+                <GradientStatCard  
                     title="Total Planned"
                     value={formatRupiahAdaptive(
                         filteredIntents.reduce(
@@ -481,104 +528,60 @@ export default function PaymentIntent() {
                     )}
                     subtitle="Planned Payment Amount"
                     icon={DollarSign}
-                    color="purple"
+                    gradient="from-purple-500 to-purple-600"
                 />
             </div>
 
-            {/* Filters */}
-            <Card>
-                <CardContent className="p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <Select
-                            value={filters.contract}
-                            onValueChange={(val) =>
-                                setFilters({ ...filters, contract: val })
-                            }
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Contract" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">
-                                    All Contracts
-                                </SelectItem>
-                                {contracts.map((c) => (
-                                    <SelectItem key={c.id} value={c.id}>
-                                        {c.contract_number}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            value={filters.notaType}
-                            onValueChange={(val) =>
-                                setFilters({ ...filters, notaType: val })
-                            }
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Nota Type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Types</SelectItem>
-                                <SelectItem value="Batch">Batch</SelectItem>
-                                <SelectItem value="Claim">Claim</SelectItem>
-                                <SelectItem value="Subrogation">
-                                    Subrogation
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            value={filters.status}
-                            onValueChange={(val) =>
-                                setFilters({ ...filters, status: val })
-                            }
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Intent Status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Status</SelectItem>
-                                <SelectItem value="DRAFT">Draft</SelectItem>
-                                <SelectItem value="SUBMITTED">
-                                    Submitted
-                                </SelectItem>
-                                <SelectItem value="APPROVED">
-                                    Approved
-                                </SelectItem>
-                                <SelectItem value="REJECTED">
-                                    Rejected
-                                </SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Button
-                            variant="outline"
-                            onClick={() =>
-                                setFilters({
-                                    contract: "all",
-                                    notaType: "all",
-                                    status: "all",
-                                })
-                            }
-                        >
-                            Clear Filters
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
+            {/* Filter Tab */}
+            <FilterTab
+                filters={filters}
+                onFilterChange={setFilters}
+                defaultFilters={defaultFilter}
+                filterConfig={[
+                    {
+                        key: "contract",
+                        label: "Contract",
+                        options: [
+                            { value: "all", label: "All Contracts" },
+                            ...contracts.map((c) => ({
+                                value: c.id,
+                                label: c.contract_number,
+                            })),
+                        ],
+                    },
+                    {
+                        key: "notaType",
+                        label: "Nota Type",
+                        options: [
+                            { value: "all", label: "All Types" },
+                            { value: "Batch", label: "Batch" },
+                            { value: "Claim", label: "Claim" },
+                            { value: "Subrogation", label: "Subrogation" },
+                        ],
+                    },
+                    {
+                        key: "status",
+                        label: "Intent Status",
+                        options: [
+                            { value: "all", label: "All Status" },
+                            { value: "DRAFT", label: "Draft" },
+                            { value: "SUBMITTED", label: "Submitted" },
+                            { value: "APPROVED", label: "Approved" },
+                            { value: "REJECTED", label: "Rejected" },
+                        ],
+                    },
+                ]}
+            />
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Payment Intents</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <DataTable
-                        columns={intentColumns}
-                        data={filteredIntents}
-                        isLoading={loading}
-                        emptyMessage="No payment intents"
-                    />
-                </CardContent>
-            </Card>
+
+
+            {/* Payment Intents Table */}
+            <DataTable
+                columns={columns}
+                data={filteredIntents}
+                isLoading={loading}
+                emptyMessage="No payment intents"
+            />
 
             {/* Create Dialog */}
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

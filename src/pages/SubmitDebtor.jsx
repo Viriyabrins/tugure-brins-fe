@@ -226,6 +226,25 @@ export default function SubmitDebtor() {
             return;
         }
 
+        // === REVISION VALIDATION ===
+        // When revising, validate that the selected contract+batch has REVISION debtors
+        if (batchMode === "revise") {
+            const revisionDebtorsInBatch = debtors.filter(
+                (d) =>
+                    d.batch_id === selectedBatch &&
+                    d.contract_id === selectedContract &&
+                    d.status === "REVISION",
+            );
+
+            if (revisionDebtorsInBatch.length === 0) {
+                setErrorMessage(
+                    `No debtors with status REVISION found in batch ${selectedBatch} for contract ${selectedContract}. ` +
+                    `Please ensure the contract and batch match the debtor(s) that were marked for revision.`,
+                );
+                return;
+            }
+        }
+
         setUploading(true);
         setErrorMessage("");
         setSuccessMessage("");
@@ -254,6 +273,45 @@ export default function SubmitDebtor() {
                 setErrorMessage("File is empty or invalid format");
                 setUploading(false);
                 return;
+            }
+
+            // === REVISION MODE: Validate nomor_peserta matches REVISION debtors ===
+            if (batchMode === "revise") {
+                const revisionDebtorsInBatch = debtors.filter(
+                    (d) =>
+                        d.batch_id === selectedBatch &&
+                        d.contract_id === selectedContract &&
+                        d.status === "REVISION",
+                );
+                const revisionNomorPesertaSet = new Set(
+                    revisionDebtorsInBatch.map((d) => d.nomor_peserta),
+                );
+
+                const invalidRows = [];
+                for (let i = 0; i < rows.length; i++) {
+                    const nomorPeserta = (rows[i].nomor_peserta || "").trim();
+                    if (!revisionNomorPesertaSet.has(nomorPeserta)) {
+                        invalidRows.push({
+                            row: i + 2,
+                            nomor_peserta: nomorPeserta,
+                        });
+                    }
+                }
+
+                if (invalidRows.length > 0) {
+                    const details = invalidRows
+                        .slice(0, 5)
+                        .map(
+                            (r) =>
+                                `Row ${r.row}: nomor_peserta "${r.nomor_peserta}" is not a REVISION debtor in this batch`,
+                        )
+                        .join("\n");
+                    setErrorMessage(
+                        `Validation failed — CSV contains debtors that are not marked as REVISION in batch ${selectedBatch}:\n${details}${invalidRows.length > 5 ? `\n...and ${invalidRows.length - 5} more` : ""}`,
+                    );
+                    setUploading(false);
+                    return;
+                }
             }
 
             // Generate batch ID
@@ -378,6 +436,105 @@ export default function SubmitDebtor() {
                 console.warn("Failed to create audit log:", auditError);
             }
 
+            // === REVISION MODE: Move old REVISION debtors to ReviseLog and delete from Debtor ===
+            if (batchMode === "revise" && uploaded > 0) {
+                const revisionDebtorsInBatch = debtors.filter(
+                    (d) =>
+                        d.batch_id === selectedBatch &&
+                        d.contract_id === selectedContract &&
+                        d.status === "REVISION",
+                );
+
+                // Get the nomor_peserta of newly uploaded debtors
+                const uploadedNomorPeserta = new Set(
+                    rows.map((r) => (r.nomor_peserta || "").trim()),
+                );
+
+                for (const oldDebtor of revisionDebtorsInBatch) {
+                    // Only move if the CSV had a matching nomor_peserta
+                    if (!uploadedNomorPeserta.has(oldDebtor.nomor_peserta)) continue;
+
+                    try {
+                        // 1. Create ReviseLog entry (save old data)
+                        await backend.create("ReviseLog", {
+                            debtor_id: oldDebtor.id,
+                            batch_id: oldDebtor.batch_id,
+                            nomor_peserta: oldDebtor.nomor_peserta,
+                            nama_peserta: oldDebtor.nama_peserta,
+                            alamat_usaha: oldDebtor.alamat_usaha || null,
+                            nomor_perjanjian_kredit:
+                                oldDebtor.nomor_perjanjian_kredit || null,
+                            plafon: parseFloat(oldDebtor.plafon) || null,
+                            nominal_premi:
+                                parseFloat(oldDebtor.nominal_premi) || null,
+                            contract_id: oldDebtor.contract_id || null,
+                            status: oldDebtor.status,
+                            revision_reason:
+                                oldDebtor.revision_reason ||
+                                oldDebtor.validation_remarks ||
+                                null,
+                            created_by: user?.email || null,
+                        });
+
+                        // 2. Delete old REVISION debtor from Debtor table
+                        await backend.update("Debtor", oldDebtor.id, {
+                            status: "ARCHIVED_REVISION",
+                        });
+
+                        // Try to delete, fall back to status update if delete not supported
+                        try {
+                            // Use a direct fetch to delete endpoint
+                            const appId =
+                                import.meta.env.VITE_BASE44_APP_ID || "brin-app-dev";
+                            const res = await fetch(
+                                `/api/apps/${encodeURIComponent(appId)}/entities/Debtor/${encodeURIComponent(oldDebtor.id)}`,
+                                {
+                                    method: "DELETE",
+                                    credentials: "same-origin",
+                                },
+                            );
+                            if (!res.ok) {
+                                console.warn(
+                                    `Could not delete old debtor ${oldDebtor.id}, marked as ARCHIVED_REVISION instead`,
+                                );
+                            }
+                        } catch (deleteErr) {
+                            console.warn(
+                                `Delete failed for debtor ${oldDebtor.id}:`,
+                                deleteErr,
+                            );
+                        }
+                    } catch (reviseError) {
+                        console.error(
+                            `Failed to move debtor ${oldDebtor.id} to ReviseLog:`,
+                            reviseError,
+                        );
+                    }
+                }
+
+                // Create audit log for revision move
+                try {
+                    await backend.create("AuditLog", {
+                        action: "REVISION_DEBTORS_ARCHIVED",
+                        module: "DEBTOR",
+                        entity_type: "ReviseLog",
+                        entity_id: batchId,
+                        old_value: JSON.stringify({
+                            revision_count: revisionDebtorsInBatch.length,
+                        }),
+                        new_value: JSON.stringify({
+                            moved_to_revise_log: revisionDebtorsInBatch.length,
+                            new_submitted: uploaded,
+                        }),
+                        user_email: user?.email,
+                        user_role: user?.role,
+                        reason: `Moved ${revisionDebtorsInBatch.length} REVISION debtors to ReviseLog and replaced with ${uploaded} new SUBMITTED debtors`,
+                    });
+                } catch (auditError) {
+                    console.warn("Failed to create audit log:", auditError);
+                }
+            }
+
             // Create notification
             try {
                 await backend.create("Notification", {
@@ -395,6 +552,10 @@ export default function SubmitDebtor() {
             if (errors.length > 0) {
                 setErrorMessage(
                     `Uploaded ${uploaded} debtors. ${errors.length} errors:\n${errors.slice(0, 5).join("\n")}${errors.length > 5 ? "\n..." : ""}`,
+                );
+            } else if (batchMode === "revise") {
+                setSuccessMessage(
+                    `Successfully uploaded ${uploaded} revised debtor(s) to batch ${batchId}. Old REVISION data has been moved to ReviseLog.`,
                 );
             } else {
                 setSuccessMessage(
@@ -494,6 +655,7 @@ export default function SubmitDebtor() {
         total: debtors.length,
         submitted: debtors.filter((d) => d.status === "SUBMITTED").length,
         approved: debtors.filter((d) => d.status === "APPROVED").length,
+        revision: debtors.filter((d) => d.status === "REVISION").length,
         rejected: debtors.filter((d) => d.status === "REJECTED").length,
         conditional: debtors.filter((d) => d.status === "CONDITIONAL").length,
     };
@@ -712,41 +874,36 @@ export default function SubmitDebtor() {
             )}
 
             {/* Gradient Card */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <GradientStatCard
                     title="Debtors"
                     value={kpis.total}
-                    // subtitle="Total Debtors"
-                    // icon={Users}
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
-                    title="Submitted Debtors"
+                    title="Submitted"
                     value={kpis.submitted}
-                    // subtitle="Total Debtors"
-                    // icon={Users}
                     gradient="from-yellow-500 to-yellow-600"
                 />
                 <GradientStatCard
-                    title="Approved Debtors"
+                    title="Approved"
                     value={kpis.approved}
-                    // subtitle="Total Debtors"
-                    // icon={Users}
                     gradient="from-green-500 to-green-600"
                 />
                 <GradientStatCard
-                    title="Rejected Debtors"
+                    title="Revision"
+                    value={kpis.revision}
+                    gradient="from-orange-500 to-orange-600"
+                />
+                <GradientStatCard
+                    title="Rejected"
                     value={kpis.rejected}
-                    // subtitle="Total Debtors"
-                    // icon={Users}
                     gradient="from-red-500 to-red-600"
                 />
                 <GradientStatCard
-                    title="Conditional Debtors"
+                    title="Conditional"
                     value={kpis.conditional}
-                    // subtitle="Total Debtors"
-                    // icon={Users}
-                    gradient="from-orange-500 to-orange-600"
+                    gradient="from-purple-500 to-purple-600"
                 />
             </div>
 
@@ -786,6 +943,7 @@ export default function SubmitDebtor() {
                             { value: "all", label: "All Status"},
                             { value: "SUBMITTED", label: "Submitted"},
                             { value: "APPROVED", label: "Approved"},
+                            { value: "REVISION", label: "Revision"},
                             { value: "REJECTED", label: "Rejected"},
                             { value: "CONDITIONAL", label: "Conditional"},
                         ]
@@ -852,14 +1010,18 @@ export default function SubmitDebtor() {
                             <Label>Select Contract *</Label>
                             <Select
                                 value={selectedContract}
-                                onValueChange={setSelectedContract}
+                                onValueChange={(val) => {
+                                    setSelectedContract(val);
+                                    // Reset batch when contract changes
+                                    setSelectedBatch("");
+                                }}
                             >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Select contract" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {activeContracts.map((c) => (
-                                        <SelectItem key={c.id} value={c.id}>
+                                        <SelectItem key={c.contract_id} value={c.contract_id}>
                                             {c.contract_id} - {c.policy_no}
                                         </SelectItem>
                                     ))}
@@ -898,16 +1060,52 @@ export default function SubmitDebtor() {
                                         <SelectValue placeholder="Select batch" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {userBatches.map((b) => (
-                                            <SelectItem
-                                                key={b.id}
-                                                value={b.batch_id}
-                                            >
-                                                {b.batch_id} - {b.status}
-                                            </SelectItem>
-                                        ))}
+                                        {/* Only show batches for the selected contract that have REVISION debtors */}
+                                        {batches
+                                            .filter((b) => {
+                                                if (!selectedContract) return false;
+                                                if (b.contract_id !== selectedContract) return false;
+                                                // Check if this batch has debtors with REVISION status
+                                                const hasRevisionDebtors = debtors.some(
+                                                    (d) =>
+                                                        d.batch_id === b.batch_id &&
+                                                        d.contract_id === selectedContract &&
+                                                        d.status === "REVISION",
+                                                );
+                                                return hasRevisionDebtors;
+                                            })
+                                            .map((b) => {
+                                                const revCount = debtors.filter(
+                                                    (d) =>
+                                                        d.batch_id === b.batch_id &&
+                                                        d.contract_id === selectedContract &&
+                                                        d.status === "REVISION",
+                                                ).length;
+                                                return (
+                                                    <SelectItem
+                                                        key={b.batch_id}
+                                                        value={b.batch_id}
+                                                    >
+                                                        {b.batch_id} — {revCount} debtor(s) need revision
+                                                    </SelectItem>
+                                                );
+                                            })}
                                     </SelectContent>
                                 </Select>
+                                {selectedContract && batchMode === "revise" && batches.filter(
+                                    (b) =>
+                                        b.contract_id === selectedContract &&
+                                        debtors.some(
+                                            (d) =>
+                                                d.batch_id === b.batch_id &&
+                                                d.contract_id === selectedContract &&
+                                                d.status === "REVISION",
+                                        ),
+                                ).length === 0 && (
+                                    <p className="text-sm text-red-600 mt-1">
+                                        No batches with REVISION debtors found for this contract.
+                                    </p>
+                                )}
                             </div>
                         )}
 
@@ -935,6 +1133,19 @@ export default function SubmitDebtor() {
                                 filled.
                             </AlertDescription>
                         </Alert>
+
+                        {batchMode === "revise" && (
+                            <Alert className="border-orange-200 bg-orange-50">
+                                <AlertCircle className="h-4 w-4 text-orange-600" />
+                                <AlertDescription className="text-orange-800">
+                                    <strong>Revise Mode:</strong> The CSV file must only contain
+                                    debtors that were marked for REVISION. Each debtor's{" "}
+                                    <code className="font-mono text-xs bg-orange-100 px-1 rounded">nomor_peserta</code>{" "}
+                                    must match a REVISION debtor in the selected batch. Old REVISION
+                                    data will be moved to ReviseLog after upload.
+                                </AlertDescription>
+                            </Alert>
+                        )}
                     </div>
 
                     <DialogFooter>

@@ -51,34 +51,6 @@ import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 import SuccessAlert from "@/components/common/SuccessAlert";
 
-const normalizeRemark = (value) =>
-    typeof value === "string" ? value.trim() : "";
-
-const isOkRemark = (value) => {
-    const remark = normalizeRemark(value);
-    if (!remark) return false;
-    const normalized = remark.toUpperCase();
-    if (/\bNOT\s+OK\b/.test(normalized)) return false;
-    return /\bV?\s*OK\b/.test(normalized);
-};
-
-const hasReviewRemark = (debtor) =>
-    isOkRemark(debtor?.remark_premi) || isOkRemark(debtor?.validation_remarks);
-
-const isDebtorReviewed = (debtor) => {
-    const status = (debtor?.status || "").toUpperCase();
-    return (
-        status === "APPROVED" || status === "REVISION" || hasReviewRemark(debtor)
-    );
-};
-
-const isDebtorApproved = (debtor) => {
-    const status = (debtor?.status || "").toUpperCase();
-    if (status === "APPROVED") return true;
-    if (status === "REVISION") return false;
-    return hasReviewRemark(debtor);
-};
-
 const toNumber = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -169,7 +141,7 @@ export default function DebtorReview() {
             const action = isBulk
                 ? approvalAction.replace("bulk_", "")
                 : approvalAction;
-            // No more REJECTED - map non-approve actions to REVISION
+            // All non-approve actions map to REVISION
             const newStatus = action === "approve" ? "APPROVED" : "REVISION";
 
             // Get debtors to process
@@ -195,8 +167,10 @@ export default function DebtorReview() {
                     // Update debtor using backend client
                     await backend.update("Debtor", debtor.id, {
                         status: newStatus,
-                        rejection_reason:
-                            action === "reject" ? approvalRemarks : null,
+                        revision_reason:
+                            action === "revision" ? approvalRemarks : null,
+                        validation_remarks:
+                            action === "revision" ? approvalRemarks : null,
                     });
 
                     if (action === "approve") {
@@ -292,15 +266,25 @@ export default function DebtorReview() {
                             return d;
                         });
 
-                        const reviewedDebtors =
-                            updatedDebtors.filter(isDebtorReviewed);
+                        const approvedDebtors = updatedDebtors.filter(
+                            (d) => (d.status || "").toString().toUpperCase() === "APPROVED"
+                        );
 
-                        const approvedDebtors =
-                            updatedDebtors.filter(isDebtorApproved);
+                        const allApproved =
+                            updatedDebtors.length > 0 &&
+                            approvedDebtors.length === updatedDebtors.length;
 
-                        const allReviewed =
-                            reviewedDebtors.length === updatedDebtors.length;
-                        const hasApproved = approvedDebtors.length > 0;
+                        const revisionDebtors = updatedDebtors.filter(
+                            (d) => (d.status || "").toString().toUpperCase() === "REVISION"
+                        );
+                        const hasRevisions = revisionDebtors.length > 0;
+                        // All debtors are reviewed (either APPROVED or REVISION, no SUBMITTED left)
+                        const allReviewed = updatedDebtors.every(
+                            (d) => {
+                                const s = (d.status || "").toString().toUpperCase();
+                                return s === "APPROVED" || s === "REVISION" || s === "CONDITIONAL";
+                            }
+                        );
 
                         const totalApprovedExposure = approvedDebtors.reduce(
                             (sum, d) => sum + toNumber(d.plafon),
@@ -314,11 +298,11 @@ export default function DebtorReview() {
                         await backend.update("Batch", batchRecord.batch_id, {
                             final_exposure_amount: totalApprovedExposure,
                             final_premium_amount: totalApprovedPremium,
-                            debtor_review_completed: allReviewed,
-                            batch_ready_for_nota: allReviewed && hasApproved,
+                            debtor_review_completed: allApproved,
+                            batch_ready_for_nota: allApproved,
                         });
 
-                        if (allReviewed && hasApproved) {
+                        if (allApproved) {
                             // Auto-transition batch to Approved status
                             await backend.update(
                                 "Batch",
@@ -376,15 +360,15 @@ export default function DebtorReview() {
                                     auditError,
                                 );
                             }
-                        } else if (allReviewed && !hasApproved) {
+                        } else if (approvedDebtors.length === 0) {
                             await backend.update(
                                 "Batch",
                                 batchRecord.batch_id,
                                 {
                                     status: "Revision",
-                                    rejection_reason:
+                                    revision_reason:
                                         "All debtors marked for revision in review",
-                                    debtor_review_completed: true,
+                                    debtor_review_completed: false,
                                     batch_ready_for_nota: false,
                                 },
                             );
@@ -394,6 +378,34 @@ export default function DebtorReview() {
                                 await backend.create("Notification", {
                                     title: "Batch Requires Revision - All Debtors Marked",
                                     message: `Batch ${batchId}: All debtors marked for revision. BRINS must revise and resubmit.`,
+                                    type: "WARNING",
+                                    module: "DEBTOR",
+                                    reference_id: batchRecord.batch_id,
+                                    target_role: "BRINS",
+                                });
+                            } catch (notifError) {
+                                console.warn(
+                                    "Failed to create notification:",
+                                    notifError,
+                                );
+                            }
+                        } else if (hasRevisions && allReviewed) {
+                            // Mixed: some approved, some revision — batch not complete
+                            await backend.update(
+                                "Batch",
+                                batchRecord.batch_id,
+                                {
+                                    status: "Partial Revision",
+                                    revision_reason: `${revisionDebtors.length} debtor(s) marked for revision`,
+                                    debtor_review_completed: false,
+                                    batch_ready_for_nota: false,
+                                },
+                            );
+
+                            try {
+                                await backend.create("Notification", {
+                                    title: "Batch Partial Revision",
+                                    message: `Batch ${batchId}: ${approvedDebtors.length} approved, ${revisionDebtors.length} need revision. BRINS must revise and resubmit revision debtors.`,
                                     type: "WARNING",
                                     module: "DEBTOR",
                                     reference_id: batchRecord.batch_id,
@@ -494,7 +506,7 @@ export default function DebtorReview() {
 
     const pendingCount = debtors.filter((d) => d.status === "SUBMITTED").length;
     const approvedCount = debtors.filter((d) => d.status === "APPROVED").length;
-    const rejectedCount = debtors.filter((d) => d.status === "REVISION").length;
+    const revisionCount = debtors.filter((d) => d.status === "REVISION").length;
     const conditionalCount = debtors.filter(
         (d) => d.status === "CONDITIONAL",
     ).length;
@@ -543,7 +555,7 @@ export default function DebtorReview() {
             accessorKey: "batch_id",
             cell: (row) => (
                 <span className="font-mono text-sm">
-                    {row.batch_id?.slice(0, 15)}
+                    {row.batch_id}
                 </span>
             ),
         },
@@ -602,7 +614,7 @@ export default function DebtorReview() {
                                 className="bg-orange-500 hover:bg-orange-600"
                                 onClick={() => {
                                     setSelectedDebtor(row);
-                                    setApprovalAction("reject");
+                                    setApprovalAction("revision");
                                     setShowApprovalDialog(true);
                                 }}
                             >
@@ -656,7 +668,7 @@ export default function DebtorReview() {
                 />
                 <GradientStatCard
                     title="Revision"
-                    value={rejectedCount}
+                    value={revisionCount}
                     subtitle="Requires revision"
                     icon={AlertCircle}
                     gradient="from-red-500 to-red-600"
@@ -753,7 +765,7 @@ export default function DebtorReview() {
                         <Button
                             variant = "outline"
                             onClick={() => {
-                                setApprovalAction("bulk_reject");
+                                setApprovalAction("bulk_revision");
                                 setShowApprovalDialog(true);
                             }}
                         >
@@ -891,12 +903,12 @@ export default function DebtorReview() {
                                 </div>
                             )}
 
-                        {(approvalAction === "reject" ||
-                            approvalAction === "bulk_reject") && (
+                        {(approvalAction === "revision" ||
+                                    approvalAction === "bulk_revision") && (
                             <Alert>
                                 <AlertCircle className="h-4 w-4 text-orange-600" />
                                 <AlertDescription>
-                                    {approvalAction === "bulk_reject"
+                                    {approvalAction === "bulk_revision"
                                         ? `Marking ${selectedDebtors.length} debtors for revision will allow them to be revised and resubmitted.`
                                         : "Marking debtor for revision will allow revision and resubmission."}
                                 </AlertDescription>

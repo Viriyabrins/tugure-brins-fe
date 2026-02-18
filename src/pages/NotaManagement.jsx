@@ -52,34 +52,6 @@ import {
 import { formatRupiahAdaptive } from "@/utils/currency";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 
-const normalizeRemark = (value) =>
-    typeof value === "string" ? value.trim() : "";
-
-const isOkRemark = (value) => {
-    const remark = normalizeRemark(value);
-    if (!remark) return false;
-    const normalized = remark.toUpperCase();
-    if (/\bNOT\s+OK\b/.test(normalized)) return false;
-    return /\bV?\s*OK\b/.test(normalized);
-};
-
-const hasReviewRemark = (debtor) =>
-    isOkRemark(debtor?.remark_premi) || isOkRemark(debtor?.validation_remarks);
-
-const isDebtorReviewed = (debtor) => {
-    const status = (debtor?.status || "").toUpperCase();
-    return (
-        status === "APPROVED" || status === "REJECTED" || hasReviewRemark(debtor)
-    );
-};
-
-const isDebtorApproved = (debtor) => {
-    const status = (debtor?.status || "").toUpperCase();
-    if (status === "APPROVED") return true;
-    if (status === "REJECTED") return false;
-    return hasReviewRemark(debtor);
-};
-
 const toNumber = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -87,42 +59,39 @@ const toNumber = (value) => {
 
 const nearlyEqual = (a, b) => Math.abs(a - b) < 0.0001;
 
-    // Compute nota amount from debtors when nota is batch-type
-    const getNotaAmount = (nota) => {
-        try {
-            if (!nota) return 0;
-            if (nota.nota_type === "Batch" && nota.reference_id) {
-                const batchDebtors = debtors.filter(
-                    (d) => d.batch_id === nota.reference_id,
-                );
-                return batchDebtors.reduce(
-                    (s, d) => s + toNumber(d.net_premi),
-                    0,
-                );
-            }
-            return toNumber(nota.amount);
-        } catch (e) {
-            return toNumber(nota.amount);
+// Compute nota amount from debtors when nota is batch-type
+const getNotaAmount = (nota) => {
+    try {
+        if (!nota) return 0;
+        if (nota.nota_type === "Batch" && nota.reference_id) {
+            const batchDebtors = debtors.filter(
+                (d) => d.batch_id === nota.reference_id,
+            );
+            return batchDebtors.reduce((s, d) => s + toNumber(d.net_premi), 0);
         }
-    };
+        return toNumber(nota.amount);
+    } catch (e) {
+        return toNumber(nota.amount);
+    }
+};
 
 const defaultFilter = {
-        contract: "all",
-        notaType: "all",
-        status: "all"
-}
+    contract: "all",
+    notaType: "all",
+    status: "all",
+};
 
 const defaultFilterRecon = {
-        contract: "all",
-        status: "all",
-        hasException: "all"
-}
+    contract: "all",
+    status: "all",
+    hasException: "all",
+};
 
 const defaultFilterDnCn = {
-        contract: "all",
-        noteType: "all",
-        status: "all"
-}
+    contract: "all",
+    noteType: "all",
+    status: "all",
+};
 
 export default function NotaManagement() {
     const [user, setUser] = useState(null);
@@ -207,7 +176,9 @@ export default function NotaManagement() {
 
             const nextNotas = Array.isArray(notaData) ? notaData : [];
             const rawBatches = Array.isArray(batchData) ? batchData : [];
-            const nextContracts = Array.isArray(contractData) ? contractData : [];
+            const nextContracts = Array.isArray(contractData)
+                ? contractData
+                : [];
             const nextPayments = Array.isArray(paymentData) ? paymentData : [];
             const nextPaymentIntents = Array.isArray(paymentIntentData)
                 ? paymentIntentData
@@ -230,26 +201,17 @@ export default function NotaManagement() {
                     };
                 }
 
-                const reviewedDebtors = batchDebtors.filter(isDebtorReviewed);
-                const approvedDebtors = batchDebtors.filter(isDebtorApproved);
-                const allReviewed =
-                    reviewedDebtors.length === batchDebtors.length;
-                const hasApproved = approvedDebtors.length > 0;
-                const reviewCompleted = allReviewed;
-                const readyForNota = allReviewed && hasApproved;
+                // For nota generation we only consider debtors with explicit DB status === 'APPROVED'
+                const approvedDebtors = batchDebtors.filter(
+                    (d) =>
+                        (d.status || "").toString().toUpperCase() ===
+                        "APPROVED",
+                );
 
-                // Check if all debtors have OK remarks (Final status)
-                const allHaveOkRemarks =
+                // All debtors in a batch must be APPROVED before the batch is final
+                const allApproved =
                     batchDebtors.length > 0 &&
-                    batchDebtors.every(
-                        (debtor) =>
-                            isOkRemark(debtor?.remark_premi) ||
-                            isOkRemark(debtor?.validation_remarks),
-                    );
-
-                // Also treat batch as Final when Debtor Review has completed and
-                // batch_ready_for_nota is true (DebtorReview updates these flags).
-                const reviewFlagsIndicateFinal = reviewCompleted && readyForNota;
+                    approvedDebtors.length === batchDebtors.length;
 
                 const finalExposureAmount = approvedDebtors.reduce(
                     (sum, debtor) => sum + toNumber(debtor.plafon),
@@ -266,34 +228,33 @@ export default function NotaManagement() {
                 const currentFinalPremium = toNumber(
                     batch.final_premium_amount,
                 );
-                const currentReviewCompleted = Boolean(
+                const currentAllApproved = Boolean(
                     batch.debtor_review_completed,
                 );
-                const currentReadyForNota = Boolean(batch.batch_ready_for_nota);
 
                 const needsUpdate =
-                    currentReviewCompleted !== reviewCompleted ||
-                    currentReadyForNota !== readyForNota ||
+                    currentAllApproved !== allApproved ||
                     !nearlyEqual(currentFinalExposure, finalExposureAmount) ||
                     !nearlyEqual(currentFinalPremium, finalPremiumAmount);
 
                 return {
                     batch: {
                         ...batch,
-                        debtor_review_completed: reviewCompleted,
-                        batch_ready_for_nota: readyForNota,
+                        debtor_review_completed: allApproved,
+                        batch_ready_for_nota: allApproved,
                         final_exposure_amount: finalExposureAmount,
                         final_premium_amount: finalPremiumAmount,
                     },
                     needsUpdate,
                     updatePayload: {
-                        debtor_review_completed: reviewCompleted,
-                        batch_ready_for_nota: readyForNota,
+                        debtor_review_completed: allApproved,
+                        batch_ready_for_nota: allApproved,
                         final_exposure_amount: finalExposureAmount,
                         final_premium_amount: finalPremiumAmount,
                     },
                     batchId: batch.batch_id || batch.id,
-                    isFinal: allHaveOkRemarks || reviewFlagsIndicateFinal,
+                    isFinal: allApproved,
+                    allApproved,
                 };
             });
 
@@ -314,25 +275,31 @@ export default function NotaManagement() {
             const notaCreationPromises = [];
             for (const entry of batchReviewSync) {
                 const batchId = entry.batchId;
-                const existingNota = nextNotas.find((n) => n.reference_id === batchId);
-                
-                // Ensure every batch has a corresponding Nota entry so it appears
-                // in Nota Management immediately after upload. Create Nota even
-                // if final_premium_amount is zero — amount can be updated later.
-                if (!existingNota && batchId) {
+                const existingNota = nextNotas.find(
+                    (n) => n.reference_id === batchId,
+                );
+
+                // Auto-create Nota only when ALL debtors in batch are APPROVED
+                if (!existingNota && batchId && entry.allApproved) {
                     // Create nota for this batch
                     const notaNumber = `NOTA-${batchId}-${Date.now()}`;
                     notaCreationPromises.push(
-                        backend.create("Nota", {
-                            nota_number: notaNumber,
-                            nota_type: "Batch",
-                            reference_id: batchId,
-                            amount: entry.batch.final_premium_amount || 0,
-                            status: entry.isFinal ? "Final" : "Draft",
-                            contract_id: entry.batch.contract_id,
-                        }).catch((err) => {
-                            console.warn(`Failed to auto-create nota for batch ${batchId}:`, err);
-                        })
+                        backend
+                            .create("Nota", {
+                                nota_number: notaNumber,
+                                nota_type: "Batch",
+                                reference_id: batchId,
+                                amount: entry.batch.final_premium_amount || 0,
+                                // New notas should be issued immediately (Final)
+                                status: "Final",
+                                contract_id: entry.batch.contract_id,
+                            })
+                            .catch((err) => {
+                                console.warn(
+                                    `Failed to auto-create nota for batch ${batchId}:`,
+                                    err,
+                                );
+                            }),
                     );
                 }
             }
@@ -341,7 +308,11 @@ export default function NotaManagement() {
                 await Promise.allSettled(notaCreationPromises);
                 // Reload notas after creation
                 const updatedNotas = await backend.list("Nota");
-                nextNotas.splice(0, nextNotas.length, ...(Array.isArray(updatedNotas) ? updatedNotas : []));
+                nextNotas.splice(
+                    0,
+                    nextNotas.length,
+                    ...(Array.isArray(updatedNotas) ? updatedNotas : []),
+                );
             }
 
             const updatePromises = batchReviewSync
@@ -365,15 +336,28 @@ export default function NotaManagement() {
             const notaUpdatePromises = [];
             nextNotas.forEach((nota) => {
                 const batchInfo = batchNotaMap[nota.reference_id];
-                if (batchInfo && batchInfo.isFinal && nota.status !== "Final" && nota.status !== "Paid" && nota.status !== "Closed") {
+                if (
+                    batchInfo &&
+                    batchInfo.isFinal &&
+                    nota.status !== "Final" &&
+                    nota.status !== "Nota Closed"
+                ) {
                     notaUpdatePromises.push(
-                        backend.update("Nota", nota.id, { status: "Final" })
+                        backend
+                            .update("Nota", nota.id, { status: "Final" })
                             .then((updated) => {
                                 // Update in local array
-                                const idx = nextNotas.findIndex((n) => n.id === nota.id);
+                                const idx = nextNotas.findIndex(
+                                    (n) => n.id === nota.id,
+                                );
                                 if (idx >= 0) nextNotas[idx] = updated;
                             })
-                            .catch((err) => console.warn(`Failed to update nota ${nota.id} to Final:`, err))
+                            .catch((err) =>
+                                console.warn(
+                                    `Failed to update nota ${nota.id} to Final:`,
+                                    err,
+                                ),
+                            ),
                     );
                 }
             });
@@ -403,7 +387,7 @@ export default function NotaManagement() {
     };
 
     const getNextStatus = (currentStatus) => {
-        const workflow = ["Draft", "Final", "Confirmed", "Paid"];
+        const workflow = ["Draft", "Final", "Confirmed", "Nota Closed"];
         const currentIndex = workflow.indexOf(currentStatus);
         return currentIndex >= 0 && currentIndex < workflow.length - 1
             ? workflow[currentIndex + 1]
@@ -412,11 +396,14 @@ export default function NotaManagement() {
 
     const getActionLabel = (status) => {
         const labels = {
-            Draft: "Process",
-            Final: "Paid",
-            Confirmed: "Mark Paid",
+            // Draft no longer used as default for new notas; button should show "Final"
+            Draft: "Final",
+            // Final -> Close Nota (previously Paid)
+            Final: "Close Nota",
+            // Confirmed -> Mark Closed
+            Confirmed: "Mark Closed",
         };
-        return labels[status] || "Process";
+        return labels[status] || "Final";
     };
 
     // Note: handleGenerateNota removed - notas are now auto-created per batch
@@ -427,7 +414,7 @@ export default function NotaManagement() {
         // BLOCK: Cannot edit Nota after it reached Final state (immutable)
         if (selectedNota.is_immutable && selectedNota.status === "Final") {
             alert(
-                "❌ BLOCKED: Nota is IMMUTABLE after becoming Final.\n\nNota amount cannot be changed. Use DN/CN for adjustments.",
+                "❌ BLOCKED: Nota is IMMUTABLE after becoming Final.\n\nNota amount cannot be changed. Use Exception for adjustments.",
             );
 
             try {
@@ -471,14 +458,18 @@ export default function NotaManagement() {
                 updateData.confirmed_date = new Date().toISOString();
             }
 
-            await backend.update("Nota", selectedNota.nota_number || selectedNota.id, updateData);
+            await backend.update(
+                "Nota",
+                selectedNota.nota_number || selectedNota.id,
+                updateData,
+            );
 
-                        const targetRole =
-                                nextStatus === "Final"
-                                        ? "BRINS"
-                                        : nextStatus === "Confirmed"
-                                            ? "TUGURE"
-                                            : "ALL";
+            const targetRole =
+                nextStatus === "Final"
+                    ? "BRINS"
+                    : nextStatus === "Confirmed"
+                      ? "TUGURE"
+                      : "ALL";
 
             // Create notification using backend client
             try {
@@ -623,7 +614,8 @@ export default function NotaManagement() {
             }
 
             const notaAmount = parseNumberSafe(selectedRecon.amount) || 0;
-            const previousPaid = parseNumberSafe(selectedRecon.total_actual_paid) || 0;
+            const previousPaid =
+                parseNumberSafe(selectedRecon.total_actual_paid) || 0;
             const newTotalPaid = previousPaid + paidAmount;
             const difference = notaAmount - newTotalPaid;
 
@@ -655,7 +647,9 @@ export default function NotaManagement() {
                 paymentFormData.bank_reference ||
                 `PAY-${selectedRecon.nota_number}-${Date.now()}`;
 
-            const paymentDateISO = new Date(paymentFormData.payment_date).toISOString();
+            const paymentDateISO = new Date(
+                paymentFormData.payment_date,
+            ).toISOString();
 
             await backend.create("Payment", {
                 payment_ref: paymentRef,
@@ -678,10 +672,10 @@ export default function NotaManagement() {
                 reconciliation_status: reconStatus,
             });
 
-            // If MATCHED, auto mark Nota as Paid
+            // If MATCHED, auto mark Nota as closed
             if (reconStatus === "MATCHED") {
                 await backend.update("Nota", selectedRecon.nota_number, {
-                    status: "Paid",
+                    status: "Nota Closed",
                     paid_date: paymentDateISO,
                     payment_reference: paymentRef,
                 });
@@ -689,7 +683,7 @@ export default function NotaManagement() {
                 // Create notification using backend client
                 try {
                     await backend.create("Notification", {
-                        title: "Payment MATCHED - Nota Paid",
+                        title: "Payment MATCHED - Nota Closed",
                         message: `Nota ${selectedRecon.nota_number} fully paid. Amount: Rp ${newTotalPaid.toLocaleString("id-ID")}. Nota closed.`,
                         type: "INFO",
                         module: "DEBTOR",
@@ -737,7 +731,7 @@ export default function NotaManagement() {
             }
 
             setSuccessMessage(
-                `Payment recorded: ${reconStatus}. ${exceptionType !== "NONE" ? `DN/CN may be required for ${exceptionType === "UNDER" ? "underpayment" : "overpayment"}.` : ""}`,
+                `Payment recorded: ${reconStatus}. ${exceptionType !== "NONE" ? `Exception may be required for ${exceptionType === "UNDER" ? "underpayment" : "overpayment"}.` : ""}`,
             );
             setShowPaymentDialog(false);
             setSelectedRecon(null);
@@ -758,7 +752,7 @@ export default function NotaManagement() {
             const diff = (nota.amount || 0) - (nota.total_actual_paid || 0);
             if (Math.abs(diff) > 1000) {
                 alert(
-                    `❌ Cannot mark as FINAL while payment is PARTIAL.\n\nDifference: Rp ${Math.abs(diff).toLocaleString()}\n\nPlease record additional payments or create DN/CN to resolve the difference.`,
+                    `❌ Cannot mark as FINAL while payment is PARTIAL.\n\nDifference: Rp ${Math.abs(diff).toLocaleString()}\n\nPlease record additional payments or create Exception to resolve the difference.`,
                 );
 
                 try {
@@ -793,7 +787,7 @@ export default function NotaManagement() {
             try {
                 await backend.create("Notification", {
                     title: "Reconciliation Marked FINAL",
-                    message: `Nota ${nota.nota_number} reconciliation finalized. ${Math.abs((nota.amount || 0) - (nota.total_actual_paid || 0)) > 1000 ? "DN/CN creation now enabled." : "Payment matched."}`,
+                    message: `Nota ${nota.nota_number} reconciliation finalized. ${Math.abs((nota.amount || 0) - (nota.total_actual_paid || 0)) > 1000 ? "Exception creation now enabled." : "Payment matched."}`,
                     type: "INFO",
                     module: "RECONCILIATION",
                     reference_id: nota.nota_number,
@@ -814,10 +808,10 @@ export default function NotaManagement() {
     const handleCreateDnCn = async () => {
         if (!selectedNota) return;
 
-        // BLOCK: DN/CN only after FINAL reconciliation
+        // BLOCK: Exception only after FINAL reconciliation
         if (selectedNota.reconciliation_status !== "FINAL") {
             alert(
-                "❌ BLOCKED: DN/CN can only be created after reconciliation is marked FINAL.\n\nPlease finalize reconciliation first.",
+                "❌ BLOCKED: Exception can only be created after reconciliation is marked FINAL.\n\nPlease finalize reconciliation first.",
             );
 
             try {
@@ -832,7 +826,7 @@ export default function NotaManagement() {
                     }),
                     user_email: user?.email,
                     user_role: user?.role,
-                    reason: "Attempted DN/CN creation before reconciliation finalized",
+                    reason: "Attempted Exception creation before reconciliation finalized",
                 });
             } catch (auditError) {
                 console.warn("Failed to create audit log:", auditError);
@@ -843,12 +837,12 @@ export default function NotaManagement() {
             return;
         }
 
-        // BLOCK: DN/CN only if actual paid != nota amount
+        // BLOCK: Exception only if actual paid != nota amount
         const diff =
             (selectedNota.amount || 0) - (selectedNota.total_actual_paid || 0);
         if (Math.abs(diff) <= 1000) {
             alert(
-                "❌ BLOCKED: DN/CN not needed.\n\nPayment is MATCHED (difference within tolerance).",
+                "❌ BLOCKED: Exception not needed.\n\nPayment is MATCHED (difference within tolerance).",
             );
             setShowDnCnDialog(false);
             return;
@@ -907,7 +901,7 @@ export default function NotaManagement() {
             });
             loadData();
         } catch (error) {
-            console.error("DN/CN creation error:", error);
+            console.error("Exception creation error:", error);
         }
         setProcessing(false);
     };
@@ -931,7 +925,7 @@ export default function NotaManagement() {
                 updates.approved_by = user?.email;
                 updates.approved_date = new Date().toISOString();
 
-                // When DN/CN approved, allow Nota close
+                // When Exception approved, allow Nota close
                 const originalNota = notas.find(
                     (n) => n.nota_number === dnCn.original_nota_id,
                 );
@@ -953,7 +947,7 @@ export default function NotaManagement() {
             const targetRole = action === "approve" ? "BRINS" : "TUGURE";
             try {
                 await backend.create("Notification", {
-                    title: `DN/CN ${statusMap[action]}`,
+                    title: `Exception ${statusMap[action]}`,
                     message: `${dnCn.note_type} ${dnCn.note_number} is now ${statusMap[action]}`,
                     type: "ACTION_REQUIRED",
                     module: "RECONCILIATION",
@@ -981,13 +975,13 @@ export default function NotaManagement() {
                 console.warn("Failed to create audit log:", auditError);
             }
 
-            setSuccessMessage(`DN/CN ${action}ed successfully`);
+            setSuccessMessage(`Exception ${action}ed successfully`);
             setShowDnCnActionDialog(false);
             setSelectedDnCn(null);
             setRemarks("");
             loadData();
         } catch (error) {
-            console.error("DN/CN action error:", error);
+            console.error("Exception action error:", error);
         }
         setProcessing(false);
     };
@@ -1001,7 +995,7 @@ export default function NotaManagement() {
 
         if (nota.reconciliation_status !== "MATCHED" && !hasApprovedDnCn) {
             alert(
-                `❌ BLOCKED: Cannot close Nota.\n\nNota can only be closed if:\n• Actual Paid = Nota Amount (MATCHED)\nOR\n• DN/CN Approved\n\nCurrent status: ${nota.reconciliation_status}\nDifference: Rp ${Math.abs((nota.amount || 0) - (nota.total_actual_paid || 0)).toLocaleString()}`,
+                `❌ BLOCKED: Cannot close Nota.\n\nNota can only be closed if:\n• Actual Paid = Nota Amount (MATCHED)\nOR\n• Exception Approved\n\nCurrent status: ${nota.reconciliation_status}\nDifference: Rp ${Math.abs((nota.amount || 0) - (nota.total_actual_paid || 0)).toLocaleString()}`,
             );
 
             try {
@@ -1013,11 +1007,11 @@ export default function NotaManagement() {
                     old_value: "{}",
                     new_value: JSON.stringify({
                         blocked_reason:
-                            "Payment not matched and no approved DN/CN",
+                            "Payment not matched and no approved Exception",
                     }),
                     user_email: user?.email,
                     user_role: user?.role,
-                    reason: "Attempted to close Nota without payment match or DN/CN approval",
+                    reason: "Attempted to close Nota without payment match or Exception approval",
                 });
             } catch (auditError) {
                 console.warn("Failed to create audit log:", auditError);
@@ -1028,9 +1022,9 @@ export default function NotaManagement() {
         setProcessing(true);
         try {
             await backend.update("Nota", nota.nota_number, {
-                status: "Paid",
+                status: "Nota Closed",
                 paid_date: new Date().toISOString(),
-                payment_reference: "Closed via DN/CN or MATCHED payment",
+                payment_reference: "Closed via Exception or MATCHED payment",
             });
 
             setSuccessMessage("Nota closed successfully");
@@ -1054,16 +1048,28 @@ export default function NotaManagement() {
     // Reconciliation items with payment details (ALL NOTA TYPES)
     const reconciliationItems = notas.map((nota) => {
         const relatedPayments = payments.filter(
-            (p) => p.invoice_id === nota.id && p.is_actual_payment,
+            (p) =>
+                (p.invoice_id === nota.id ||
+                    p.invoice_id === nota.nota_number) &&
+                p.is_actual_payment,
         );
-        const paymentReceived = relatedPayments.reduce(
+        const paymentReceivedFromPayments = relatedPayments.reduce(
             (sum, p) => sum + (p.amount || 0),
             0,
         );
-        const difference = (nota.amount || 0) - paymentReceived;
+
+        // Prefer existing nota.total_actual_paid if backend provided it, otherwise use computed payments
+        const totalActualPaid =
+            nota.total_actual_paid !== undefined &&
+            nota.total_actual_paid !== null
+                ? nota.total_actual_paid
+                : paymentReceivedFromPayments;
+
+        const difference = (nota.amount || 0) - (totalActualPaid || 0);
 
         const relatedIntents = paymentIntents.filter(
-            (pi) => pi.invoice_id === nota.id,
+            (pi) =>
+                pi.invoice_id === nota.id || pi.invoice_id === nota.nota_number,
         );
         const totalPlanned = relatedIntents.reduce(
             (sum, pi) => sum + (pi.planned_amount || 0),
@@ -1072,12 +1078,13 @@ export default function NotaManagement() {
 
         return {
             ...nota,
-            payment_received: paymentReceived,
+            total_actual_paid: totalActualPaid,
+            payment_received: paymentReceivedFromPayments,
             total_planned: totalPlanned,
             difference: difference,
-            recon_status: nota.reconciliation_status,
+            reconciliation_status: nota.reconciliation_status,
             has_exception:
-                Math.abs(difference) > 1000 && nota.status !== "Paid",
+                Math.abs(difference) > 1000 && nota.status !== "Nota Closed",
             payment_count: relatedPayments.length,
             intent_count: relatedIntents.length,
         };
@@ -1097,18 +1104,26 @@ export default function NotaManagement() {
         return true;
     });
 
-    const filteredDnCn = dnCnRecords.filter((d) => {
+    // Exception items: derive from reconciliation - show notas with positive difference
+    // and that are not already matched. If difference becomes 0 and recon_status is MATCHED
+    // they will no longer appear here.
+    const exceptionItems = reconciliationItems.filter((r) => {
+        const diff = r.difference || 0;
+        const recon = (r.reconciliation_status || "").toString().toUpperCase();
+        return diff > 0 && recon !== "MATCHED";
+    });
+
+    const filteredExceptions = exceptionItems.filter((r) => {
         if (
             dnCnFilters.contract !== "all" &&
-            d.contract_id !== dnCnFilters.contract
+            r.contract_id !== dnCnFilters.contract
         )
             return false;
+        // Allow filtering by recon status via the existing 'status' filter
         if (
-            dnCnFilters.noteType !== "all" &&
-            d.note_type !== dnCnFilters.noteType
+            dnCnFilters.status !== "all" &&
+            r.reconciliation_status !== dnCnFilters.status
         )
-            return false;
-        if (dnCnFilters.status !== "all" && d.status !== dnCnFilters.status)
             return false;
         return true;
     });
@@ -1117,7 +1132,7 @@ export default function NotaManagement() {
         <div className="space-y-6">
             <PageHeader
                 title="Nota Management"
-                subtitle="Manage notas, reconciliation, and DN/CN adjustments"
+                subtitle="Manage notas, reconciliation, and Exception adjustments"
                 breadcrumbs={[
                     { label: "Dashboard", url: "Dashboard" },
                     { label: "Nota Management" },
@@ -1163,8 +1178,7 @@ export default function NotaManagement() {
                         <GradientStatCard
                             title="Pending Confirmation"
                             value={
-                                notas.filter((n) => n.status === "Final")
-                                    .length
+                                notas.filter((n) => n.status === "Final").length
                             }
                             subtitle="Awaiting branch"
                             icon={Clock}
@@ -1172,25 +1186,30 @@ export default function NotaManagement() {
                         />
                         <GradientStatCard
                             title="Total Amount"
-                            value={
-                                formatRupiahAdaptive(
-                                    notas.reduce((sum, n) => sum + getNotaAmount(n), 0),
-                                )
-                            }
+                            value={formatRupiahAdaptive(
+                                notas.reduce(
+                                    (sum, n) => sum + getNotaAmount(n),
+                                    0,
+                                ),
+                            )}
                             subtitle="All notas"
                             icon={DollarSign}
                             gradient="from-green-500 to-green-600"
                         />
                         <GradientStatCard
-                            title="Paid Notas"
-                            value={notas.filter((n) => n.status === "Paid").length}
-                            subtitle={
-                                formatRupiahAdaptive(
-                                    notas
-                                        .filter((n) => n.status === "Paid")
-                                        .reduce((sum, n) => sum + getNotaAmount(n), 0),
-                                )
+                            title="Closed Notas"
+                            value={
+                                notas.filter((n) => n.status === "Nota Closed")
+                                    .length
                             }
+                            subtitle={formatRupiahAdaptive(
+                                notas
+                                    .filter((n) => n.status === "Nota Closed")
+                                    .reduce(
+                                        (sum, n) => sum + getNotaAmount(n),
+                                        0,
+                                    ),
+                            )}
                             icon={CheckCircle2}
                             gradient="from-purple-500 to-purple-600"
                         />
@@ -1206,7 +1225,10 @@ export default function NotaManagement() {
                                 label: "Contract",
                                 options: [
                                     { value: "all", label: "All Contracts" },
-                                    ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
+                                    ...contracts.map((c) => ({
+                                        value: c.id,
+                                        label: c.contract_number,
+                                    })),
                                 ],
                             },
                             {
@@ -1216,7 +1238,10 @@ export default function NotaManagement() {
                                     { value: "all", label: "All Types" },
                                     { value: "Batch", label: "Batch" },
                                     { value: "Claim", label: "Claim" },
-                                    { value: "Subrogation", label: "Subrogation" },
+                                    {
+                                        value: "Subrogation",
+                                        label: "Subrogation",
+                                    },
                                 ],
                             },
                             {
@@ -1227,7 +1252,10 @@ export default function NotaManagement() {
                                     { value: "Draft", label: "Draft" },
                                     { value: "Final", label: "Final" },
                                     { value: "Confirmed", label: "Confirmed" },
-                                    { value: "Paid", label: "Paid" },
+                                    {
+                                        value: "Nota Closed",
+                                        label: "Nota Closed",
+                                    },
                                 ],
                             },
                         ]}
@@ -1271,7 +1299,9 @@ export default function NotaManagement() {
                                 header: "Amount",
                                 cell: (row) => (
                                     <span className="font-bold">
-                                        {formatRupiahAdaptive(getNotaAmount(row))}
+                                        {formatRupiahAdaptive(
+                                            getNotaAmount(row),
+                                        )}
                                     </span>
                                 ),
                             },
@@ -1307,7 +1337,7 @@ export default function NotaManagement() {
                                             <Eye className="w-4 h-4 mr-1" />
                                             View
                                         </Button>
-                                        {row.status !== "Paid" &&
+                                        {row.status !== "Nota Closed" &&
                                             getNextStatus(row.status) && (
                                                 <Button
                                                     size="sm"
@@ -1327,7 +1357,7 @@ export default function NotaManagement() {
                                                         row.is_immutable &&
                                                         getActionLabel(
                                                             row.status,
-                                                        ) === "Issue Nota"
+                                                        ) === "Final"
                                                     }
                                                 >
                                                     <ArrowRight className="w-4 h-4 mr-1" />
@@ -1335,7 +1365,7 @@ export default function NotaManagement() {
                                                 </Button>
                                             )}
                                         {row.is_immutable &&
-                                            row.status !== "Paid" && (
+                                            row.status !== "Nota Closed" && (
                                                 <span className="text-xs text-gray-500 italic">
                                                     Proceed to Reconciliation
                                                 </span>
@@ -1352,46 +1382,58 @@ export default function NotaManagement() {
 
                 {/* RECONCILIATION TAB */}
                 <TabsContent value="reconciliation" className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <GradientStatCard
-                            title="All Notas"
-                            value={reconciliationItems.length}
-                            subtitle={`${reconciliationItems.filter((r) => r.nota_type === "Batch").length} batch / ${reconciliationItems.filter((r) => r.nota_type === "Claim").length} claim`}
-                            icon={FileText}
+                            title="Closed Notas"
+                            value={
+                                notas.filter((n) => n.status === "Nota Closed")
+                                    .length
+                            }
+                            subtitle={formatRupiahAdaptive(
+                                notas
+                                    .filter((n) => n.status === "Nota Closed")
+                                    .reduce(
+                                        (sum, n) => sum + getNotaAmount(n),
+                                        0,
+                                    ),
+                            )}
+                            icon={CheckCircle2}
                             gradient="from-purple-500 to-purple-600"
                         />
                         <GradientStatCard
-                            title="Total Invoiced"
-                            value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + toNumber(r.amount), 0))}
-                            subtitle="Nota amounts"
-                            icon={FileText}
-                            gradient="from-blue-500 to-blue-600"
-                        />
-                        <GradientStatCard
                             title="Total Paid"
-                            value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + toNumber(r.total_actual_paid), 0))}
+                            value={formatRupiahAdaptive(
+                                reconciliationItems.reduce(
+                                    (sum, r) =>
+                                        sum + toNumber(r.total_actual_paid),
+                                    0,
+                                ),
+                            )}
                             subtitle="Actual payments"
                             icon={CheckCircle2}
                             gradient="from-green-500 to-green-600"
                         />
                         <GradientStatCard
                             title="Difference"
-                            value={formatRupiahAdaptive(reconciliationItems.reduce((sum, r) => sum + ((toNumber(r.amount) || 0) - (toNumber(r.total_actual_paid) || 0)), 0))}
+                            value={formatRupiahAdaptive(
+                                reconciliationItems.reduce(
+                                    (sum, r) =>
+                                        sum +
+                                        ((toNumber(r.amount) || 0) -
+                                            (toNumber(r.total_actual_paid) ||
+                                                0)),
+                                    0,
+                                ),
+                            )}
                             subtitle="To reconcile"
                             icon={AlertTriangle}
                             gradient="from-orange-500 to-orange-600"
                         />
                         <GradientStatCard
-                            title="Exceptions"
-                            value={
-                                reconciliationItems.filter(
-                                    (r) =>
-                                        r.has_exception &&
-                                        r.reconciliation_status === "FINAL",
-                                ).length
-                            }
-                            subtitle="Requires DN/CN"
-                            icon={AlertTriangle}
+                            title="Total Exceptions"
+                            value={exceptionItems.length}
+                            subtitle={`${filteredExceptions.length} visible`}
+                            icon={FileText}
                             gradient="from-red-500 to-red-600"
                         />
                     </div>
@@ -1406,7 +1448,10 @@ export default function NotaManagement() {
                                 label: "Contract",
                                 options: [
                                     { value: "all", label: "All Contracts" },
-                                    ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
+                                    ...contracts.map((c) => ({
+                                        value: c.id,
+                                        label: c.contract_number,
+                                    })),
                                 ],
                             },
                             {
@@ -1417,7 +1462,10 @@ export default function NotaManagement() {
                                     { value: "Draft", label: "Draft" },
                                     { value: "Final", label: "Final" },
                                     { value: "Confirmed", label: "Confirmed" },
-                                    { value: "Paid", label: "Paid" },
+                                    {
+                                        value: "Nota Closed",
+                                        label: "Nota Closed",
+                                    },
                                 ],
                             },
                             {
@@ -1459,10 +1507,10 @@ export default function NotaManagement() {
                                 header: "Nota Amount",
                                 cell: (row) => (
                                     <div>
-                                        <div className="font-bold text-blue-600">
-                                            
-                                        </div>
-                                        {formatRupiahAdaptive(getNotaAmount(row))}
+                                        <div className="font-bold text-blue-600"></div>
+                                        {formatRupiahAdaptive(
+                                            getNotaAmount(row),
+                                        )}
                                     </div>
                                 ),
                             },
@@ -1471,7 +1519,9 @@ export default function NotaManagement() {
                                 cell: (row) => (
                                     <div>
                                         <div className="text-gray-600">
-                                            {formatRupiahAdaptive(row.total_planned)}
+                                            {formatRupiahAdaptive(
+                                                row.total_planned,
+                                            )}
                                         </div>
                                         <div className="text-xs text-gray-400">
                                             {row.intent_count} intent(s)
@@ -1484,7 +1534,9 @@ export default function NotaManagement() {
                                 cell: (row) => (
                                     <div>
                                         <div className="text-green-600 font-bold">
-                                            {formatRupiahAdaptive(row.total_actual_paid)}
+                                            {formatRupiahAdaptive(
+                                                row.total_actual_paid,
+                                            )}
                                         </div>
                                         <div className="text-xs text-gray-400">
                                             {row.payment_count} payment(s)
@@ -1534,25 +1586,35 @@ export default function NotaManagement() {
                                 header: "Actions",
                                 cell: (row) => (
                                     <div className="flex gap-1 flex-wrap">
-                                        {isTugure && row.status !== "Paid" && (
-                                            <Button
-                                                size="sm"
-                                                className="bg-blue-600"
-                                                onClick={() => {
-                                                    setSelectedRecon(row);
-                                                    setPaymentFormData({
-                                                        actual_paid_amount: "",
-                                                        payment_date: new Date()
-                                                            .toISOString()
-                                                            .split("T")[0],
-                                                        bank_reference: "",
-                                                    });
-                                                    setShowPaymentDialog(true);
-                                                }}
-                                            >
-                                                Record Payment
-                                            </Button>
-                                        )}
+                                        {isTugure &&
+                                            row.status !== "Nota Closed" &&
+                                            row.reconciliation_status !==
+                                                "FINAL" && (
+                                                <Button
+                                                    size="sm"
+                                                    className="bg-blue-600"
+                                                    onClick={() => {
+                                                        setSelectedRecon(row);
+                                                        setPaymentFormData({
+                                                            actual_paid_amount:
+                                                                "",
+                                                            payment_date:
+                                                                new Date()
+                                                                    .toISOString()
+                                                                    .split(
+                                                                        "T",
+                                                                    )[0],
+                                                            bank_reference: "",
+                                                        });
+                                                        setShowPaymentDialog(
+                                                            true,
+                                                        );
+                                                    }}
+                                                >
+                                                    Record Payment
+                                                </Button>
+                                            )}
+
                                         {isTugure &&
                                             row.reconciliation_status !==
                                                 "FINAL" &&
@@ -1569,6 +1631,7 @@ export default function NotaManagement() {
                                                     Mark FINAL
                                                 </Button>
                                             )}
+
                                         {isTugure &&
                                             row.has_exception &&
                                             row.reconciliation_status ===
@@ -1598,9 +1661,10 @@ export default function NotaManagement() {
                                                     }}
                                                 >
                                                     <Plus className="w-4 h-4 mr-1" />
-                                                    DN/CN
+                                                    Exception
                                                 </Button>
                                             )}
+
                                         {(row.reconciliation_status ===
                                             "MATCHED" ||
                                             dnCnRecords.some(
@@ -1609,7 +1673,7 @@ export default function NotaManagement() {
                                                         row.nota_number &&
                                                     d.status === "Approved",
                                             )) &&
-                                            row.status !== "Paid" && (
+                                            row.status !== "Nota Closed" && (
                                                 <Button
                                                     size="sm"
                                                     className="bg-green-600"
@@ -1631,44 +1695,47 @@ export default function NotaManagement() {
                     />
                 </TabsContent>
 
-                {/* DN/CN TAB */}
+                {/* Exception TAB */}
                 <TabsContent value="dncn" className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <GradientStatCard
-                            title="Total DN/CN"
-                            value={dnCnRecords.length}
-                            subtitle={`${dnCnRecords.filter((d) => d.note_type === "Debit Note").length} DN / ${dnCnRecords.filter((d) => d.note_type === "Credit Note").length} CN`}
+                            title="Total Exceptions"
+                            value={exceptionItems.length}
+                            subtitle={`${filteredExceptions.length} visible`}
                             icon={FileText}
                             gradient="from-blue-500 to-blue-600"
                         />
                         <GradientStatCard
-                            title="Pending Review"
+                            title="Final Pending"
                             value={
-                                dnCnRecords.filter(
-                                    (d) =>
-                                        d.status === "Draft" ||
-                                        d.status === "Under Review",
+                                exceptionItems.filter(
+                                    (r) => r.recon_status === "FINAL",
                                 ).length
                             }
-                            subtitle="Awaiting action"
+                            subtitle="Ready for Exception"
                             icon={Clock}
                             gradient="from-orange-500 to-orange-600"
                         />
                         <GradientStatCard
-                            title="Approved"
-                            value={
-                                dnCnRecords.filter(
-                                    (d) => d.status === "Approved",
-                                ).length
-                            }
-                            subtitle="Ready for acknowledgment"
-                            icon={CheckCircle2}
-                            gradient="from-green-500 to-green-600"
+                            title="Total Difference"
+                            value={formatRupiahAdaptive(
+                                exceptionItems.reduce(
+                                    (sum, r) => sum + toNumber(r.difference),
+                                    0,
+                                ),
+                            )}
+                            subtitle="sum of differences"
+                            icon={AlertTriangle}
+                            gradient="from-red-500 to-red-600"
                         />
                         <GradientStatCard
-                            title="Total Adjustment"
-                            value={formatRupiahAdaptive(dnCnRecords.reduce((sum, d) => sum + toNumber(d.adjustment_amount), 0))}
-                            subtitle="adjustment"
+                            title="Affected Notas"
+                            value={
+                                new Set(
+                                    exceptionItems.map((r) => r.nota_number),
+                                ).size
+                            }
+                            subtitle="unique notas"
                             icon={DollarSign}
                             gradient="from-purple-500 to-purple-600"
                         />
@@ -1684,28 +1751,24 @@ export default function NotaManagement() {
                                 label: "Contract",
                                 options: [
                                     { value: "all", label: "All Contracts" },
-                                    ...contracts.map((c) => ({ value: c.id, label: c.contract_number })),
-                                ],
-                            },
-                            {
-                                key: "noteType",
-                                label: "Note Type",
-                                options: [
-                                    { value: "all", label: "All Status" },
-                                    { value: "Debit Note", label: "Debit Note" },
-                                    { value: "Credit Note", label: "Credit Note" },
+                                    ...contracts.map((c) => ({
+                                        value: c.id,
+                                        label: c.contract_number,
+                                    })),
                                 ],
                             },
                             {
                                 key: "status",
-                                label: "Status",
+                                label: "Recon Status",
                                 options: [
-                                    { value: "all", label: "All" },
+                                    { value: "all", label: "All Status" },
                                     { value: "Draft", label: "Draft" },
-                                    { value: "Under Review", label: "Under Review" },
-                                    { value: "Approved", label: "Approved" },
-                                    { value: "Acknowledged", label: "Acknowledged" },
-                                    { value: "Rejected", label: "Rejected" },
+                                    { value: "Final", label: "Final" },
+                                    { value: "Confirmed", label: "Confirmed" },
+                                    {
+                                        value: "Nota Closed",
+                                        label: "Nota Closed",
+                                    },
                                 ],
                             },
                         ]}
@@ -1713,142 +1776,153 @@ export default function NotaManagement() {
                     <DataTable
                         columns={[
                             {
-                                header: "Note Number",
+                                header: "Nota",
                                 cell: (row) => (
                                     <div>
                                         <div className="font-medium font-mono">
-                                            {row.note_number}
+                                            {row.nota_number}
                                         </div>
-                                        <Badge
-                                            className={
-                                                row.note_type === "Debit Note"
-                                                    ? "bg-red-100 text-red-700"
-                                                    : "bg-blue-100 text-blue-700"
-                                            }
-                                        >
-                                            {row.note_type}
-                                        </Badge>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <Badge
+                                                variant="outline"
+                                                className="text-xs"
+                                            >
+                                                {row.nota_type}
+                                            </Badge>
+                                            <span className="text-xs text-gray-500">
+                                                {row.reference_id}
+                                            </span>
+                                        </div>
                                     </div>
                                 ),
-                            },
-                            {
-                                header: "Original Nota",
-                                accessorKey: "original_nota_id",
                             },
                             { header: "Batch ID", accessorKey: "batch_id" },
                             {
-                                header: "Adjustment",
+                                header: "Nota Amount",
                                 cell: (row) => (
-                                    <div
-                                        className={
-                                            row.note_type === "Debit Note"
-                                                ? "text-red-600 font-bold"
-                                                : "text-blue-600 font-bold"
-                                        }
-                                    >
-                                        {formatRupiahAdaptive(row.adjustment_amount)}
+                                    <div>
+                                        {formatRupiahAdaptive(
+                                            getNotaAmount(row),
+                                        )}
                                     </div>
                                 ),
                             },
-                            { header: "Reason", accessorKey: "reason_code" },
                             {
-                                header: "Status",
+                                header: "Paid",
                                 cell: (row) => (
-                                    <StatusBadge status={row.status} />
+                                    <div className="text-green-600 font-bold">
+                                        {formatRupiahAdaptive(
+                                            row.payment_received ||
+                                                row.total_actual_paid ||
+                                                0,
+                                        )}
+                                    </div>
+                                ),
+                            },
+                            {
+                                header: "Difference",
+                                cell: (row) => (
+                                    <div className="text-red-600 font-bold">
+                                        {formatRupiahAdaptive(
+                                            row.difference ||
+                                                (row.amount || 0) -
+                                                    (row.payment_received ||
+                                                        row.total_actual_paid ||
+                                                        0),
+                                        )}
+                                    </div>
+                                ),
+                            },
+                            {
+                                header: "Recon Status",
+                                cell: (row) => (
+                                    <StatusBadge
+                                        status={
+                                            row.reconciliation_status ||
+                                            row.recon_status
+                                        }
+                                    />
                                 ),
                             },
                             {
                                 header: "Actions",
                                 cell: (row) => (
-                                    <div className="flex gap-1">
+                                    <div className="flex gap-1 flex-wrap">
                                         <Button
                                             variant="outline"
                                             size="sm"
                                             onClick={() => {
-                                                setSelectedDnCn(row);
+                                                setSelectedNota(row);
                                                 setShowViewDialog(true);
                                             }}
                                         >
                                             <Eye className="w-4 h-4" />
                                         </Button>
-                                        {isTugure && row.status === "Draft" && (
-                                            <Button
-                                                size="sm"
-                                                onClick={() => {
-                                                    setSelectedDnCn(row);
-                                                    setActionType("review");
-                                                    setShowDnCnActionDialog(
-                                                        true,
-                                                    );
-                                                }}
-                                            >
-                                                Review
-                                            </Button>
-                                        )}
+
                                         {isTugure &&
-                                            row.status === "Under Review" && (
-                                                <div className="flex gap-1">
-                                                    <Button
-                                                        size="sm"
-                                                        className="bg-green-600"
-                                                        onClick={() => {
-                                                            setSelectedDnCn(
-                                                                row,
-                                                            );
-                                                            setActionType(
-                                                                "approve",
-                                                            );
-                                                            setShowDnCnActionDialog(
-                                                                true,
-                                                            );
-                                                        }}
-                                                    >
-                                                        Approve
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="destructive"
-                                                        onClick={() => {
-                                                            setSelectedDnCn(
-                                                                row,
-                                                            );
-                                                            setActionType(
-                                                                "reject",
-                                                            );
-                                                            setShowDnCnActionDialog(
-                                                                true,
-                                                            );
-                                                        }}
-                                                    >
-                                                        Reject
-                                                    </Button>
-                                                </div>
-                                            )}
-                                        {isBrins &&
-                                            row.status === "Approved" && (
+                                            (row.reconciliation_status ===
+                                                "FINAL" ||
+                                                row.recon_status ===
+                                                    "FINAL") && (
                                                 <Button
                                                     size="sm"
-                                                    className="bg-blue-600"
+                                                    variant="outline"
+                                                    className="text-orange-600 border-orange-300"
                                                     onClick={() => {
-                                                        setSelectedDnCn(row);
-                                                        setActionType(
-                                                            "acknowledge",
-                                                        );
-                                                        setShowDnCnActionDialog(
-                                                            true,
-                                                        );
+                                                        setSelectedNota(row);
+                                                        const diff =
+                                                            row.difference ||
+                                                            (row.amount || 0) -
+                                                                (row.payment_received ||
+                                                                    row.total_actual_paid ||
+                                                                    0);
+                                                        setDnCnFormData({
+                                                            note_type:
+                                                                diff > 0
+                                                                    ? "Debit Note"
+                                                                    : "Credit Note",
+                                                            adjustment_amount:
+                                                                Math.abs(diff),
+                                                            reason_code:
+                                                                "Payment Difference",
+                                                            reason_description: `${diff > 0 ? "Underpayment" : "Overpayment"} of Rp ${Math.abs(diff).toLocaleString()}`,
+                                                        });
+                                                        setShowDnCnDialog(true);
                                                     }}
                                                 >
-                                                    Acknowledge
+                                                    <Plus className="w-4 h-4 mr-1" />
+                                                    Exception
+                                                </Button>
+                                            )}
+
+                                        {(row.reconciliation_status ===
+                                            "MATCHED" ||
+                                            row.recon_status === "MATCHED" ||
+                                            dnCnRecords.some(
+                                                (d) =>
+                                                    d.original_nota_id ===
+                                                        row.nota_number &&
+                                                    d.status === "Approved",
+                                            )) &&
+                                            row.status !== "Nota Closed" && (
+                                                <Button
+                                                    size="sm"
+                                                    className="bg-green-600"
+                                                    onClick={() =>
+                                                        handleCloseNota(row)
+                                                    }
+                                                >
+                                                    <CheckCircle2 className="w-4 h-4 mr-1" />
+                                                    Close Nota
                                                 </Button>
                                             )}
                                     </div>
                                 ),
                             },
                         ]}
-                        data={filteredDnCn}
+                        data={filteredExceptions}
                         isLoading={loading}
-                        emptyMessage="No DN/CN records"
+                        emptyMessage="No exceptions"
                     />
                 </TabsContent>
             </Tabs>
@@ -1923,7 +1997,7 @@ export default function NotaManagement() {
                                 <br />• MATCHED: Actual Paid = Nota Amount
                                 (auto-close Nota)
                                 <br />• OVERPAID: Actual Paid &gt; Nota Amount
-                                (DN/CN required)
+                                (Exception required)
                                 <br />
                                 <br />
                                 <strong>Note:</strong> Planned vs Actual
@@ -2073,7 +2147,7 @@ export default function NotaManagement() {
                 </DialogContent>
             </Dialog>
 
-            {/* DN/CN Creation Dialog */}
+            {/* Exception Creation Dialog */}
             <Dialog open={showDnCnDialog} onOpenChange={setShowDnCnDialog}>
                 <DialogContent>
                     <DialogHeader>
@@ -2247,20 +2321,20 @@ export default function NotaManagement() {
                             ) : (
                                 <Plus className="w-4 h-4 mr-2" />
                             )}
-                            Create DN/CN
+                            Create Exception
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            {/* DN/CN Action Dialog */}
+            {/* Exception Action Dialog */}
             <Dialog
                 open={showDnCnActionDialog}
                 onOpenChange={setShowDnCnActionDialog}
             >
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>{actionType} DN/CN</DialogTitle>
+                        <DialogTitle>{actionType} Exception</DialogTitle>
                         <DialogDescription>
                             {selectedDnCn?.note_number}
                         </DialogDescription>
@@ -2360,7 +2434,7 @@ export default function NotaManagement() {
                                     Nota amount becomes IMMUTABLE and cannot be
                                     edited.
                                     <br />
-                                    Any adjustments must be done via DN/CN.
+                                    Any adjustments must be done via Exception.
                                 </AlertDescription>
                             </Alert>
                         )}
@@ -2451,7 +2525,9 @@ export default function NotaManagement() {
                                         <span className="text-gray-500">
                                             Type:
                                         </span>
-                                        <Badge className="ml-2">{selectedNota.nota_type}</Badge>
+                                        <Badge className="ml-2">
+                                            {selectedNota.nota_type}
+                                        </Badge>
                                     </div>
                                     <div>
                                         <span className="text-gray-500">

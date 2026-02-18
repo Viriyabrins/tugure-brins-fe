@@ -469,7 +469,7 @@ export default function MasterContractManagement() {
             </Button>
           )}
           
-          {row.effective_status === 'Draft' && (
+          {/* {row.effective_status === 'Draft' && (
             <Button
               size="sm"
               variant="destructive"
@@ -481,7 +481,7 @@ export default function MasterContractManagement() {
             >
               Invalidate
             </Button>
-          )}
+          )} */}
         </div>
       )
     }

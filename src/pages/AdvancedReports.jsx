@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, TrendingDown, DollarSign, FileText, RefreshCw, Download, Filter, Clock, CreditCard, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatRupiahAdaptive } from '@/utils/currency';
+import { backend } from '@/api/backendClient';
 import PageHeader from '../components/common/PageHeader';
-import StatCard from '../components/dashboard/StatCard';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import FilterTab from '@/components/common/FilterTab';
 import DataTable from '@/components/common/DataTable';
 import GradientStatCard from '@/components/dashboard/GradientStatCard';
+
+const defaultFilter = {
+  batch: 'all',
+  period: 'all',
+  branch: 'all',
+  plafonRange: 'all',
+  batchStatus: 'all',
+  claimStatus: 'all',
+  creditType: 'all'
+}
 
 export default function AdvancedReports() {
   const [activeTab, setActiveTab] = useState('loss-ratio');
@@ -23,15 +34,8 @@ export default function AdvancedReports() {
   const [batches, setBatches] = useState([]);
   const [claims, setClaims] = useState([]);
   const [subrogations, setSubrogations] = useState([]);
-  const [filters, setFilters] = useState({
-    batch: 'all',
-    period: '2024',
-    branch: 'all',
-    plafonRange: 'all',
-    batchStatus: 'all',
-    claimStatus: 'all',
-    creditType: 'all'
-  });
+  const [contracts, setContracts] = useState([]);
+  const [filters, setFilters] = useState(defaultFilter);
 
   useEffect(() => {
     loadData();
@@ -40,16 +44,18 @@ export default function AdvancedReports() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [debtorData, batchData, claimData, subrogationData] = await Promise.all([
-        base44.entities.Debtor.list(),
-        base44.entities.Batch.list(),
-        base44.entities.Claim.list(),
-        base44.entities.Subrogation.list()
+      const [debtorData, batchData, claimData, subrogationData, contractData] = await Promise.all([
+        backend.list("Debtor"),
+        backend.list("Batch"),
+        backend.list("Claim"),
+        backend.list("Subrogation"),
+        backend.list("Contract")
       ]);
-      setDebtors(debtorData || []);
-      setBatches(batchData || []);
-      setClaims(claimData || []);
-      setSubrogations(subrogationData || []);
+      setDebtors(Array.isArray(debtorData) ? debtorData : []);
+      setBatches(Array.isArray(batchData) ? batchData : []);
+      setClaims(Array.isArray(claimData) ? claimData : []);
+      setSubrogations(Array.isArray(subrogationData) ? subrogationData : []);
+      setContracts(Array.isArray(contractData) ? contractData : []);
     } catch (error) {
       console.error('Failed to load data:', error);
     }
@@ -63,9 +69,9 @@ export default function AdvancedReports() {
     if (filters.branch !== 'all' && d.branch_code !== filters.branch) return false;
     if (filters.batchStatus !== 'all' && d.batch_status !== filters.batchStatus) return false;
     if (filters.claimStatus !== 'all' && d.claim_status !== filters.claimStatus) return false;
-    if (filters.creditType !== 'all' && d.credit_type !== filters.creditType) return false;
+    if (filters.creditType !== 'all' && contracts.find(c => c.contract_id === d.contract_id)?.credit_type !== filters.creditType) return false;
     if (filters.plafonRange !== 'all') {
-      const plafon = d.credit_plafond || 0;
+      const plafon = parseFloat(d.plafon) || 0;
       if (filters.plafonRange === '<100M' && plafon >= 100000000) return false;
       if (filters.plafonRange === '100-500M' && (plafon < 100000000 || plafon >= 500000000)) return false;
       if (filters.plafonRange === '500M-1B' && (plafon < 500000000 || plafon >= 1000000000)) return false;
@@ -98,7 +104,7 @@ export default function AdvancedReports() {
     const earnedBatchIds = earnedBatches.map(b => b.batch_id);
     const earnedDebtors = filteredDebtors.filter(d => earnedBatchIds.includes(d.batch_id));
     
-    const premiumEarned = earnedDebtors.reduce((sum, d) => sum + (d.gross_premium || 0), 0);
+    const premiumEarned = earnedDebtors.reduce((sum, d) => sum + (parseFloat(d.net_premi) || 0), 0);
     
     // Only count Paid claims
     const paidClaims = filteredClaims.filter(c => c.claim_status === 'Paid');
@@ -124,7 +130,7 @@ export default function AdvancedReports() {
       if (!monthlyData[key]) {
         monthlyData[key] = { month: key, claimPaid: 0, Draft: 0, Checked: 0, 'Doc Verified': 0, Invoiced: 0, Paid: 0 };
       }
-      monthlyData[key].claimPaid += c.share_tugure_amount || 0;
+      monthlyData[key].claimPaid += parseFloat(c.share_tugure_amount) || 0;
     });
 
     // Add claim status distribution by month
@@ -143,13 +149,13 @@ export default function AdvancedReports() {
     // Distribution by credit type
     const byCreditType = {};
     earnedDebtors.forEach(d => {
-      const type = d.credit_type || 'Unknown';
+      const type = contracts.find(c => c.contract_id === d.contract_id)?.credit_type || 'Unknown';
       if (!byCreditType[type]) byCreditType[type] = { premium: 0, claim: 0 };
-      byCreditType[type].premium += d.gross_premium || 0;
+      byCreditType[type].premium += parseFloat(d.net_premi) || 0;
     });
     paidClaims.forEach(c => {
       const debtor = debtors.find(d => d.id === c.debtor_id);
-      const type = debtor?.credit_type || 'Unknown';
+      const type = contracts.find(ct => ct.contract_id === debtor?.contract_id)?.credit_type || 'Unknown';
       if (!byCreditType[type]) byCreditType[type] = { premium: 0, claim: 0 };
       byCreditType[type].claim += c.share_tugure_amount || 0;
     });
@@ -165,7 +171,7 @@ export default function AdvancedReports() {
     earnedDebtors.forEach(d => {
       const branch = d.branch_desc || 'Unknown';
       if (!byBranch[branch]) byBranch[branch] = { premium: 0, claim: 0 };
-      byBranch[branch].premium += d.gross_premium || 0;
+      byBranch[branch].premium += parseFloat(d.net_premi) || 0;
     });
     paidClaims.forEach(c => {
       const debtor = debtors.find(d => d.id === c.debtor_id);
@@ -193,12 +199,12 @@ export default function AdvancedReports() {
 
   // Premium by Status (PROCESS PERFORMANCE)
   const premiumByStatus = () => {
-    const totalGrossPremium = filteredBatches.reduce((sum, b) => sum + (b.total_premium || 0), 0);
-    const netPremium = filteredDebtors.reduce((sum, d) => sum + (d.net_premium || 0), 0);
+    const totalGrossPremium = filteredBatches.reduce((sum, b) => sum + (parseFloat(b.total_premium) || 0), 0);
+    const netPremium = filteredDebtors.reduce((sum, d) => sum + (parseFloat(d.net_premi) || 0), 0);
     
     // Paid Premium = batch_status in (Paid, Closed)
     const paidBatches = filteredBatches.filter(b => ['Paid', 'Closed'].includes(b.status));
-    const paidPremium = paidBatches.reduce((sum, b) => sum + (b.total_premium || 0), 0);
+    const paidPremium = paidBatches.reduce((sum, b) => sum + (parseFloat(b.total_premium) || 0), 0);
     const paidPercentage = totalGrossPremium > 0 ? (paidPremium / totalGrossPremium * 100) : 0;
     
     // Outstanding Premium
@@ -209,7 +215,7 @@ export default function AdvancedReports() {
     const statusData = {};
     filteredBatches.forEach(b => {
       const status = b.status || 'UNKNOWN';
-      statusData[status] = (statusData[status] || 0) + (b.total_premium || 0);
+      statusData[status] = (statusData[status] || 0) + (parseFloat(b.total_premium) || 0);
     });
     const byStatus = Object.entries(statusData).map(([status, amount]) => ({
       status,
@@ -226,7 +232,7 @@ export default function AdvancedReports() {
         monthlyData[key] = { month: key, Uploaded: 0, Validated: 0, Matched: 0, Approved: 0, 'Nota Issued': 0, 'Branch Confirmed': 0, Paid: 0, Closed: 0 };
       }
       const status = b.status || 'UNKNOWN';
-      monthlyData[key][status] = (monthlyData[key][status] || 0) + (b.total_premium || 0);
+      monthlyData[key][status] = (monthlyData[key][status] || 0) + (parseFloat(b.total_premium) || 0);
     });
     const trend = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
 
@@ -237,9 +243,9 @@ export default function AdvancedReports() {
       const status = d.batch_status || 'UNKNOWN';
       if (!byBranch[branch]) byBranch[branch] = { paid: 0, outstanding: 0 };
       if (['Paid', 'Closed'].includes(status)) {
-        byBranch[branch].paid += d.gross_premium || 0;
+        byBranch[branch].paid += parseFloat(d.net_premi) || 0;
       } else {
-        byBranch[branch].outstanding += d.gross_premium || 0;
+        byBranch[branch].outstanding += parseFloat(d.net_premi) || 0;
       }
     });
     const branchData = Object.entries(byBranch).map(([branch, data]) => ({
@@ -268,7 +274,7 @@ export default function AdvancedReports() {
   // Claim Paid Report (LIFECYCLE VIEW)
   const claimPaidData = () => {
     const paidClaims = filteredClaims.filter(c => c.claim_status === 'Paid');
-    const totalPaid = paidClaims.reduce((sum, c) => sum + (c.share_tugure_amount || 0), 0);
+    const totalPaid = paidClaims.reduce((sum, c) => sum + (parseFloat(c.share_tugure_amount) || 0), 0);
     
     // Claims in progress
     const inProgress = filteredClaims.filter(c => ['Draft', 'Checked', 'Doc Verified'].includes(c.claim_status)).length;
@@ -310,7 +316,7 @@ export default function AdvancedReports() {
     filteredClaims.forEach(c => {
       const status = c.claim_status || 'UNKNOWN';
       if (!byStatus[status]) byStatus[status] = 0;
-      byStatus[status] += c.share_tugure_amount || 0;
+      byStatus[status] += parseFloat(c.share_tugure_amount) || 0;
     });
     const statusData = Object.entries(byStatus).map(([status, amount]) => ({ status, amount }));
 
@@ -318,8 +324,8 @@ export default function AdvancedReports() {
     const byProduct = {};
     paidClaims.forEach(c => {
       const debtor = debtors.find(d => d.id === c.debtor_id);
-      const product = debtor?.credit_type || 'Unknown';
-      byProduct[product] = (byProduct[product] || 0) + (c.share_tugure_amount || 0);
+      const product = contracts.find(ct => ct.contract_id === debtor?.contract_id)?.credit_type || 'Unknown';
+      byProduct[product] = (byProduct[product] || 0) + (parseFloat(c.share_tugure_amount) || 0);
     });
     const productData = Object.entries(byProduct).map(([product, amount]) => ({ product, amount }));
 
@@ -338,10 +344,10 @@ export default function AdvancedReports() {
   // Outstanding Recovery (OUTSTANDING RISK VIEW)
   const outstandingRecovery = () => {
     const paidClaims = filteredClaims.filter(c => c.claim_status === 'Paid');
-    const totalClaimPaid = paidClaims.reduce((sum, c) => sum + (c.share_tugure_amount || 0), 0);
+    const totalClaimPaid = paidClaims.reduce((sum, c) => sum + (parseFloat(c.share_tugure_amount) || 0), 0);
     
     const paidSubrogations = filteredSubrogations.filter(s => s.status === 'Paid / Closed');
-    const totalRecovered = paidSubrogations.reduce((sum, s) => sum + (s.recovery_amount || 0), 0);
+    const totalRecovered = paidSubrogations.reduce((sum, s) => sum + (parseFloat(s.recovery_amount) || 0), 0);
     
     const outstanding = totalClaimPaid - totalRecovered;
 
@@ -352,14 +358,14 @@ export default function AdvancedReports() {
       if (!date) return;
       const key = date.substring(0, 7);
       if (!monthlyData[key]) monthlyData[key] = { month: key, claimPaid: 0, recovered: 0, outstanding: 0 };
-      monthlyData[key].claimPaid += c.share_tugure_amount || 0;
+      monthlyData[key].claimPaid += parseFloat(c.share_tugure_amount) || 0;
     });
     paidSubrogations.forEach(s => {
       const date = s.closed_date || s.created_date;
       if (!date) return;
       const key = date.substring(0, 7);
       if (!monthlyData[key]) monthlyData[key] = { month: key, claimPaid: 0, recovered: 0, outstanding: 0 };
-      monthlyData[key].recovered += s.recovery_amount || 0;
+      monthlyData[key].recovered += parseFloat(s.recovery_amount) || 0;
     });
     Object.values(monthlyData).forEach(m => {
       m.outstanding = m.claimPaid - m.recovered;
@@ -370,16 +376,16 @@ export default function AdvancedReports() {
     const byType = {};
     paidClaims.forEach(c => {
       const debtor = debtors.find(d => d.id === c.debtor_id);
-      const type = debtor?.credit_type || 'Unknown';
+      const type = contracts.find(ct => ct.contract_id === debtor?.contract_id)?.credit_type || 'Unknown';
       if (!byType[type]) byType[type] = { claimPaid: 0, recovered: 0 };
-      byType[type].claimPaid += c.share_tugure_amount || 0;
+      byType[type].claimPaid += parseFloat(c.share_tugure_amount) || 0;
     });
     paidSubrogations.forEach(s => {
       const claim = claims.find(c => c.id === s.claim_id);
       const debtor = debtors.find(d => d.id === claim?.debtor_id);
-      const type = debtor?.credit_type || 'Unknown';
+      const type = contracts.find(ct => ct.contract_id === debtor?.contract_id)?.credit_type || 'Unknown';
       if (!byType[type]) byType[type] = { claimPaid: 0, recovered: 0 };
-      byType[type].recovered += s.recovery_amount || 0;
+      byType[type].recovered += parseFloat(s.recovery_amount) || 0;
     });
     const typeData = Object.entries(byType).map(([type, data]) => ({
       type,
@@ -397,13 +403,13 @@ export default function AdvancedReports() {
 
   // Subrogation Tracking (SETTLEMENT EFFICIENCY)
   const subrogationData = () => {
-    const totalAmount = filteredSubrogations.reduce((sum, s) => sum + (s.recovery_amount || 0), 0);
+    const totalAmount = filteredSubrogations.reduce((sum, s) => sum + (parseFloat(s.recovery_amount) || 0), 0);
     
     const recovered = filteredSubrogations.filter(s => s.status === 'Paid / Closed');
-    const recoveredAmount = recovered.reduce((sum, s) => sum + (s.recovery_amount || 0), 0);
+    const recoveredAmount = recovered.reduce((sum, s) => sum + (parseFloat(s.recovery_amount) || 0), 0);
     
     const pending = filteredSubrogations.filter(s => s.status !== 'Paid / Closed');
-    const pendingAmount = pending.reduce((sum, s) => sum + (s.recovery_amount || 0), 0);
+    const pendingAmount = pending.reduce((sum, s) => sum + (parseFloat(s.recovery_amount) || 0), 0);
     
     const recoveryRate = totalAmount > 0 ? (recoveredAmount / totalAmount * 100) : 0;
 
@@ -416,7 +422,7 @@ export default function AdvancedReports() {
       if (!monthlyData[key]) {
         monthlyData[key] = { month: key, Draft: 0, Invoiced: 0, 'Paid / Closed': 0 };
       }
-      monthlyData[key][s.status] = (monthlyData[key][s.status] || 0) + (s.recovery_amount || 0);
+      monthlyData[key][s.status] = (monthlyData[key][s.status] || 0) + (parseFloat(s.recovery_amount) || 0);
     });
     const trend = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
 
@@ -424,7 +430,7 @@ export default function AdvancedReports() {
     const byStatus = {};
     filteredSubrogations.forEach(s => {
       const status = s.status || 'UNKNOWN';
-      byStatus[status] = (byStatus[status] || 0) + (s.recovery_amount || 0);
+      byStatus[status] = (byStatus[status] || 0) + (parseFloat(s.recovery_amount) || 0);
     });
     const statusData = Object.entries(byStatus).map(([status, amount]) => ({ status, amount }));
 
@@ -434,7 +440,7 @@ export default function AdvancedReports() {
       const claim = claims.find(c => c.id === s.claim_id);
       const debtor = debtors.find(d => d.id === claim?.debtor_id);
       const branch = debtor?.branch_desc || 'Unknown';
-      byBranch[branch] = (byBranch[branch] || 0) + (s.recovery_amount || 0);
+      byBranch[branch] = (byBranch[branch] || 0) + (parseFloat(s.recovery_amount) || 0);
     });
     const branchData = Object.entries(byBranch)
       .map(([branch, amount]) => ({ branch, amount }))
@@ -483,9 +489,7 @@ export default function AdvancedReports() {
   const recovery = outstandingRecovery();
   const subrogation = subrogationData();
 
-  const batchIds = [...new Set(batches.map(b => b.batch_id))].filter(Boolean);
   const branches = [...new Set(debtors.map(d => d.branch_code))].filter(Boolean);
-  const years = [...new Set(debtors.map(d => d.batch_year?.toString()))].filter(Boolean);
   const batchStatuses = ['Uploaded', 'Validated', 'Matched', 'Approved', 'Nota Issued', 'Branch Confirmed', 'Paid', 'Closed'];
   const claimStatuses = ['Draft', 'Checked', 'Doc Verified', 'Invoiced', 'Paid'];
   const creditTypes = ['Individual', 'Corporate'];
@@ -530,6 +534,7 @@ export default function AdvancedReports() {
     );
   };
 
+  // Page Advanced Reports
   return (
     <div className="space-y-6">
       <PageHeader
@@ -542,151 +547,105 @@ export default function AdvancedReports() {
         actions={getHeaderActions()}
       />
 
-      {/* Filter Panel */}
-      <Card className="mb-6 border-2 shadow-xl bg-gradient-to-r from-white via-blue-50 to-purple-50">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="text-sm font-semibold mb-2 block text-gray-900">Batch</label>
-              <Select value={filters.batch} onValueChange={(v) => setFilters({...filters, batch: v})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Batches</SelectItem>
-                  {batchIds.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-semibold mb-2 block text-gray-900">Period</label>
-              <Select value={filters.period} onValueChange={(v) => setFilters({...filters, period: v})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  {years.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-semibold mb-2 block text-gray-900">Batch Status</label>
-              <Select value={filters.batchStatus} onValueChange={(v) => setFilters({...filters, batchStatus: v})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  {batchStatuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-semibold mb-2 block text-gray-900">Claim Status</label>
-              <Select value={filters.claimStatus} onValueChange={(v) => setFilters({...filters, claimStatus: v})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  {claimStatuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-            <div>
-              <label className="text-sm font-semibold mb-2 block text-gray-900">Credit Type</label>
-              <Select value={filters.creditType} onValueChange={(v) => setFilters({...filters, creditType: v})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  {creditTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-semibold mb-2 block text-gray-900">Branch</label>
-              <Select value={filters.branch} onValueChange={(v) => setFilters({...filters, branch: v})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Branches</SelectItem>
-                  {branches.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-semibold mb-2 block text-gray-900">Plafon Range</label>
-              <Select value={filters.plafonRange} onValueChange={(v) => setFilters({...filters, plafonRange: v})}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Ranges</SelectItem>
-                  <SelectItem value="<100M">&lt; 100 Juta</SelectItem>
-                  <SelectItem value="100-500M">100 - 500 Juta</SelectItem>
-                  <SelectItem value="500M-1B">500 Juta - 1 Milyar</SelectItem>
-                  <SelectItem value=">1B">&gt; 1 Milyar</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="flex gap-2 mt-4">
-            <Button variant="outline" size="sm" onClick={() => setFilters({ batch: 'all', period: 'all', branch: 'all', plafonRange: 'all', batchStatus: 'all', claimStatus: 'all', creditType: 'all' })} className="bg-white hover:bg-gray-50 text-gray-900 font-semibold">
-              Clear Filters
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* KPI Stat Cards — dynamic per tab */}
+      <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
+        {activeTab === 'loss-ratio' && (<>
+          <GradientStatCard title="Premium Earned" value={formatRupiahAdaptive(lossRatio.premiumEarned)} subtitle="Batch Paid/Closed only" icon={DollarSign} gradient="from-blue-500 to-indigo-600" />
+          <GradientStatCard title="Claim Paid" value={formatRupiahAdaptive(lossRatio.claimPaid)} subtitle="Paid claims only" icon={FileText} gradient="from-red-500 to-red-600" />
+          <GradientStatCard title="Loss Ratio" value={`${lossRatio.lossRatio.toFixed(2)}%`} subtitle={lossRatio.lossRatio < 70 ? 'Healthy' : lossRatio.lossRatio < 85 ? 'Warning' : 'Critical'} icon={lossRatio.lossRatio < 70 ? TrendingDown : TrendingUp} gradient={lossRatio.lossRatio < 70 ? 'from-green-500 to-emerald-600' : lossRatio.lossRatio < 85 ? 'from-yellow-500 to-orange-600' : 'from-red-500 to-red-700'} />
+          <GradientStatCard title="Claim Payment Rate" value={`${lossRatio.claimPaymentRate.toFixed(1)}%`} subtitle="Claims paid vs invoiced" icon={TrendingUp} gradient="from-purple-500 to-purple-600" />
+        </>)}
+        {activeTab === 'premium-status' && (<>
+          <GradientStatCard title="Total Gross Premium" value={formatRupiahAdaptive(premiumStatus.totalGrossPremium)} subtitle="All batches" icon={DollarSign} gradient="from-blue-500 to-indigo-600" />
+          <GradientStatCard title="Net Premium" value={formatRupiahAdaptive(premiumStatus.netPremium)} subtitle="After deductions" icon={CreditCard} gradient="from-green-500 to-emerald-600" />
+          <GradientStatCard title="Paid Premium" value={formatRupiahAdaptive(premiumStatus.paidPremium)} subtitle={`${premiumStatus.paidPercentage.toFixed(1)}% of Gross`} icon={CheckCircle} gradient="from-purple-500 to-purple-600" />
+          <GradientStatCard title="Outstanding Premium" value={formatRupiahAdaptive(premiumStatus.outstandingPremium)} subtitle={`${premiumStatus.outstandingPercentage.toFixed(1)}% of Gross`} icon={Clock} gradient="from-orange-500 to-red-600" />
+        </>)}
+        {activeTab === 'claim-paid' && (<>
+          <GradientStatCard title="Total Claim Paid" value={formatRupiahAdaptive(claimPaid.totalPaid)} subtitle="All paid claims" icon={FileText} gradient="from-red-500 to-red-600" />
+          <GradientStatCard title="Number of Claims Paid" value={claimPaid.count} subtitle="Total paid claims" icon={CheckCircle} gradient="from-green-500 to-emerald-600" />
+          <GradientStatCard title="Claims In Progress" value={claimPaid.inProgress} subtitle="Draft/Checked/Doc Verified" icon={Clock} gradient="from-orange-500 to-orange-600" />
+          <GradientStatCard title="Avg. Settlement Time" value={`${claimPaid.avgSettlementDays} Days`} subtitle="For paid claims" icon={TrendingUp} gradient="from-indigo-500 to-indigo-600" />
+        </>)}
+        {activeTab === 'outstanding-recovery' && (<>
+          <GradientStatCard title="Total Claim Paid" value={formatRupiahAdaptive(recovery.totalClaimPaid)} subtitle="All paid claims" icon={FileText} gradient="from-red-500 to-red-600" />
+          <GradientStatCard title="Total Recovered" value={formatRupiahAdaptive(recovery.totalRecovered)} subtitle="Via subrogation" icon={DollarSign} gradient="from-green-500 to-emerald-600" />
+          <GradientStatCard title="Outstanding Recovery" value={formatRupiahAdaptive(recovery.outstanding)} subtitle="Yet to be recovered" icon={Clock} gradient="from-orange-500 to-red-600" />
+          <GradientStatCard title="Recovery Rate" value={`${((recovery.totalRecovered / recovery.totalClaimPaid) * 100).toFixed(1)}%`} subtitle="of claim paid" icon={TrendingUp} gradient="from-indigo-500 to-indigo-600" />
+        </>)}
+        {activeTab === 'subrogation' && (<>
+          <GradientStatCard title="Total Subrogation Amount" value={formatRupiahAdaptive(subrogation.totalAmount)} subtitle="All subrogations" icon={FileText} gradient="from-blue-500 to-indigo-600" />
+          <GradientStatCard title="Total Recovered Amount" value={formatRupiahAdaptive(subrogation.recoveredAmount)} subtitle="Paid / Closed" icon={DollarSign} gradient="from-green-500 to-emerald-600" />
+          <GradientStatCard title="Pending Amount" value={formatRupiahAdaptive(subrogation.pendingAmount)} subtitle="Yet to be recovered" icon={Clock} gradient="from-orange-500 to-red-600" />
+          <GradientStatCard title="Recovery Rate" value={`${subrogation.recoveryRate.toFixed(1)}%`} subtitle="of subrogation amount" icon={TrendingUp} gradient="from-purple-500 to-purple-600" />
+        </>)}
+      </div>
 
-      {/* New Page */}
+      {/* Filter Panel — filters change per tab */}
+      <FilterTab
+        filters={filters}
+        onFilterChange={setFilters}
+        defaultFilters={defaultFilter}
+        filterConfig={[
+          {
+            key: "period",
+            label: "Period",
+            options: [
+              { value: "all", label: "All Periods"},
+              { value: "2024", label: "2024"},
+              { value: "2025", label: "2025"},
+              { value: "2026", label: "2026"},
+            ]
+          },
+          // Batch Status — only for Loss Ratio & Premium by Status
+          ...(['loss-ratio', 'premium-status'].includes(activeTab) ? [{
+            key: "batchStatus",
+            label: "Batch Status",
+            options: [
+              { value: "all", label: "All Status"},
+              ...batchStatuses.map((c) => ({ value: c, label: c}))
+            ]
+          }] : []),
+          // Claim Status — only for Claim Paid
+          ...(activeTab === 'claim-paid' ? [{
+            key: "claimStatus",
+            label: "Claim Status",
+            options: [
+              { value: "all", label: "All Status"},
+              ...claimStatuses.map((c) => ({ value: c, label: c}))
+            ]
+          }] : []),
+          {
+            key: "creditType",
+            label: "Credit Type",
+            options: [
+              { value: "all", label: "All Types"},
+              ...creditTypes.map(t => ({ value: t, label: t}))
+            ]
+          },
+          {
+            key: "branch",
+            label: "Branch",
+            options: [
+              { value: "all", label: "All Branches"},
+              ...branches.map(t => ({ value: t, label: t}))
+            ]
+          },
+        ]}
+      />
+
       <div id="report-content">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full max-w-3xl grid-cols-5">
+        <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="loss-ratio">Loss Ratio</TabsTrigger>
             <TabsTrigger value="premium-status">Premium by  Status</TabsTrigger>
             <TabsTrigger value="claim-paid">Claim Paid</TabsTrigger>
-            <TabsTrigger value="outstanding-recovery">OS Recovery</TabsTrigger>
+            <TabsTrigger value="outstanding-recovery">Outstanding Recovery</TabsTrigger>
             <TabsTrigger value="subrogation">Subrogation</TabsTrigger>
         </TabsList>
 
         {/* Loss Ratio */}
         <TabsContent value={"loss-ratio"} className="space-y-6">
-          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
-            <GradientStatCard
-              title="Premium Earned"
-              value={`Rp ${(lossRatio.premiumEarned / 1000000).toFixed(1)}M`}
-              subtitle="Batch Paid/Closed only"
-              icon={DollarSign}
-              gradient="from-blue-500 to-indigo-600"
-            />
-            <GradientStatCard
-                title="Claim Paid"
-                value={`Rp ${(lossRatio.claimPaid / 1000000).toFixed(1)}M`}
-                subtitle="Paid claims only"
-                icon={FileText}
-                gradient="from-red-500 to-red-600"
-            />
-            <GradientStatCard
-              title="Loss Ratio"
-                value={`${lossRatio.lossRatio.toFixed(2)}%`}
-                subtitle={lossRatio.lossRatio < 70 ? 'Healthy' : lossRatio.lossRatio < 85 ? 'Warning' : 'Critical'}
-                icon={lossRatio.lossRatio < 70 ? TrendingDown : TrendingUp}
-                gradient={lossRatio.lossRatio < 70 ? 'from-green-500 to-emerald-600' : lossRatio.lossRatio < 85 ? 'from-yellow-500 to-orange-600' : 'from-red-500 to-red-700'}
-            />
-            <GradientStatCard
-              title="Claim Payment Rate"
-                value={`${lossRatio.claimPaymentRate.toFixed(1)}%`}
-                subtitle="Claims paid vs invoiced"
-                icon={TrendingUp}
-                gradient="from-purple-500 to-purple-600"
-            />
-          </div>
           
           {/* Process Health Summary */}
           <Card className="shadow-lg border-2 bg-gradient-to-br from-white to-slate-50">
@@ -776,40 +735,9 @@ export default function AdvancedReports() {
           </div>
         </TabsContent>
 
-        {/* Premium by Status */}
         <TabsContent value={"premium-status"} className="space-y-6">
-          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
-            <GradientStatCard
-              title="Total Gross Premium"
-              value={`Rp ${(premiumStatus.totalGrossPremium / 1000000).toFixed(1)}M`}
-              subtitle="All batches"
-              icon={DollarSign}
-              gradient="from-blue-500 to-indigo-600"
-            />
-            <GradientStatCard
-                title="Net Premium"
-                value={`Rp ${(premiumStatus.netPremium / 1000000).toFixed(1)}M`}
-                subtitle="After deductions"
-                icon={CreditCard}
-                gradient="from-green-500 to-emerald-600"
-            />
-            <GradientStatCard
-              title="Paid Premium"
-                value={`Rp ${(premiumStatus.paidPremium / 1000000).toFixed(1)}M`}
-                subtitle={`${premiumStatus.paidPercentage.toFixed(1)}% of Gross`}
-                icon={CheckCircle}
-                gradient="from-purple-500 to-purple-600"
-            />
-            <GradientStatCard
-              title="Outstanding Premium"
-                value={`Rp ${(premiumStatus.outstandingPremium / 1000000).toFixed(1)}M`}
-                subtitle={`${premiumStatus.outstandingPercentage.toFixed(1)}% of Gross`}
-                icon={Clock}
-                gradient="from-orange-500 to-red-600"
-            />
-          </div>
 
-                 {/* Process Health Summary */}
+            {/* Process Health Summary */}
             <Card className="shadow-lg border-2 bg-gradient-to-br from-white to-slate-50">
               <CardHeader className="bg-gradient-to-r from-slate-600 to-slate-700 text-white border-b-2">
                 <CardTitle className="text-white font-bold">⚠️ Bottleneck Analysis</CardTitle>
@@ -895,36 +823,6 @@ export default function AdvancedReports() {
 
         {/* Claim Paid */}
         <TabsContent value={"claim-paid"} className="space-y-6">
-          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
-            <GradientStatCard
-              title="Total Claim Paid"
-              value={`Rp ${(claimPaid.totalPaid / 1000000).toFixed(1)}M`}
-              subtitle="All paid claims"
-              icon={FileText}
-              gradient="from-red-500 to-red-600"
-            />
-            <GradientStatCard
-                title="Number of Claims Paid"
-                value={claimPaid.count}
-                subtitle="Total paid claims"
-                icon={CheckCircle}
-                gradient="from-green-500 to-emerald-600"
-            />
-            <GradientStatCard
-              title="Claims In Progress"
-                value={claimPaid.inProgress}
-                subtitle="Draft/Checked/Doc Verified"
-                icon={Clock}
-                gradient="from-orange-500 to-orange-600"
-            />
-            <GradientStatCard
-              title="Avg. Settlement Time"
-                value={`${claimPaid.avgSettlementDays} Days`}
-                subtitle="For paid claims"
-                icon={TrendingUp}
-                gradient="from-indigo-500 to-indigo-600"
-            />
-          </div>
 
           <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-green-50">
               <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white border-b-4 border-emerald-700">
@@ -993,36 +891,6 @@ export default function AdvancedReports() {
 
         {/* Outstanding Recovery */}
         <TabsContent value={"outstanding-recovery"} className="space-y-6">
-          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
-            <GradientStatCard
-              title="Total Claim Paid"
-              value={`Rp ${(recovery.totalClaimPaid / 1000000).toFixed(1)}M`}
-              subtitle="All paid claims"
-              icon={FileText}
-              gradient="from-red-500 to-red-600"
-            />
-            <GradientStatCard
-                title="Total Recovered"
-                value={`Rp ${(recovery.totalRecovered / 1000000).toFixed(1)}M`}
-                subtitle="Via subrogation"
-                icon={DollarSign}
-                gradient="from-green-500 to-emerald-600"
-            />
-            <GradientStatCard
-              title="Outstanding Recovery"
-                value={`Rp ${(recovery.outstanding / 1000000).toFixed(1)}M`}
-                subtitle="Yet to be recovered"
-                icon={Clock}
-                gradient="from-orange-500 to-red-600"
-            />
-            <GradientStatCard
-              title="Recovery Rate"
-                value={`${((recovery.totalRecovered / recovery.totalClaimPaid) * 100).toFixed(1)}%`}
-                subtitle="of claim paid"
-                icon={TrendingUp}
-                gradient="from-indigo-500 to-indigo-600"
-            />
-          </div>
 
           {/* Trend */}
             <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-orange-50">
@@ -1067,36 +935,6 @@ export default function AdvancedReports() {
 
         {/* Subrogation */}
         <TabsContent value={"subrogation"} className="space-y-6">
-          <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
-            <GradientStatCard
-              title="Total Subrogation Amount"
-              value={`Rp ${(subrogation.totalAmount / 1000000).toFixed(1)}M`}
-              subtitle="All subrogations"
-              icon={FileText}
-              gradient="from-blue-500 to-indigo-600"
-            />
-            <GradientStatCard
-                title="Total Recovered Amount"
-                value={`Rp ${(subrogation.recoveredAmount / 1000000).toFixed(1)}M`}
-                subtitle="Paid / Closed"
-                icon={DollarSign}
-                gradient="from-green-500 to-emerald-600"
-            />
-            <GradientStatCard
-              title="Pending Amount"
-                value={`Rp ${(subrogation.pendingAmount / 1000000).toFixed(1)}M`}
-                subtitle="Yet to be recovered"
-                icon={Clock}
-                gradient="from-orange-500 to-red-600"
-            />
-            <GradientStatCard
-              title="Recovery Rate"
-                value={`${subrogation.recoveryRate.toFixed(1)}%`}
-                subtitle="of subrogation amount"
-                icon={TrendingUp}
-                gradient="from-purple-500 to-purple-600"
-            />
-          </div>
           
           {/* Trend */}
             <Card className="shadow-2xl border-3 bg-gradient-to-br from-white to-purple-50">

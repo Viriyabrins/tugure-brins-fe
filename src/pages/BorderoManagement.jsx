@@ -128,21 +128,21 @@ export default function BorderoManagement() {
             // Hitung total untuk setiap bordero dari debtors
             const borderoDataWithCalculatedTotals = safeBorderoData.map(
                 (bordero) => {
-                    // Filter debtors yang terkait dengan bordero ini
-                    const relatedDebtors = safeDebtorData.filter(
+                    // Filter debtors yang terkait dengan bordero ini (APPROVED only for verification)
+                    const approvedDebtors = safeDebtorData.filter(
                         (debtor) =>
                             debtor.contract_id === bordero.contract_id &&
                             debtor.batch_id === bordero.batch_id &&
                             debtor.status === "APPROVED",
                     );
 
-                    // Hitung totals
-                    const totalDebtors = relatedDebtors.length;
-                    const totalExposure = relatedDebtors.reduce(
+                    // Hitung totals APPROVED (for monitoring progress)
+                    const approvedDebtorsCount = approvedDebtors.length;
+                    const approvedExposure = approvedDebtors.reduce(
                         (sum, debtor) => sum + (parseFloat(debtor.plafon) || 0),
                         0,
                     );
-                    const totalPremium = relatedDebtors.reduce(
+                    const approvedPremium = approvedDebtors.reduce(
                         (sum, debtor) =>
                             sum + (parseFloat(debtor.net_premi) || 0),
                         0,
@@ -150,9 +150,14 @@ export default function BorderoManagement() {
 
                     return {
                         ...bordero,
-                        total_debtors: totalDebtors,
-                        total_exposure: totalExposure,
-                        total_premium: totalPremium,
+                        // Keep original totals from DB (calculated at upload)
+                        total_debtors: bordero.total_debtors || 0,
+                        total_exposure: bordero.total_exposure || 0,
+                        total_premium: bordero.total_premium || 0,
+                        // Add approved stats for UI usage if needed
+                        approved_debtors: approvedDebtorsCount,
+                        approved_exposure: approvedExposure,
+                        approved_premium: approvedPremium,
                     };
                 },
             );
@@ -397,30 +402,6 @@ export default function BorderoManagement() {
 
     const debtorColumns = [
         {
-            header: (
-                <Checkbox
-                    checked={
-                        selectedItems.length === filteredDebtors.length &&
-                        filteredDebtors.length > 0
-                    }
-                    onCheckedChange={(checked) => {
-                        if (checked) {
-                            setSelectedItems(filteredDebtors.map((d) => d.id));
-                        } else {
-                            setSelectedItems([]);
-                        }
-                    }}
-                />
-            ),
-            cell: (row) => (
-                <Checkbox
-                    checked={selectedItems.includes(row.id)}
-                    onCheckedChange={() => toggleItemSelection(row.id)}
-                />
-            ),
-            width: "40px",
-        },
-        {
             header: "Debtor",
             cell: (row) => (
                 <div>
@@ -454,49 +435,26 @@ export default function BorderoManagement() {
                     onClick={() => openDetailDialog(row)}
                 >
                     <Eye className="w-4 h-4 mr-1" />
-                    View
                 </Button>
             ),
         },
     ];
 
     const borderoColumns = [
-        {
-            header: (
-                <Checkbox
-                    checked={
-                        selectedItems.length === borderos.length &&
-                        borderos.length > 0
-                    }
-                    onCheckedChange={(checked) => {
-                        if (checked) {
-                            setSelectedItems(borderos.map((b) => b.id));
-                        } else {
-                            setSelectedItems([]);
-                        }
-                    }}
-                />
-            ),
-            cell: (row) => (
-                <Checkbox
-                    checked={selectedItems.includes(row.id)}
-                    onCheckedChange={() => toggleItemSelection(row.id)}
-                />
-            ),
-            width: "40px",
-        },
         { header: "Bordero ID", accessorKey: "bordero_id" },
         { header: "Period", accessorKey: "period" },
         { header: "Total Debtors", accessorKey: "total_debtors" },
+        // {
+        //     header: "Plafond",
+        //     cell: (row) => formatRupiahAdaptive(row.plafon)
+        // },
         {
-            header: "Total Exposure",
-            cell: (row) =>
-                `Rp ${(row.total_exposure || 0).toLocaleString("id-ID")}`,
+            header: "Exposure",
+            cell: (row) => formatRupiahAdaptive(row.total_exposure)
         },
         {
             header: "Total Premium",
-            cell: (row) =>
-                `Rp ${(row.total_premium || 0).toLocaleString("id-ID")}`,
+            cell: (row) => formatRupiahAdaptive(row.total_premium),
         },
         {
             header: "Status",
@@ -512,25 +470,7 @@ export default function BorderoManagement() {
                         onClick={() => openDetailDialog(row)}
                     >
                         <Eye className="w-4 h-4 mr-1" />
-                        View
                     </Button>
-                    {row.status !== "FINAL" &&
-                        getNextBorderoStatus(row.status) && (
-                            <Button
-                                size="sm"
-                                className="bg-blue-600 hover:bg-blue-700"
-                                onClick={() => {
-                                    setSelectedItem(row);
-                                    setActionType(
-                                        getNextBorderoStatus(row.status),
-                                    );
-                                    setShowActionDialog(true);
-                                }}
-                            >
-                                <ArrowRight className="w-4 h-4 mr-1" />
-                                {getNextBorderoStatus(row.status)}
-                            </Button>
-                        )}
                 </div>
             ),
         },
@@ -640,48 +580,71 @@ export default function BorderoManagement() {
 
             {/* Gradient Card */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <GradientStatCard
-                    title="Total Debtors"
-                    value={kpiDebtors.length}
-                    subtitle={`${debtors.length} total • ${debtors.filter(
-                        (d) => d.status === "SUBMITTED",
-                    ).length} pending`}
-                    icon={FileText}
-                    gradient="from-blue-500 to-blue-600"
-                />
-                <GradientStatCard
-                    title="Borderos"
-                    value={borderos.length}
-                    subtitle={`${borderos.filter(
-                        (b) => b.status === "FINAL",
-                    ).length} finalized`}
-                    icon={FileText}
-                    gradient="from-purple-500 to-purple-600"
-                />
-                <GradientStatCard
-                    title="Total Premi"
-                    value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => {
-                        const netPremi = parseFloat(debtor.net_premi) || 0;
-                        return sum + netPremi;
-                    }, 0))}
-                    subtitle="IDR"
-                    icon={DollarSign}
-                    gradient="from-green-500 to-green-600"
-                />
-                <GradientStatCard
-                    title="Total Claims"
-                    value={claims.length}
-                    subtitle="All statuses"
-                    icon={AlertCircle}
-                    gradient="from-orange-500 to-orange-600"
-                />
-                <GradientStatCard
-                    title="Subrogrations"
-                    value={subrogations.length}
-                    subtitle="Recovery cases"
-                    icon={RefreshCw}
-                    gradient="from-teal-500 to-teal-600"
-                />
+                {activeTab === "debtors" && (<>
+                    <GradientStatCard
+                        title="Total Debtors"
+                        value={kpiDebtors.length}
+                        subtitle={`${debtors.length} total • ${debtors.filter(
+                            (d) => d.status === "SUBMITTED",
+                        ).length} pending`}
+                        icon={FileText}
+                        gradient="from-blue-500 to-blue-600"
+                    />
+                    <GradientStatCard
+                        title="Borderos"
+                        value={borderos.length}
+                        subtitle={`${borderos.filter(
+                            (b) => b.status === "FINAL",
+                        ).length} finalized`}
+                        icon={FileText}
+                        gradient="from-purple-500 to-purple-600"
+                    />
+                    <GradientStatCard
+                        title="Total Premi"
+                        value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => {
+                            const netPremi = parseFloat(debtor.net_premi) || 0;
+                            return sum + netPremi;
+                        }, 0))}
+                        subtitle="IDR"
+                        icon={DollarSign}
+                        gradient="from-green-500 to-green-600"
+                    />
+                    <GradientStatCard
+                        title="Total Claims"
+                        value={claims.length}
+                        subtitle="All statuses"
+                        icon={AlertCircle}
+                        gradient="from-orange-500 to-orange-600"
+                    />
+                    <GradientStatCard
+                        title="Subrogrations"
+                        value={subrogations.length}
+                        subtitle="Recovery cases"
+                        icon={RefreshCw}
+                        gradient="from-teal-500 to-teal-600"
+                    />
+                </>)}
+                {activeTab === "borderos" && (<>
+                    <GradientStatCard title="Total Debtors" value={kpiDebtors.length} subtitle={`${debtors.length} total • ${debtors.filter((d) => d.status === "SUBMITTED",).length} pending`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
+                    <GradientStatCard title="Borderos" value={borderos.length} subtitle={`${borderos.filter( (b) => b.status === "FINAL",).length} finalized`} icon={FileText} gradient="from-purple-500 to-purple-600"/>
+                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="IDR" icon={DollarSign} gradient="from-green-500 to-green-600"/>
+                    <GradientStatCard title="Total Claims" value={claims.length}subtitle="All statuses"icon={AlertCircle}gradient="from-orange-500 to-orange-600"/>
+                    <GradientStatCard title="Subrogrations"value={subrogations.length}subtitle="Recovery cases"icon={RefreshCw}gradient="from-teal-500 to-teal-600"/>
+                </>)}
+                {activeTab === "claims" && (<>
+                    <GradientStatCard title="Total Debtors" value={kpiDebtors.length} subtitle={`${debtors.length} total • ${debtors.filter((d) => d.status === "SUBMITTED",).length} pending`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
+                    <GradientStatCard title="Borderos" value={borderos.length} subtitle={`${borderos.filter( (b) => b.status === "FINAL",).length} finalized`} icon={FileText} gradient="from-purple-500 to-purple-600"/>
+                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="IDR" icon={DollarSign} gradient="from-green-500 to-green-600"/>
+                    <GradientStatCard title="Total Claims" value={claims.length}subtitle="All statuses"icon={AlertCircle}gradient="from-orange-500 to-orange-600"/>
+                    <GradientStatCard title="Subrogrations"value={subrogations.length}subtitle="Recovery cases"icon={RefreshCw}gradient="from-teal-500 to-teal-600"/>
+                </>)}
+                {activeTab === "subrogation" && (<>
+                    <GradientStatCard title="Total Debtors" value={kpiDebtors.length} subtitle={`${debtors.length} total • ${debtors.filter((d) => d.status === "SUBMITTED",).length} pending`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
+                    <GradientStatCard title="Borderos" value={borderos.length} subtitle={`${borderos.filter( (b) => b.status === "FINAL",).length} finalized`} icon={FileText} gradient="from-purple-500 to-purple-600"/>
+                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="IDR" icon={DollarSign} gradient="from-green-500 to-green-600"/>
+                    <GradientStatCard title="Total Claims" value={claims.length}subtitle="All statuses"icon={AlertCircle}gradient="from-orange-500 to-orange-600"/>
+                    <GradientStatCard title="Subrogrations"value={subrogations.length}subtitle="Recovery cases"icon={RefreshCw}gradient="from-teal-500 to-teal-600"/>
+                </>)}
             </div>
 
             {/* Filters */}
@@ -690,6 +653,13 @@ export default function BorderoManagement() {
                 onFilterChange={setFilters}
                 defaultFilters={defaultFilter}
                 filterConfig={[
+                    // ...(['debtors', 'borderos'].includes(activeTab) ? [{
+                    //     key: "batch",
+                    //     label: "Batch ID",
+                    //     placeholder: "Search batch",
+                    //     type: "input",
+                    //     inputType: "text"
+                    // }] : []),
                     {
                         key: "batch",
                         label: "Batch ID",
@@ -734,14 +704,10 @@ export default function BorderoManagement() {
             />
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid grid-cols-5 w-full">
+                <TabsList className="grid grid-cols-4 w-full">
                     <TabsTrigger value="debtors">
                         <FileText className="w-4 h-4 mr-2" />
                         Debtors ({filteredDebtors.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="exposure">
-                        <FileText className="w-4 h-4 mr-2" />
-                        Exposure Data
                     </TabsTrigger>
                     <TabsTrigger value="borderos">
                         <FileText className="w-4 h-4 mr-2" />
@@ -766,45 +732,14 @@ export default function BorderoManagement() {
                     />
                 </TabsContent>
 
-                <TabsContent value="exposure" className="mt-4">
-                    <DataTable
-                        columns={[
-                            {
-                                header: "Debtor",
-                                cell: (row) => row.nama_peserta,
-                            },
-                            {
-                                header: "Plafond",
-                                cell: (row) => formatRupiahAdaptive(row.plafon),
-                            },
-                            {
-                                header: "Net Premi",
-                                cell: (row) =>
-                                    formatRupiahAdaptive(row.net_premi),
-                            },
-                            {
-                                header: "Status",
-                                cell: (row) => (
-                                    <StatusBadge status={row.status} />
-                                ),
-                            },
-                        ]}
-                        data={filteredDebtors.filter(
-                            (d) => d.status === "APPROVED",
-                        )}
-                        isLoading={loading}
-                        emptyMessage="No exposure data"
-                    />
-                </TabsContent>
-
                 <TabsContent value="borderos" className="mt-4">
                     {borderos.length === 0 ? (
                         <Alert className="bg-blue-50 border-blue-200">
                             <AlertCircle className="h-4 w-4 text-blue-600" />
                             <AlertDescription className="text-blue-700">
-                                No borderos yet. Borderos are auto-generated
-                                when a Batch reaches "Approved" status in Batch
-                                Processing.
+                                No borderos yet. Borderos are automatically
+                                created when debtors are submitted via Excel
+                                upload in Submit Debtor.
                             </AlertDescription>
                         </Alert>
                     ) : null}

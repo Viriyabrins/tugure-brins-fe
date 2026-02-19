@@ -63,13 +63,19 @@ const defaultFilter = {
     status: "all",
     startDate: "",
     endDate: "",
-}
+};
 
 export default function DebtorReview() {
     const [user, setUser] = useState(null);
     const [debtors, setDebtors] = useState([]);
+    const [totalDebtors, setTotalDebtors] = useState(0);
     const [contracts, setContracts] = useState([]);
     const [batches, setBatches] = useState([]);
+    const [pendingCountLocal, setPendingCountLocal] = useState(0);
+    const [approvedCountLocal, setApprovedCountLocal] = useState(0);
+    const [revisionCountLocal, setRevisionCountLocal] = useState(0);
+    const [conditionalCountLocal, setConditionalCountLocal] = useState(0);
+    const [totalPlafondLocal, setTotalPlafondLocal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [selectedDebtor, setSelectedDebtor] = useState(null);
     const [selectedDebtors, setSelectedDebtors] = useState([]);
@@ -84,6 +90,7 @@ export default function DebtorReview() {
 
     useEffect(() => {
         loadUser();
+        // load contracts/batches and initial page of debtors
         loadData();
     }, []);
 
@@ -105,16 +112,19 @@ export default function DebtorReview() {
         setSuccessMessage("");
 
         try {
-            // Load all data using backend client
-            const [debtorData, contractData, batchData] = await Promise.all([
-                backend.list("Debtor"),
+            // Load small reference data (contracts, batches)
+            const [contractData, batchData] = await Promise.all([
                 backend.list("MasterContract"),
                 backend.list("Batch"),
             ]);
 
-            setDebtors(Array.isArray(debtorData) ? debtorData : []);
             setContracts(Array.isArray(contractData) ? contractData : []);
             setBatches(Array.isArray(batchData) ? batchData : []);
+
+            // Load first page of debtors with current filters
+            await loadDebtors(1);
+            // Load counts for status KPIs
+            await loadStatusCounts();
         } catch (error) {
             console.error("Failed to load data:", error);
             setDebtors([]);
@@ -122,6 +132,53 @@ export default function DebtorReview() {
             setBatches([]);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadDebtors = async (pageToLoad = page) => {
+        setLoading(true);
+        try {
+            const query = { page: pageToLoad, limit: pageSize };
+            // include filters as JSON string in `q`
+            if (filters) query.q = JSON.stringify(filters);
+
+            const result = await backend.listPaginated("Debtor", query);
+
+            setDebtors(Array.isArray(result.data) ? result.data : []);
+            setTotalDebtors(Number(result.pagination?.total) || 0);
+        } catch (error) {
+            console.error("Failed to load debtors:", error);
+            setDebtors([]);
+            setTotalDebtors(0);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadStatusCounts = async () => {
+        try {
+            const statuses = ["SUBMITTED", "APPROVED", "REVISION", "CONDITIONAL"];
+            const promises = statuses.map((s) =>
+                backend.listPaginated("Debtor", { page: 1, limit: 1, q: JSON.stringify({ submitStatus: s }) }),
+            );
+            const results = await Promise.all(promises);
+            const counts = results.map((r) => Number(r.pagination?.total) || 0);
+            // set local derived counters based on these counts
+            setPendingCountLocal(counts[0] || 0);
+            setApprovedCountLocal(counts[1] || 0);
+            setRevisionCountLocal(counts[2] || 0);
+            setConditionalCountLocal(counts[3] || 0);
+            // sample approved debtors to estimate total plafon (limited to reasonable page)
+            try {
+                const approvedSample = await backend.listPaginated("Debtor", { page: 1, limit: 100, q: JSON.stringify({ submitStatus: 'APPROVED' }) });
+                const approvedRows = Array.isArray(approvedSample.data) ? approvedSample.data : [];
+                const samplePlafon = approvedRows.reduce((s, d) => s + (parseFloat(d.plafon) || 0), 0);
+                setTotalPlafondLocal(samplePlafon);
+            } catch (e) {
+                console.warn('Failed to load approved sample for plafon', e);
+            }
+        } catch (e) {
+            console.warn('Failed to load status counts', e);
         }
     };
 
@@ -183,9 +240,8 @@ export default function DebtorReview() {
                             premium_amount: parseFloat(debtor.net_premi) || 0,
                             revision_count: 0,
                             accepted_by: user?.email,
-                            accepted_date: new Date()
-                                .toISOString()
-                                .split("T")[0],
+                            // use full ISO-8601 datetime so Prisma DateTime accepts it
+                            accepted_date: new Date().toISOString(),
                         });
                     }
 
@@ -267,7 +323,9 @@ export default function DebtorReview() {
                         });
 
                         const approvedDebtors = updatedDebtors.filter(
-                            (d) => (d.status || "").toString().toUpperCase() === "APPROVED"
+                            (d) =>
+                                (d.status || "").toString().toUpperCase() ===
+                                "APPROVED",
                         );
 
                         const allApproved =
@@ -275,16 +333,20 @@ export default function DebtorReview() {
                             approvedDebtors.length === updatedDebtors.length;
 
                         const revisionDebtors = updatedDebtors.filter(
-                            (d) => (d.status || "").toString().toUpperCase() === "REVISION"
+                            (d) =>
+                                (d.status || "").toString().toUpperCase() ===
+                                "REVISION",
                         );
                         const hasRevisions = revisionDebtors.length > 0;
                         // All debtors are reviewed (either APPROVED or REVISION, no SUBMITTED left)
-                        const allReviewed = updatedDebtors.every(
-                            (d) => {
-                                const s = (d.status || "").toString().toUpperCase();
-                                return s === "APPROVED" || s === "REVISION" || s === "CONDITIONAL";
-                            }
-                        );
+                        const allReviewed = updatedDebtors.every((d) => {
+                            const s = (d.status || "").toString().toUpperCase();
+                            return (
+                                s === "APPROVED" ||
+                                s === "REVISION" ||
+                                s === "CONDITIONAL"
+                            );
+                        });
 
                         const totalApprovedExposure = approvedDebtors.reduce(
                             (sum, d) => sum + toNumber(d.plafon),
@@ -445,7 +507,14 @@ export default function DebtorReview() {
                 console.warn("Failed to create notification:", notifError);
             }
 
-            const actionDisplay = action === "approve" ? (isBulk ? `${debtorsToProcess.length} approved` : "approved") : (isBulk ? `${debtorsToProcess.length} marked for revision` : "marked for revision");
+            const actionDisplay =
+                action === "approve"
+                    ? isBulk
+                        ? `${debtorsToProcess.length} approved`
+                        : "approved"
+                    : isBulk
+                      ? `${debtorsToProcess.length} marked for revision`
+                      : "marked for revision";
             setSuccessMessage(
                 isBulk
                     ? `${actionDisplay}. Batch final amounts updated.`
@@ -496,6 +565,39 @@ export default function DebtorReview() {
           })
         : [];
 
+    // Pagination for Debtor Review (pageSize 10) - server-driven
+    const [page, setPage] = useState(1);
+    const pageSize = 10;
+    const total = totalDebtors;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+    const to = Math.min(total, page * pageSize);
+    const pageData = Array.isArray(debtors) ? debtors : [];
+
+    // Keep page within bounds when filtered set changes
+    useEffect(() => {
+        if (page > totalPages) setPage(totalPages);
+    }, [totalPages]);
+
+    // Reset to first page when filters change
+    useEffect(() => {
+        // when filters change, reset to first page and reload
+        setPage(1);
+        loadDebtors(1);
+    }, [
+        filters.contract,
+        filters.batch,
+        filters.startDate,
+        filters.endDate,
+        filters.submitStatus,
+        filters.status,
+    ]);
+
+    // Load page when `page` changes
+    useEffect(() => {
+        loadDebtors(page);
+    }, [page]);
+
     const toggleDebtorSelection = (debtorId) => {
         if (selectedDebtors.includes(debtorId)) {
             setSelectedDebtors(selectedDebtors.filter((id) => id !== debtorId));
@@ -504,13 +606,13 @@ export default function DebtorReview() {
         }
     };
 
-    const pendingCount = debtors.filter((d) => d.status === "SUBMITTED").length;
-    const approvedCount = debtors.filter((d) => d.status === "APPROVED").length;
-    const revisionCount = debtors.filter((d) => d.status === "REVISION").length;
-    const conditionalCount = debtors.filter(
+    const pendingCount = pendingCountLocal || debtors.filter((d) => d.status === "SUBMITTED").length;
+    const approvedCount = approvedCountLocal || debtors.filter((d) => d.status === "APPROVED").length;
+    const revisionCount = revisionCountLocal || debtors.filter((d) => d.status === "REVISION").length;
+    const conditionalCount = conditionalCountLocal || debtors.filter(
         (d) => d.status === "CONDITIONAL",
     ).length;
-    const totalPlafond = debtors
+    const totalPlafond = totalPlafondLocal || debtors
         .filter((d) => d.status === "APPROVED")
         .reduce((sum, d) => sum + (parseFloat(d.plafon) || 0), 0);
 
@@ -519,13 +621,13 @@ export default function DebtorReview() {
             header: (
                 <Checkbox
                     checked={
-                        selectedDebtors.length === filteredDebtors.length &&
-                        filteredDebtors.length > 0
+                        selectedDebtors.length === pageData.length &&
+                        pageData.length > 0
                     }
                     onCheckedChange={(checked) => {
                         if (checked) {
                             setSelectedDebtors(
-                                filteredDebtors.map((d) => d.id),
+                                pageData.map((d) => d.id),
                             );
                         } else {
                             setSelectedDebtors([]);
@@ -554,9 +656,7 @@ export default function DebtorReview() {
             header: "Batch",
             accessorKey: "batch_id",
             cell: (row) => (
-                <span className="font-mono text-sm">
-                    {row.batch_id}
-                </span>
+                <span className="font-mono text-sm">{row.batch_id}</span>
             ),
         },
         {
@@ -646,9 +746,7 @@ export default function DebtorReview() {
                 }
             />
 
-            {successMessage && (
-                <SuccessAlert message={successMessage} />
-            )}
+            {successMessage && <SuccessAlert message={successMessage} />}
 
             {/* Gradient Stat Card */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -691,7 +789,7 @@ export default function DebtorReview() {
 
             {/* Filters */}
             <FilterTab
-                filters = {filters}
+                filters={filters}
                 onFilterChange={setFilters}
                 defaultFilters={defaultFilter}
                 filterConfig={[
@@ -702,37 +800,36 @@ export default function DebtorReview() {
                             { value: "all", label: "All Contracts" },
                             ...contracts.map((c) => ({
                                 value: c.id,
-                                label: c.contract_id
-                            }))
-                        ]
+                                label: c.contract_id,
+                            })),
+                        ],
                     },
                     {
                         key: "batch",
                         label: "Batch ID",
                         placeholder: "Search Batch...",
                         type: "input",
-                        inputType: "text"
+                        inputType: "text",
                     },
                     {
                         key: "startDate",
                         label: "Start Date",
-                        type: "date"
+                        type: "date",
                     },
                     {
                         key: "endDate",
                         label: "End Date",
-                        type: "date"
+                        type: "date",
                     },
                     {
                         key: "submitStatus",
                         label: "Underwriting Status",
                         options: [
                             { value: "all", label: "All Statuses" },
-                            { value: "DRAFT", label: "Draft" },
                             { value: "SUBMITTED", label: "Submitted" },
                             { value: "APPROVED", label: "Approved" },
                             { value: "REVISION", label: "Revision" },
-                        ]
+                        ],
                     },
                     {
                         key: "status",
@@ -743,7 +840,7 @@ export default function DebtorReview() {
                             { value: "Validated", label: "Validated" },
                             { value: "Matched", label: "Matched" },
                             { value: "Approved", label: "Approved" },
-                        ]
+                        ],
                     },
                 ]}
             />
@@ -753,24 +850,30 @@ export default function DebtorReview() {
                 <div className="flex flex-wrap gap-2">
                     <>
                         <Button
-                            variant = "outline"
+                            variant="outline"
                             onClick={() => {
                                 setApprovalAction("bulk_approve");
                                 setShowApprovalDialog(true);
                             }}
                         >
                             <Check className="w-4 h-4 mr-2" />
-                            Approve {selectedDebtors.length > 0 ? `(${selectedDebtors.length})` : ""}
+                            Approve{" "}
+                            {selectedDebtors.length > 0
+                                ? `(${selectedDebtors.length})`
+                                : ""}
                         </Button>
                         <Button
-                            variant = "outline"
+                            variant="outline"
                             onClick={() => {
                                 setApprovalAction("bulk_revision");
                                 setShowApprovalDialog(true);
                             }}
                         >
                             <Pen className="w-4 h-4 mr-2" />
-                            Revision {selectedDebtors.length > 0 ? `(${selectedDebtors.length})` : ""}
+                            Revision{" "}
+                            {selectedDebtors.length > 0
+                                ? `(${selectedDebtors.length})`
+                                : ""}
                         </Button>
                     </>
                 </div>
@@ -779,9 +882,11 @@ export default function DebtorReview() {
             {/* Data Table */}
             <DataTable
                 columns={columns}
-                data={filteredDebtors}
+                data={pageData}
                 isLoading={loading}
                 emptyMessage="No debtors to review"
+                pagination={{ from, to, total, page, totalPages }}
+                onPageChange={(p) => setPage(p)}
             />
 
             {/* Detail Dialog */}
@@ -857,7 +962,7 @@ export default function DebtorReview() {
                 onOpenChange={setShowApprovalDialog}
             >
                 <DialogContent>
-                        <DialogHeader>
+                    <DialogHeader>
                         <DialogTitle>
                             {approvalAction?.includes("bulk")
                                 ? `Bulk ${approvalAction.includes("approve") ? "Approve" : "Revision"} (${selectedDebtors.length} debtors)`
@@ -904,7 +1009,7 @@ export default function DebtorReview() {
                             )}
 
                         {(approvalAction === "revision" ||
-                                    approvalAction === "bulk_revision") && (
+                            approvalAction === "bulk_revision") && (
                             <Alert>
                                 <AlertCircle className="h-4 w-4 text-orange-600" />
                                 <AlertDescription>
@@ -928,7 +1033,7 @@ export default function DebtorReview() {
                                     approvalAction === "approve" ||
                                     approvalAction === "bulk_approve"
                                         ? "Enter approval notes..."
-                                            : "Enter revision reason..."
+                                        : "Enter revision reason..."
                                 }
                                 rows={4}
                             />

@@ -8,15 +8,15 @@ export default function GradientStatCard({
   icon: Icon, 
   gradient, 
   textColor = "text-white",
-  subtitleColor = "text-white/80"
+  subtitleColor = "text-white"
 }) {
   return (
     <Card className={`bg-gradient-to-br ${gradient} text-white overflow-hidden relative border-none shadow-md transition-all hover:shadow-lg hover:scale-[1.01]`}>
       <CardContent className="p-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between font-semibold">
           <div className="z-10 relative">
-            <p className={`${subtitleColor} text-sm font-medium mb-1`}>{title}</p>
-            <h3 className="text-xl font-bold">{value}</h3>
+            <p className={`${subtitleColor} text-sm font-semibold mb-1`}>{title}</p>
+            <h3 className="text-xl font-semibold">{value}</h3>
             {subtitle && (
               <p className={`${subtitleColor} text-xs mt-2`}>{subtitle}</p>
             )}

@@ -250,7 +250,7 @@ export default function ClaimReview() {
                 case "reject":
                     newStatus = "Draft";
                     updateData.status = "Draft";
-                    updateData.rejection_reason = remarks;
+                    updateData.revision_reason = remarks;
                     break;
             }
 
@@ -503,7 +503,7 @@ export default function ClaimReview() {
                                                     updateId,
                                                     {
                                                         status: "Draft",
-                                                        rejection_reason:
+                                                        revision_reason:
                                                             "Bulk rejection",
                                                     },
                                                 );

@@ -254,10 +254,10 @@ export default function MasterContractManagement() {
         updates.first_approved_by = user?.email;
         updates.first_approved_date = new Date().toISOString();
         if (approvalRemarks) updates.remark = approvalRemarks;
-      } else if (approvalAction === 'REJECT') {
-        // Rejection should send back for revision (not inactivate)
+      } else if (approvalAction === 'REVISION') {
+        // Send back for revision
         updates.effective_status = 'Revision';
-        updates.rejection_reason = approvalRemarks;
+        updates.revision_reason = approvalRemarks;
       }
 
       // MasterContract uses contract_id as primary key
@@ -284,9 +284,9 @@ export default function MasterContractManagement() {
       // Create notification if Notification entity exists
       try {
         await backend.create('Notification', {
-          title: `Contract ${approvalAction === 'REJECT' ? 'Needs Revision' : 'Approved'}`,
+          title: `Contract ${approvalAction === 'REVISION' ? 'Needs Revision' : 'Approved'}`,
           message: `Master Contract ${selectedContract.contract_id} - ${approvalAction === 'APPROVE' ? 'Activated and ready for use' : 'Sent for revision: ' + approvalRemarks}`,
-          type: approvalAction === 'REJECT' ? 'WARNING' : 'INFO',
+          type: approvalAction === 'REVISION' ? 'WARNING' : 'INFO',
           module: 'CONFIG',
           reference_id: contractId,
           target_role: 'ALL'
@@ -295,7 +295,7 @@ export default function MasterContractManagement() {
         console.warn('Failed to create notification:', notifError);
       }
 
-      if (approvalAction === 'REJECT') {
+      if (approvalAction === 'REVISION') {
         setSuccessMessage('Contract sent for revision successfully');
       } else {
         setSuccessMessage('Contract approved successfully');
@@ -444,7 +444,7 @@ export default function MasterContractManagement() {
                 className="bg-orange-500 hover:bg-orange-600"
                 onClick={() => {
                   setSelectedContract(row);
-                  setApprovalAction('REJECT');
+                  setApprovalAction('REVISION');
                   setShowApprovalDialog(true);
                 }}
               >
@@ -817,14 +817,14 @@ export default function MasterContractManagement() {
       <Dialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{approvalAction === 'REJECT' ? 'Send for Revision' : 'Approve'} Contract</DialogTitle>
+            <DialogTitle>{approvalAction === 'REVISION' ? 'Send for Revision' : 'Approve'} Contract</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <label className="text-sm font-medium">Remarks</label>
             <Textarea
               value={approvalRemarks}
               onChange={(e) => setApprovalRemarks(e.target.value)}
-              placeholder="Enter approval/rejection remarks..."
+              placeholder="Enter approval/revision remarks..."
             />
           </div>
           <DialogFooter>

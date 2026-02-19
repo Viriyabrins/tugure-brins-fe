@@ -912,7 +912,7 @@ export default function NotaManagement() {
             const statusMap = {
                 review: "Under Review",
                 approve: "Approved",
-                reject: "Rejected",
+                revision: "Revision",
                 acknowledge: "Acknowledged",
             };
 
@@ -937,8 +937,8 @@ export default function NotaManagement() {
             } else if (action === "acknowledge") {
                 updates.acknowledged_by = user?.email;
                 updates.acknowledged_date = new Date().toISOString();
-            } else if (action === "reject") {
-                updates.rejection_reason = remarks;
+            } else if (action === "revision") {
+                updates.revision_reason = remarks;
             }
 
             await backend.update("DebitCreditNote", dnCn.note_number, updates);

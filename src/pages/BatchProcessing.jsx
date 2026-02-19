@@ -86,7 +86,7 @@ export default function BatchProcessing() {
         }
 
         const reviewedDebtors = batchDebtors.filter(d => 
-          d.status === 'APPROVED' || d.status === 'REJECTED' || 
+          d.status === 'APPROVED' || d.status === 'REVISION' || 
           d.validation_remarks || d.remark_premi
         );
         
@@ -214,7 +214,7 @@ export default function BatchProcessing() {
         const batchClaims = await backend.list('Claim', { debtor_id: { $in: batchDebtors.map(d => d.id) } });
         
         const unreviewed = batchDebtors.filter(d => 
-          d.status !== 'APPROVED' && d.status !== 'REJECTED'
+          d.status !== 'APPROVED' && d.status !== 'REVISION'
         );
         
         const pendingClaims = batchClaims?.filter(c => 
@@ -456,13 +456,13 @@ export default function BatchProcessing() {
     setProcessing(true);
     try {
       await backend.update('Batch', selectedBatch.batch_id, {
-        status: 'Rejected',
+        status: 'Revision',
         rejection_reason: remarks
       });
 
       await backend.create('Notification', {
-        title: 'Batch Rejected',
-        message: `Batch ${selectedBatch.batch_id} rejected: ${remarks}`,
+        title: 'Batch Sent for Revision',
+        message: `Batch ${selectedBatch.batch_id} sent for revision: ${remarks}`,
         type: 'WARNING',
         module: 'DEBTOR',
         reference_id: selectedBatch.batch_id,
@@ -470,18 +470,18 @@ export default function BatchProcessing() {
       });
 
       await backend.create('AuditLog', {
-        action: 'BATCH_REJECTED',
+        action: 'BATCH_REVISION',
         module: 'DEBTOR',
         entity_type: 'Batch',
         entity_id: selectedBatch.batch_id,
         old_value: JSON.stringify({ status: selectedBatch.status }),
-        new_value: JSON.stringify({ status: 'Rejected', reason: remarks }),
+        new_value: JSON.stringify({ status: 'Revision', reason: remarks }),
         user_email: user?.email,
         user_role: user?.role,
         reason: remarks
       });
 
-      setSuccessMessage('Batch rejected - BRINS can revise and resubmit');
+      setSuccessMessage('Batch sent for revision - BRINS can revise and resubmit');
       setShowRejectDialog(false);
       setRemarks('');
       loadData();
@@ -607,7 +607,7 @@ export default function BatchProcessing() {
           >
             <Eye className="w-4 h-4" />
             </Button>
-          {row.status !== 'Closed' && row.status !== 'Rejected' && getNextStatus(row.status) && (
+          {row.status !== 'Closed' && row.status !== 'Revision' && getNextStatus(row.status) && (
             <Button 
               size="sm" 
               className="bg-blue-600 hover:bg-blue-700"
@@ -693,7 +693,7 @@ export default function BatchProcessing() {
         <ModernKPI title="Validated" value={batches.filter(b => b.status === 'Validated').length} subtitle="In processing" icon={CheckCircle2} color="teal" />
         <ModernKPI title="Approved" value={batches.filter(b => b.status === 'Approved').length} subtitle="Ready for nota" icon={CheckCircle2} color="green" />
         <ModernKPI title="Paid" value={batches.filter(b => b.status === 'Paid').length} subtitle="Payment completed" icon={DollarSign} color="purple" />
-        <ModernKPI title="Rejected" value={batches.filter(b => b.status === 'Rejected').length} subtitle="Requires revision" icon={AlertCircle} color="red" />
+        <ModernKPI title="Revision" value={batches.filter(b => b.status === 'Revision').length} subtitle="Requires revision" icon={AlertCircle} color="red" />
       </div>
 
 
@@ -732,7 +732,7 @@ export default function BatchProcessing() {
                   <SelectItem value="Branch Confirmed">Branch Confirmed</SelectItem>
                   <SelectItem value="Paid">Paid</SelectItem>
                   <SelectItem value="Closed">Closed</SelectItem>
-                  <SelectItem value="Rejected">Rejected</SelectItem>
+                  <SelectItem value="Revision">Revision</SelectItem>
                 </SelectContent>
               </Select>
             </div>

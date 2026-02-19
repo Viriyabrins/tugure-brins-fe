@@ -38,6 +38,8 @@ import {
     FileText,
     Users,
     Pen,
+    AlertTriangle,
+    Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -712,9 +714,7 @@ export default function SubmitDebtor() {
         total: debtors.length,
         submitted: debtors.filter((d) => d.status === "SUBMITTED").length,
         approved: debtors.filter((d) => d.status === "APPROVED").length,
-        revision: debtors.filter((d) => d.status === "REVISION").length,
-        rejected: debtors.filter((d) => d.status === "REJECTED").length,
-        conditional: debtors.filter((d) => d.status === "CONDITIONAL").length,
+        revision: debtors.filter((d) => d.status === "REVISION").length
     };
 
     // Filter debtors
@@ -931,36 +931,34 @@ export default function SubmitDebtor() {
             )}
 
             {/* Gradient Card */}
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 justify-center items-center">
                 <GradientStatCard
                     title="Debtors"
                     value={kpis.total}
+                    subtitle="Total Debtors"
+                    icon={Users}
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
                     title="Submitted"
                     value={kpis.submitted}
+                    subtitle="Submitted Debtors"
+                    icon={FileText}
                     gradient="from-yellow-500 to-yellow-600"
                 />
                 <GradientStatCard
                     title="Approved"
                     value={kpis.approved}
+                    subtitle="Approved Debtors"
+                    icon={Clock}
                     gradient="from-green-500 to-green-600"
                 />
                 <GradientStatCard
                     title="Revision"
                     value={kpis.revision}
+                    subtitle="Debtors in Revision"
+                    icon={AlertTriangle}
                     gradient="from-orange-500 to-orange-600"
-                />
-                <GradientStatCard
-                    title="Rejected"
-                    value={kpis.rejected}
-                    gradient="from-red-500 to-red-600"
-                />
-                <GradientStatCard
-                    title="Conditional"
-                    value={kpis.conditional}
-                    gradient="from-purple-500 to-purple-600"
                 />
             </div>
 
@@ -997,13 +995,11 @@ export default function SubmitDebtor() {
                         key: "status",
                         label: "Status",
                         options: [
-                            { value: "all", label: "All Status" },
-                            { value: "SUBMITTED", label: "Submitted" },
-                            { value: "APPROVED", label: "Approved" },
-                            { value: "REVISION", label: "Revision" },
-                            { value: "REJECTED", label: "Rejected" },
-                            { value: "CONDITIONAL", label: "Conditional" },
-                        ],
+                            { value: "all", label: "All Status"},
+                            { value: "SUBMITTED", label: "Submitted"},
+                            { value: "APPROVED", label: "Approved"},
+                            { value: "REVISION", label: "Revision"},
+                        ]
                     },
                     {
                         key: "name",

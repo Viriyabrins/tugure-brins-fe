@@ -71,7 +71,7 @@ export default function Dashboard() {
     const [stats, setStats] = useState({
         totalDebtors: 0,
         approvedDebtors: 0,
-        pendingDebtors: 0,
+        submittedDebtors: 0,
         rejectedDebtors: 0,
         totalExposure: 0,
         totalPremium: 0,
@@ -164,7 +164,7 @@ export default function Dashboard() {
             const approved = nextDebtors.filter(
                 (d) => d.status === "APPROVED",
             ).length;
-            const pending = nextDebtors.filter(
+            const submitted = nextDebtors.filter(
                 (d) => d.status === "SUBMITTED" || d.status === "DRAFT",
             ).length;
             const rejected = nextDebtors.filter(
@@ -238,7 +238,7 @@ export default function Dashboard() {
             setStats({
                 totalDebtors: nextDebtors.length,
                 approvedDebtors: approved,
-                pendingDebtors: pending,
+                submittedDebtors: submitted,
                 rejectedDebtors: rejected,
                 totalExposure,
                 totalPremium: totalApprovedPremium,
@@ -372,13 +372,13 @@ export default function Dashboard() {
             );
 
             if (status === "APPROVED") acc.approved += amount;
-            else if (status === "SUBMITTED") acc.pending += amount;
+            else if (status === "SUBMITTED") acc.submitted += amount;
             else if (status === "REJECTED") acc.rejected += amount;
             else acc.revision += amount;
 
             return acc;
         },
-        { approved: 0, pending: 0, rejected: 0, revision: 0 },
+        { approved: 0, submitted: 0, rejected: 0, revision: 0 },
     );
 
     const premiumByStatusData = [
@@ -388,9 +388,9 @@ export default function Dashboard() {
             color: "#10B981",
         },
         {
-            name: "Pending",
-            value: premiumByStatusBuckets.pending,
-            color: "#F59E0B",
+            name: "Submitted",
+            value: premiumByStatusBuckets.submitted,
+            color: "#3b82f6",
         },
         // {
         //     name: "Rejected",
@@ -407,7 +407,7 @@ export default function Dashboard() {
     // Subrogation data from actual subrogations
     const subrogationData = [
         {
-            status: "Pending",
+            status: "submitted",
             amount: subrogationsArray
                 .filter((s) => s.status === "Draft" || s.status === "Submitted")
                 .reduce(
@@ -690,8 +690,8 @@ export default function Dashboard() {
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
-                    title="Pending Approval"
-                    value={stats.pendingDebtors}
+                    title="submitted Approval"
+                    value={stats.submittedDebtors}
                     subtitle="Awaiting review"
                     icon={Clock}
                     gradient="from-orange-500 to-orange-600"

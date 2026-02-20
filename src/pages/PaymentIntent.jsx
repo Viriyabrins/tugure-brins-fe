@@ -102,7 +102,7 @@ export default function PaymentIntent() {
                 : [];
 
             const issuedNotas = nextNotas.filter(
-                (n) => n.status === "Final" || n.status === "Confirmed",
+                (n) => n.status === "Issued" || n.status === "Confirmed",
             );
 
             setNotas(issuedNotas);
@@ -136,9 +136,9 @@ export default function PaymentIntent() {
                 return;
             }
 
-            if (nota.status !== "Final" && nota.status !== "Confirmed") {
+            if (nota.status !== "Issued" && nota.status !== "Confirmed") {
                 alert(
-                    `❌ BLOCKED: Payment Intent can only be created for FINAL or CONFIRMED notas.\n\nCurrent nota status: ${nota.status}\n\nPlease wait for Nota to reach Final status first.`,
+                    `❌ BLOCKED: Payment Intent can only be created for ISSUED or CONFIRMED notas.\n\nCurrent nota status: ${nota.status}\n\nPlease wait for Nota to reach Issued status first.`,
                 );
 
                 await backend.create("AuditLog", {
@@ -152,11 +152,11 @@ export default function PaymentIntent() {
                     }),
                     user_email: user?.email,
                     user_role: user?.role,
-                    reason: `Attempted to create Payment Intent before Nota Final (current status: ${nota.status})`,
+                    reason: `Attempted to create Payment Intent before Nota Issued (current status: ${nota.status})`,
                 });
 
                 setErrorMessage(
-                    "Payment Intent blocked - Nota must be Final first",
+                    "Payment Intent blocked - Nota must be Issued first",
                 );
                 setProcessing(false);
                 return;
@@ -174,7 +174,7 @@ export default function PaymentIntent() {
                 planned_amount: parseFloat(plannedAmount),
                 planned_date: plannedDateISO,
                 remarks: remarks,
-                status: "DRAFT",
+                status: "Issued",
             });
 
             await backend.create("Notification", {
@@ -395,7 +395,7 @@ export default function PaymentIntent() {
             header: "Actions",
             cell: (row) => (
                 <div className="flex gap-2">
-                    {row.status === "DRAFT" && isBrins && (
+                    {row.status === "Issued" && isBrins && (
                         <Button
                             size="sm"
                             className="bg-blue-600"
@@ -483,8 +483,8 @@ export default function PaymentIntent() {
                 <Alert className="bg-blue-50 border-blue-200">
                     <AlertCircle className="h-4 w-4 text-blue-600" />
                     <AlertDescription className="text-blue-700">
-                        No Final notas available. Please ensure Nota Management
-                        has Final notas first.
+                        No Issued notas available. Please ensure Nota Management
+                        has Issued notas first.
                     </AlertDescription>
                 </Alert>
             )}
@@ -494,14 +494,14 @@ export default function PaymentIntent() {
                 <GradientStatCard
                     title="Available Notas"
                     value={notas.length}
-                    subtitle="Final/Confirmed"
+                    subtitle="Issued/Confirmed"
                     icon={DollarSign}
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
-                    title="Draft Intents"
+                    title="Issued Intents"
                     value={
-                        paymentIntents.filter((p) => p.status === "DRAFT")
+                        paymentIntents.filter((p) => p.status === "Issued")
                             .length
                     }
                     subtitle="Pending submission"
@@ -564,7 +564,7 @@ export default function PaymentIntent() {
                         label: "Intent Status",
                         options: [
                             { value: "all", label: "All Status" },
-                            { value: "DRAFT", label: "Draft" },
+                            { value: "Issued", label: "Issued" },
                             { value: "SUBMITTED", label: "Submitted" },
                             { value: "APPROVED", label: "Approved" },
                             { value: "REJECTED", label: "Rejected" },
@@ -589,7 +589,7 @@ export default function PaymentIntent() {
                     <DialogHeader>
                         <DialogTitle>Create Payment Intent</DialogTitle>
                         <DialogDescription>
-                            Plan payment for Final nota
+                            Plan payment for Issued nota
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">

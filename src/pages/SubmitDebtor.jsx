@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import PageHeader from "@/components/common/PageHeader";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { backend } from "@/api/backendClient";
@@ -49,13 +50,168 @@ import {
 import { formatRupiahAdaptive } from "@/utils/currency";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
-import { filter } from "lodash";
 
 const defaultFilter = {
     contract: "all",
     batch: "",
-    status: "all",
+    submitStatus: "all",
     name: "",
+};
+
+const HEADER_ALIAS_MAP = {
+    premium_425: "premium_amount",
+    premium_42_5: "premium_amount",
+    ric_325: "ric_amount",
+    ric_32_5: "ric_amount",
+    bf_25: "bf_amount",
+    bf_2_5: "bf_amount",
+    flag_restruktur: "flag_restruk",
+    policyno: "policy_no",
+};
+
+const normalizeHeader = (header = "") => {
+    const normalized = String(header)
+        .trim()
+        .toLowerCase()
+        .replace(/[%().]/g, "")
+        .replace(/\s+/g, "_")
+        .replace(/_+/g, "_");
+    return HEADER_ALIAS_MAP[normalized] || normalized;
+};
+
+const normalizeRow = (row = {}) => {
+    const normalized = {};
+    Object.entries(row || {}).forEach(([key, value]) => {
+        const normalizedKey = normalizeHeader(key);
+        normalized[normalizedKey] = typeof value === "string" ? value.trim() : value;
+    });
+    return normalized;
+};
+
+const toNullableString = (value) => {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    return text === "" ? null : text;
+};
+
+const toNumber = (value) => {
+    if (value === undefined || value === null || value === "") return null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+
+    let text = String(value).trim();
+    if (!text) return null;
+
+    text = text.replace(/\s/g, "");
+    const lastComma = text.lastIndexOf(",");
+    const lastDot = text.lastIndexOf(".");
+
+    if (lastComma > -1 && lastDot > -1) {
+        if (lastComma > lastDot) {
+            text = text.replace(/\./g, "").replace(/,/g, ".");
+        } else {
+            text = text.replace(/,/g, "");
+        }
+    } else if (lastComma > -1) {
+        text = text.replace(/,/g, ".");
+    }
+
+    text = text.replace(/[^\d.-]/g, "");
+    const parsed = Number.parseFloat(text);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const toInteger = (value) => {
+    const parsed = toNumber(value);
+    return parsed === null ? null : Math.trunc(parsed);
+};
+
+const toIsoDate = (value) => {
+    if (value === undefined || value === null || value === "") return null;
+
+    if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value.toISOString();
+    }
+
+    if (typeof value === "number") {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (parsed && parsed.y && parsed.m && parsed.d) {
+            const date = new Date(
+                parsed.y,
+                parsed.m - 1,
+                parsed.d,
+                parsed.H || 0,
+                parsed.M || 0,
+                parsed.S || 0,
+            );
+            return Number.isNaN(date.getTime()) ? null : date.toISOString();
+        }
+    }
+
+    const text = String(value).trim();
+    if (!text) return null;
+
+    const ddmmyyyyMatch = text.match(
+        /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/,
+    );
+
+    if (ddmmyyyyMatch) {
+        const [, day, month, year, hour = "0", minute = "0", second = "0"] =
+            ddmmyyyyMatch;
+        const date = new Date(
+            Number(year),
+            Number(month) - 1,
+            Number(day),
+            Number(hour),
+            Number(minute),
+            Number(second),
+        );
+        return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    }
+
+    const fallbackDate = new Date(text);
+    return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate.toISOString();
+};
+
+const parseUploadRows = async (file) => {
+    const fileName = (file?.name || "").toLowerCase();
+
+    if (fileName.endsWith(".csv")) {
+        const text = await file.text();
+        const parseResult = Papa.parse(text, {
+            header: true,
+            skipEmptyLines: true,
+            transformHeader: (header) => normalizeHeader(header),
+            transform: (value) =>
+                typeof value === "string" ? value.trim() : value,
+        });
+
+        if (parseResult.errors.length > 0) {
+            console.warn("CSV parsing warnings:", parseResult.errors);
+        }
+
+        return (parseResult.data || []).map((row) => normalizeRow(row));
+    }
+
+    if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, {
+            type: "array",
+            cellDates: true,
+        });
+        const firstSheetName = workbook.SheetNames?.[0];
+        if (!firstSheetName) return [];
+
+        const sheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, {
+            defval: "",
+            raw: true,
+            blankrows: false,
+        });
+
+        return rows.map((row) => normalizeRow(row));
+    }
+
+    throw new Error("Unsupported file format. Please upload .csv, .xlsx, or .xls");
 };
 
 export default function SubmitDebtor() {
@@ -63,6 +219,7 @@ export default function SubmitDebtor() {
     const [contracts, setContracts] = useState([]);
     const [batches, setBatches] = useState([]);
     const [debtors, setDebtors] = useState([]);
+    const [totalDebtors, setTotalDebtors] = useState(0);
     const [loading, setLoading] = useState(true);
 
     // Form state
@@ -85,6 +242,15 @@ export default function SubmitDebtor() {
     const [errorMessage, setErrorMessage] = useState("");
 
     const [filters, setFilters] = useState(defaultFilter);
+    const [page, setPage] = useState(1);
+    const isFirstPageEffect = useRef(true);
+
+    const pageSize = 10;
+    const total = totalDebtors;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+    const to = Math.min(total, page * pageSize);
+    const pageData = Array.isArray(debtors) ? debtors : [];
 
     useEffect(() => {
         loadUser();
@@ -108,7 +274,7 @@ export default function SubmitDebtor() {
         setErrorMessage("");
 
         try {
-            await Promise.all([loadContracts(), loadBatches(), loadDebtors()]);
+            await Promise.all([loadContracts(), loadBatches()]);
         } catch (error) {
             console.error("Failed to load data:", error);
             setErrorMessage("Failed to load data. Please refresh the page.");
@@ -120,11 +286,11 @@ export default function SubmitDebtor() {
     const loadContracts = async () => {
         try {
             const data = await backend.list("MasterContract");
-            setContracts(
-                Array.isArray(data)
-                    ? data.filter((c) => c.effective_status === "Active")
-                    : [],
-            );
+            // Keep the full list from backend and let `activeContracts` determine
+            // which ones are displayed. Previously we filtered here by
+            // `effective_status` which removed contracts that are `APPROVED` but
+            // not marked `Active` in `effective_status`.
+            setContracts(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error("Error loading contracts:", error);
             setContracts([]);
@@ -141,13 +307,28 @@ export default function SubmitDebtor() {
         }
     };
 
-    const loadDebtors = async () => {
+    const loadDebtors = async (pageToLoad = page, activeFilters = filters) => {
+        setLoading(true);
         try {
-            const data = await backend.list("Debtor");
-            setDebtors(Array.isArray(data) ? data : []);
+            const query = { page: pageToLoad, limit: pageSize };
+            if (activeFilters) {
+                query.q = JSON.stringify(activeFilters);
+            }
+
+            const useReviseLog =
+                activeFilters?.submitStatus === "REVISION" ||
+                activeFilters?.status === "REVISION";
+            const entityName = useReviseLog ? "ReviseLog" : "Debtor";
+
+            const result = await backend.listPaginated(entityName, query);
+            setDebtors(Array.isArray(result.data) ? result.data : []);
+            setTotalDebtors(Number(result.pagination?.total) || 0);
         } catch (error) {
             console.error("Error loading debtors:", error);
             setDebtors([]);
+            setTotalDebtors(0);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -155,16 +336,46 @@ export default function SubmitDebtor() {
         setSuccessMessage("");
         setErrorMessage("");
         loadInitialData();
+        loadDebtors(page, filters);
     };
+
+    useEffect(() => {
+        if (page > totalPages) setPage(totalPages);
+    }, [totalPages]);
+
+    useEffect(() => {
+        setSelectedDebtors([]);
+        if (page !== 1) {
+            setPage(1);
+            return;
+        }
+
+        loadDebtors(1, filters);
+    }, [
+        filters.contract,
+        filters.batch,
+        filters.submitStatus,
+        filters.name,
+    ]);
+
+    useEffect(() => {
+        if (isFirstPageEffect.current) {
+            isFirstPageEffect.current = false;
+            return;
+        }
+
+        setSelectedDebtors([]);
+        loadDebtors(page, filters);
+    }, [page]);
 
     // Download template
     const handleDownloadTemplate = () => {
         const sampleData = [
-            "1001,PRG-001,LA-001,P-001,KPR,Kredit Pemilikan Rumah,CIF-001,New,Full,2025-01-01,2030-12-31,500000000,4750000,1.0,0.1,0.05,3875000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,PT Maju Jaya,Jl. Sudirman No.1 Jakarta,CA-001,2025-01-15 10:00:00,2025-01-16 14:00:00,1,Approved,0,1",
-            "1002,PRG-001,LA-002,P-002,KPR,Kredit Pemilikan Rumah,CIF-002,New,Full,2025-01-01,2030-12-31,300000000,2850000,1.0,0.1,0.05,2325000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,CV Berkah Abadi,Jl. Thamrin No.2 Jakarta,CA-002,2025-01-15 11:00:00,2025-01-16 15:00:00,1,Approved,0,1",
-            "1003,PRG-001,LA-003,P-003,KPR,Kredit Pemilikan Rumah,CIF-003,New,Full,2025-01-01,2030-12-31,450000000,4275000,1.0,0.1,0.05,3487500,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,PT Cahaya Terang,Jl. Gatot Subroto No.3,CA-003,2025-01-15 12:00:00,2025-01-16 16:00:00,1,Good,0,1",
-            "1004,PRG-001,LA-004,P-004,KPR,Kredit Pemilikan Rumah,CIF-004,New,Full,2025-01-01,2030-12-31,350000000,3325000,1.0,0.1,0.05,2712500,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,UD Sumber Rezeki,Jl. Rasuna Said No.4,CA-004,2025-01-15 13:00:00,2025-01-16 17:00:00,1,Verified,0,1",
-            "1005,PRG-001,LA-005,P-005,KPR,Kredit Pemilikan Rumah,CIF-005,New,Full,2025-01-01,2030-12-31,400000000,3800000,1.0,0.1,0.05,3100000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,CV Mitra Sejati,Jl. HR Rasuna No.5,CA-005,2025-01-15 14:00:00,2025-01-16 18:00:00,1,Complete,0,1",
+            "1001,PRG-001,LA-001,P-001,KPR,Kredit Pemilikan Rumah,CIF-001,New,Full,2025-01-01,2030-12-31,500000000,4750000,1.0,0.1,0.05,3875000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,PT Maju Jaya,Jl. Sudirman No.1 Jakarta,CA-001,2025-01-15 10:00:00,2025-01-16 14:00:00,1,Approved,0,1,POL-001",
+            "1002,PRG-001,LA-002,P-002,KPR,Kredit Pemilikan Rumah,CIF-002,New,Full,2025-01-01,2030-12-31,300000000,2850000,1.0,0.1,0.05,2325000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,CV Berkah Abadi,Jl. Thamrin No.2 Jakarta,CA-002,2025-01-15 11:00:00,2025-01-16 15:00:00,1,Approved,0,1,POL-002",
+            "1003,PRG-001,LA-003,P-003,KPR,Kredit Pemilikan Rumah,CIF-003,New,Full,2025-01-01,2030-12-31,450000000,4275000,1.0,0.1,0.05,3487500,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,PT Cahaya Terang,Jl. Gatot Subroto No.3,CA-003,2025-01-15 12:00:00,2025-01-16 16:00:00,1,Good,0,1,POL-003",
+            "1004,PRG-001,LA-004,P-004,KPR,Kredit Pemilikan Rumah,CIF-004,New,Full,2025-01-01,2030-12-31,350000000,3325000,1.0,0.1,0.05,2712500,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,UD Sumber Rezeki,Jl. Rasuna Said No.4,CA-004,2025-01-15 13:00:00,2025-01-16 17:00:00,1,Verified,0,1,POL-004",
+            "1005,PRG-001,LA-005,P-005,KPR,Kredit Pemilikan Rumah,CIF-005,New,Full,2025-01-01,2030-12-31,400000000,3800000,1.0,0.1,0.05,3100000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,CV Mitra Sejati,Jl. HR Rasuna No.5,CA-005,2025-01-15 14:00:00,2025-01-16 18:00:00,1,Complete,0,1,POL-005",
         ];
 
         const headers = [
@@ -198,6 +409,7 @@ export default function SubmitDebtor() {
             "remark_premi",
             "flag_restruktur",
             "kolektabilitas",
+            "policy_no",
         ];
 
         const csvContent = headers.join(",") + "\n" + sampleData.join("\n");
@@ -255,21 +467,7 @@ export default function SubmitDebtor() {
         let errors = [];
 
         try {
-            const text = await uploadFile.text();
-
-            // Use PapaParse for proper CSV parsing
-            const parseResult = Papa.parse(text, {
-                header: true,
-                skipEmptyLines: true,
-                transformHeader: (header) => header.trim(),
-                transform: (value) => value.trim(),
-            });
-
-            if (parseResult.errors.length > 0) {
-                console.warn("CSV parsing warnings:", parseResult.errors);
-            }
-
-            const rows = parseResult.data;
+            const rows = await parseUploadRows(uploadFile);
 
             if (!rows || rows.length === 0) {
                 setErrorMessage("File is empty or invalid format");
@@ -291,11 +489,11 @@ export default function SubmitDebtor() {
 
                 const invalidRows = [];
                 for (let i = 0; i < rows.length; i++) {
-                    const nomorPeserta = (rows[i].nomor_peserta || "").trim();
+                    const nomorPeserta = toNullableString(rows[i].nomor_peserta);
                     if (!revisionNomorPesertaSet.has(nomorPeserta)) {
                         invalidRows.push({
                             row: i + 2,
-                            nomor_peserta: nomorPeserta,
+                            nomor_peserta: nomorPeserta || "(empty)",
                         });
                     }
                 }
@@ -309,7 +507,7 @@ export default function SubmitDebtor() {
                         )
                         .join("\n");
                     setErrorMessage(
-                        `Validation failed — CSV contains debtors that are not marked as REVISION in batch ${selectedBatch}:\n${details}${invalidRows.length > 5 ? `\n...and ${invalidRows.length - 5} more` : ""}`,
+                        `Validation failed — file contains debtors that are not marked as REVISION in batch ${selectedBatch}:\n${details}${invalidRows.length > 5 ? `\n...and ${invalidRows.length - 5} more` : ""}`,
                     );
                     setUploading(false);
                     return;
@@ -330,11 +528,11 @@ export default function SubmitDebtor() {
 
             // Calculate batch totals
             const totalExposure = rows.reduce(
-                (sum, row) => sum + (parseFloat(row.plafon) || 0),
+                (sum, row) => sum + (toNumber(row.plafon) || 0),
                 0,
             );
             const totalPremium = rows.reduce(
-                (sum, row) => sum + (parseFloat(row.nominal_premi) || 0),
+                (sum, row) => sum + (toNumber(row.nominal_premi) || 0),
                 0,
             );
 
@@ -398,56 +596,69 @@ export default function SubmitDebtor() {
                 try {
                     const row = rows[i];
 
-                    // Parse dates
-                    const parseDate = (dateStr) => {
-                        if (!dateStr || !dateStr.trim()) return null;
-                        const date = new Date(dateStr.trim());
-                        return isNaN(date.getTime())
-                            ? null
-                            : date.toISOString();
-                    };
+                    const nomorPeserta = toNullableString(row.nomor_peserta);
+                    const namaPeserta = toNullableString(row.nama_peserta);
+
+                    if (!nomorPeserta || !namaPeserta) {
+                        errors.push(
+                            `Row ${i + 2}: nomor_peserta and nama_peserta are required`,
+                        );
+                        continue;
+                    }
 
                     const payload = {
-                        cover_id: parseInt(row.cover_id) || 0,
-                        program_id: row.program_id?.trim() || "",
+                        cover_id: toNullableString(row.cover_id),
+                        program_id: toNullableString(row.program_id),
                         bordero_id: borderoId,
-                        nomor_rekening_pinjaman:
-                            row.nomor_rekening_pinjaman?.trim() || "",
-                        nomor_peserta: row.nomor_peserta?.trim() || "",
-                        loan_type: row.loan_type?.trim() || "",
-                        loan_type_desc: row.loan_type_desc?.trim() || "",
-                        cif_rekening_pinjaman:
-                            row.cif_rekening_pinjaman?.trim() || "",
-                        jenis_pengajuan_desc:
-                            row.jenis_pengajuan_desc?.trim() || "",
-                        jenis_covering_desc:
-                            row.jenis_covering_desc?.trim() || "",
-                        tanggal_mulai_covering: parseDate(
+                        nomor_rekening_pinjaman: toNullableString(
+                            row.nomor_rekening_pinjaman,
+                        ),
+                        nomor_peserta: nomorPeserta,
+                        loan_type: toNullableString(row.loan_type),
+                        loan_type_desc: toNullableString(row.loan_type_desc),
+                        cif_rekening_pinjaman: toNullableString(
+                            row.cif_rekening_pinjaman,
+                        ),
+                        jenis_pengajuan_desc: toNullableString(
+                            row.jenis_pengajuan_desc,
+                        ),
+                        jenis_covering_desc: toNullableString(
+                            row.jenis_covering_desc,
+                        ),
+                        tanggal_mulai_covering: toIsoDate(
                             row.tanggal_mulai_covering,
                         ),
-                        tanggal_akhir_covering: parseDate(
+                        tanggal_akhir_covering: toIsoDate(
                             row.tanggal_akhir_covering,
                         ),
-                        plafon: parseFloat(row.plafon) || 0,
-                        nominal_premi: parseFloat(row.nominal_premi) || 0,
-                        premi_percentage: parseFloat(row.premi_percentage) || 0,
-                        ric_percentage: parseFloat(row.ric_percentage) || 0,
-                        bf_percentage: parseFloat(row.bf_percentage) || 0,
-                        net_premi: parseFloat(row.net_premi) || 0,
-                        unit_code: row.unit_code?.trim() || "",
-                        unit_desc: row.unit_desc?.trim() || "",
-                        branch_desc: row.branch_desc?.trim() || "",
-                        region_desc: row.region_desc?.trim() || "",
-                        nama_peserta: row.nama_peserta?.trim() || "",
-                        alamat_usaha: row.alamat_usaha?.trim() || "",
-                        nomor_perjanjian_kredit:
-                            row.nomor_perjanjian_kredit?.trim() || "",
-                        tanggal_terima: parseDate(row.tanggal_terima),
-                        tanggal_validasi: parseDate(row.tanggal_validasi),
-                        status_aktif: parseInt(row.status_aktif) || 1,
-                        remark_premi: row.remark_premi?.trim() || "",
-                        flag_restruktur: parseInt(row.flag_restruktur) || 0,
-                        kolektabilitas: parseInt(row.kolektabilitas) || 1,
+                        plafon: toNumber(row.plafon),
+                        nominal_premi: toNumber(row.nominal_premi),
+                        premi_percentage: toNumber(row.premi_percentage),
+                        premium_amount: toNumber(row.premium_amount),
+                        ric_percentage: toNumber(row.ric_percentage),
+                        ric_amount: toNumber(row.ric_amount),
+                        bf_percentage: toNumber(row.bf_percentage),
+                        bf_amount: toNumber(row.bf_amount),
+                        net_premi: toNumber(row.net_premi),
+                        unit_code: toNullableString(row.unit_code),
+                        unit_desc: toNullableString(row.unit_desc),
+                        branch_desc: toNullableString(row.branch_desc),
+                        region_desc: toNullableString(row.region_desc),
+                        nama_peserta: namaPeserta,
+                        alamat_usaha: toNullableString(row.alamat_usaha),
+                        nomor_perjanjian_kredit: toNullableString(
+                            row.nomor_perjanjian_kredit,
+                        ),
+                        tanggal_terima: toIsoDate(row.tanggal_terima),
+                        tanggal_validasi: toIsoDate(row.tanggal_validasi),
+                        teller_premium_date: toIsoDate(row.teller_premium_date),
+                        status_aktif: toInteger(row.status_aktif),
+                        remark_premi: toNullableString(row.remark_premi),
+                        flag_restruk: toInteger(
+                            row.flag_restruk ?? row.flag_restruktur,
+                        ),
+                        kolektabilitas: toInteger(row.kolektabilitas),
+                        policy_no: toNullableString(row.policy_no),
                         contract_id: selectedContract,
                         batch_id: batchId,
                         version_no: 1,
@@ -504,7 +715,9 @@ export default function SubmitDebtor() {
 
                 // Get the nomor_peserta of newly uploaded debtors
                 const uploadedNomorPeserta = new Set(
-                    rows.map((r) => (r.nomor_peserta || "").trim()),
+                    rows
+                        .map((r) => toNullableString(r.nomor_peserta))
+                        .filter(Boolean),
                 );
 
                 for (const oldDebtor of revisionDebtorsInBatch) {
@@ -711,35 +924,11 @@ export default function SubmitDebtor() {
 
     // Calculate KPIs
     const kpis = {
-        total: debtors.length,
-        submitted: debtors.filter((d) => d.status === "SUBMITTED").length,
-        approved: debtors.filter((d) => d.status === "APPROVED").length,
-        revision: debtors.filter((d) => d.status === "REVISION").length
+        total,
+        submitted: pageData.filter((d) => d.status === "SUBMITTED").length,
+        approved: pageData.filter((d) => d.status === "APPROVED").length,
+        revision: pageData.filter((d) => d.status === "REVISION").length,
     };
-
-    // Filter debtors
-    const filteredDebtors = debtors.filter((debtor) => {
-        const contractMatch =
-            filters.contract === "all" ||
-            debtor.contract_id === filters.contract;
-        const batchMatch =
-            filters.batch === "all" ||
-            !filters.batch ||
-            debtor.batch_id === filters.batch;
-        const statusMatch =
-            filters.status === "all" || debtor.status === filters.status;
-        const searchMatch =
-            !filters.name ||
-            debtor.nama_peserta
-                ?.toLowerCase()
-                .includes(filters.name.toLowerCase()) ||
-            debtor.nomor_peserta
-                ?.toLowerCase()
-                .includes(filters.name.toLowerCase()) ||
-            debtor.batch_id?.toLowerCase().includes(filters.name.toLowerCase());
-
-        return contractMatch && batchMatch && statusMatch && searchMatch;
-    });
 
     // Table columns
     const columns = [
@@ -747,13 +936,13 @@ export default function SubmitDebtor() {
             header: (
                 <Checkbox
                     checked={
-                        selectedDebtors.length === filteredDebtors.length &&
-                        filteredDebtors.length > 0
+                        selectedDebtors.length === pageData.length &&
+                        pageData.length > 0
                     }
                     onCheckedChange={(checked) => {
                         if (checked) {
                             setSelectedDebtors(
-                                filteredDebtors.map((d) => d.id),
+                                pageData.map((d) => d.id),
                             );
                         } else {
                             setSelectedDebtors([]);
@@ -830,44 +1019,10 @@ export default function SubmitDebtor() {
             accessorKey: "status",
             cell: (row) => <StatusBadge status={row.status} />,
         },
-        {
-            header: "Submitted",
-            accessorKey: "createdAt",
-            cell: (row) => (
-                <div className="text-sm text-gray-600">
-                    {row.createdAt
-                        ? new Date(row.createdAt).toLocaleDateString("id-ID")
-                        : "-"}
-                </div>
-            ),
-        },
-        {
-            header: "Note",
-            cell: (row) =>
-                row.validation_remarks && (
-                    <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                            setActionNote(row.validation_remarks);
-                            setNoteDialogOpen(true);
-                        }}
-                    >
-                        <FileText className="w-4 h-4" />
-                    </Button>
-                ),
-            width: "80px",
-        },
     ];
 
-    const activeContracts = contracts.filter(
-        (c) => c.effective_status === "Active",
-    );
-
-    // Update userBatches to depend on filters.contract
-    const userBatches = batches.filter(
-        (b) => filters.contract === "all" || b.contract_id === filters.contract,
-    );
+    // Only include contracts that have been approved in the system
+    const activeContracts = contracts.filter((c) => c.contract_status === "APPROVED");
 
     if (loading) {
         return (
@@ -981,25 +1136,20 @@ export default function SubmitDebtor() {
                     },
                     {
                         key: "batch",
-                        placeholder: "Batch",
-                        label: "Batch",
-                        options: [
-                            { value: "all", label: "All Batches" },
-                            ...userBatches.map((b) => ({
-                                value: b.batch_id,
-                                label: `${b.batch_id} - ${b.status}`,
-                            })),
-                        ],
+                        label: "Batch ID",
+                        placeholder: "Search Batch...",
+                        type: "input",
+                        inputType: "text",
                     },
                     {
-                        key: "status",
-                        label: "Status",
+                        key: "submitStatus",
+                        label: "Underwriting Status",
                         options: [
-                            { value: "all", label: "All Status"},
-                            { value: "SUBMITTED", label: "Submitted"},
-                            { value: "APPROVED", label: "Approved"},
-                            { value: "REVISION", label: "Revision"},
-                        ]
+                            { value: "all", label: "All Statuses" },
+                            { value: "SUBMITTED", label: "Submitted" },
+                            { value: "APPROVED", label: "Approved" },
+                            { value: "REVISION", label: "Revision" },
+                        ],
                     },
                     {
                         key: "name",
@@ -1014,7 +1164,7 @@ export default function SubmitDebtor() {
             <div className="flex flex-wrap gap-2">
                 {selectedDebtors.length >= 0 && (
                     <>
-                        <Button
+                        {/* <Button
                             variant="outline"
                             onClick={() => setRevisionDialogOpen(true)}
                         >
@@ -1023,7 +1173,7 @@ export default function SubmitDebtor() {
                             {selectedDebtors.length > 0
                                 ? `(${selectedDebtors.length})`
                                 : ""}
-                        </Button>
+                        </Button> */}
                         {/* <Button>
                             variant="outline"
                             onClick={}
@@ -1043,9 +1193,11 @@ export default function SubmitDebtor() {
             <div>
                 <DataTable
                     columns={columns}
-                    data={filteredDebtors}
+                    data={pageData}
                     isLoading={loading}
                     emptyMessage="No debtors found. Upload your first batch to get started."
+                    pagination={{ from, to, total, page, totalPages }}
+                    onPageChange={(p) => setPage(p)}
                 />
             </div>
 
@@ -1055,7 +1207,7 @@ export default function SubmitDebtor() {
                     <DialogHeader>
                         <DialogTitle>Upload Debtors</DialogTitle>
                         <DialogDescription>
-                            Upload a CSV file containing debtor information
+                            Upload a CSV/XLS/XLSX file containing debtor information
                         </DialogDescription>
                     </DialogHeader>
 
@@ -1079,7 +1231,7 @@ export default function SubmitDebtor() {
                                             key={c.contract_id}
                                             value={c.contract_id}
                                         >
-                                            {c.contract_id} - {c.policy_no}
+                                            {c.contract_id} - {c.contract_status}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -1213,9 +1365,9 @@ export default function SubmitDebtor() {
                             <Alert className="border-orange-200 bg-orange-50">
                                 <AlertCircle className="h-4 w-4 text-orange-600" />
                                 <AlertDescription className="text-orange-800">
-                                    <strong>Revise Mode:</strong> The CSV file
-                                    must only contain debtors that were marked
-                                    for REVISION. Each debtor's{" "}
+                                    <strong>Revise Mode:</strong> The upload
+                                    file must only contain debtors that were
+                                    marked for REVISION. Each debtor's{" "}
                                     <code className="font-mono text-xs bg-orange-100 px-1 rounded">
                                         nomor_peserta
                                     </code>{" "}

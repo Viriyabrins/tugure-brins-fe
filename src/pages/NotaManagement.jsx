@@ -290,8 +290,8 @@ export default function NotaManagement() {
                                 nota_type: "Batch",
                                 reference_id: batchId,
                                 amount: entry.batch.final_premium_amount || 0,
-                                // New notas should be issued immediately (Final)
-                                status: "Final",
+                                // New notas should be issued immediately (Issued)
+                                status: "Issued",
                                 contract_id: entry.batch.contract_id,
                             })
                             .catch((err) => {
@@ -332,19 +332,19 @@ export default function NotaManagement() {
                 await Promise.allSettled(updatePromises);
             }
 
-            // Update nota status to Final where applicable
+            // Update nota status to Issued where applicable
             const notaUpdatePromises = [];
             nextNotas.forEach((nota) => {
                 const batchInfo = batchNotaMap[nota.reference_id];
                 if (
                     batchInfo &&
                     batchInfo.isFinal &&
-                    nota.status !== "Final" &&
+                    nota.status !== "Issued" &&
                     nota.status !== "Nota Closed"
                 ) {
                     notaUpdatePromises.push(
                         backend
-                            .update("Nota", nota.id, { status: "Final" })
+                            .update("Nota", nota.id, { status: "Issued" })
                             .then((updated) => {
                                 // Update in local array
                                 const idx = nextNotas.findIndex(
@@ -354,7 +354,7 @@ export default function NotaManagement() {
                             })
                             .catch((err) =>
                                 console.warn(
-                                    `Failed to update nota ${nota.id} to Final:`,
+                                    `Failed to update nota ${nota.id} to Issued:`,
                                     err,
                                 ),
                             ),
@@ -387,7 +387,7 @@ export default function NotaManagement() {
     };
 
     const getNextStatus = (currentStatus) => {
-        const workflow = ["Draft", "Final", "Confirmed", "Nota Closed"];
+        const workflow = ["Draft", "Issued", "Confirmed", "Nota Closed"];
         const currentIndex = workflow.indexOf(currentStatus);
         return currentIndex >= 0 && currentIndex < workflow.length - 1
             ? workflow[currentIndex + 1]
@@ -396,14 +396,14 @@ export default function NotaManagement() {
 
     const getActionLabel = (status) => {
         const labels = {
-            // Draft no longer used as default for new notas; button should show "Final"
-            Draft: "Final",
-            // Final -> Close Nota (previously Paid)
-            Final: "Close Nota",
+            // Draft no longer used as default for new notas; button should show "Issued"
+            Draft: "Issued",
+            // Issued -> Close Nota (previously Paid)
+            Issued: "Close Nota",
             // Confirmed -> Mark Closed
             Confirmed: "Mark Closed",
         };
-        return labels[status] || "Final";
+        return labels[status] || "Issued";
     };
 
     // Note: handleGenerateNota removed - notas are now auto-created per batch
@@ -411,10 +411,10 @@ export default function NotaManagement() {
     const handleNotaAction = async () => {
         if (!selectedNota || !actionType) return;
 
-        // BLOCK: Cannot edit Nota after it reached Final state (immutable)
-        if (selectedNota.is_immutable && selectedNota.status === "Final") {
+        // BLOCK: Cannot edit Nota after it reached Issued state (immutable)
+        if (selectedNota.is_immutable && selectedNota.status === "Issued") {
             alert(
-                "❌ BLOCKED: Nota is IMMUTABLE after becoming Final.\n\nNota amount cannot be changed. Use Exception for adjustments.",
+                "❌ BLOCKED: Nota is IMMUTABLE after becoming Issued.\n\nNota amount cannot be changed. Use Exception for adjustments.",
             );
 
             try {
@@ -449,7 +449,7 @@ export default function NotaManagement() {
 
             const updateData = { status: nextStatus };
 
-            if (nextStatus === "Final") {
+            if (nextStatus === "Issued") {
                 updateData.issued_by = user?.email;
                 updateData.issued_date = new Date().toISOString();
                 updateData.is_immutable = true; // LOCK Nota amount
@@ -465,7 +465,7 @@ export default function NotaManagement() {
             );
 
             const targetRole =
-                nextStatus === "Final"
+                nextStatus === "Issued"
                     ? "BRINS"
                     : nextStatus === "Confirmed"
                       ? "TUGURE"
@@ -475,8 +475,8 @@ export default function NotaManagement() {
             try {
                 await backend.create("Notification", {
                     title: `Nota ${nextStatus}`,
-                    message: `Nota ${selectedNota.nota_number} (${selectedNota.nota_type}) moved to ${nextStatus}${nextStatus === "Final" ? " - Amount now IMMUTABLE" : ""}`,
-                    type: nextStatus === "Final" ? "ACTION_REQUIRED" : "INFO",
+                    message: `Nota ${selectedNota.nota_number} (${selectedNota.nota_type}) moved to ${nextStatus}${nextStatus === "Issued" ? " - Amount now IMMUTABLE" : ""}`,
+                    type: nextStatus === "Issued" ? "ACTION_REQUIRED" : "INFO",
                     module: "DEBTOR",
                     reference_id: selectedNota.nota_number,
                     target_role: targetRole,
@@ -495,7 +495,7 @@ export default function NotaManagement() {
                     old_value: JSON.stringify({ status: selectedNota.status }),
                     new_value: JSON.stringify({
                         status: nextStatus,
-                        is_immutable: nextStatus === "Final",
+                        is_immutable: nextStatus === "Issued",
                     }),
                     user_email: user?.email,
                     user_role: user?.role,
@@ -506,7 +506,7 @@ export default function NotaManagement() {
             }
 
             setSuccessMessage(
-                `Nota moved to ${nextStatus} successfully${nextStatus === "Final" ? " - Nota is now IMMUTABLE" : ""}`,
+                `Nota moved to ${nextStatus} successfully${nextStatus === "Issued" ? " - Nota is now IMMUTABLE" : ""}`,
             );
             setShowActionDialog(false);
             setSelectedNota(null);
@@ -1178,7 +1178,7 @@ export default function NotaManagement() {
                         <GradientStatCard
                             title="Pending Confirmation"
                             value={
-                                notas.filter((n) => n.status === "Final").length
+                                notas.filter((n) => n.status === "Issued").length
                             }
                             subtitle="Awaiting branch"
                             icon={Clock}
@@ -1250,7 +1250,7 @@ export default function NotaManagement() {
                                 options: [
                                     { value: "all", label: "All Status" },
                                     { value: "Draft", label: "Draft" },
-                                    { value: "Final", label: "Final" },
+                                    { value: "Issued", label: "Issued" },
                                     { value: "Confirmed", label: "Confirmed" },
                                     {
                                         value: "Nota Closed",
@@ -1357,7 +1357,7 @@ export default function NotaManagement() {
                                                         row.is_immutable &&
                                                         getActionLabel(
                                                             row.status,
-                                                        ) === "Final"
+                                                        ) === "Issued"
                                                     }
                                                 >
                                                     <ArrowRight className="w-4 h-4 mr-1" />
@@ -1460,7 +1460,7 @@ export default function NotaManagement() {
                                 options: [
                                     { value: "all", label: "All Status" },
                                     { value: "Draft", label: "Draft" },
-                                    { value: "Final", label: "Final" },
+                                    { value: "Issued", label: "Issued" },
                                     { value: "Confirmed", label: "Confirmed" },
                                     {
                                         value: "Nota Closed",
@@ -1763,7 +1763,7 @@ export default function NotaManagement() {
                                 options: [
                                     { value: "all", label: "All Status" },
                                     { value: "Draft", label: "Draft" },
-                                    { value: "Final", label: "Final" },
+                                    { value: "Issued", label: "Issued" },
                                     { value: "Confirmed", label: "Confirmed" },
                                     {
                                         value: "Nota Closed",
@@ -2426,7 +2426,7 @@ export default function NotaManagement() {
                         </DialogDescription>
                     </DialogHeader>
                     <div className="py-4 space-y-4">
-                        {getNextStatus(selectedNota?.status) === "Final" && (
+                        {getNextStatus(selectedNota?.status) === "Issued" && (
                             <Alert variant="destructive">
                                 <Lock className="h-4 w-4" />
                                 <AlertDescription>

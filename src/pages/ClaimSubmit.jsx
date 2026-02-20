@@ -43,6 +43,7 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import ModernKPI from "@/components/dashboard/ModernKPI";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
+import * as XLSX from "xlsx";
 
 const defaultFilter = {
     contract: "all",
@@ -50,6 +51,122 @@ const defaultFilter = {
     claimStatus: "all",
     subrogationStatus: "all",
 }
+
+const HEADER_ALIAS_MAP = {
+    nama_tertanggung: "nama_tertanggung",
+    no_ktp_npwp: "no_ktp_npwp",
+    no_ktp__npwp: "no_ktp_npwp",
+    noktp_npwp: "no_ktp_npwp",
+    no_fasilitas_kredit: "no_fasilitas_kredit",
+    bdo_premi: "bdo_premi",
+    tanggal_realisasi_kredit: "tanggal_realisasi_kredit",
+    plafond: "plafond",
+    max_coverage: "max_coverage",
+    kol_debitur: "kol_debitur",
+    dol: "dol",
+    nilai_klaim: "nilai_klaim",
+    claimno: "claim_no",
+    claim_no: "claim_no",
+    policyno: "policy_no",
+    policy_no: "policy_no",
+    nomor_sertifikat: "nomor_sertifikat",
+    share_tugure: "share_tugure",
+    share_tugure_percentage: "share_tugure_percentage",
+    share_tugure_amount: "share_tugure_amount",
+    check_bdo_premi: "check_bdo_premi",
+    nomor_peserta: "nomor_peserta",
+    no: "no",
+};
+
+const normalizeHeader = (header = "") => {
+    const normalized = String(header)
+        .trim()
+        .toLowerCase()
+        .replace(/[%().]/g, "")
+        .replace(/\s+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_|_$/g, "");
+    return HEADER_ALIAS_MAP[normalized] || normalized;
+};
+
+const toNullableString = (value) => {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    return text === "" ? null : text;
+};
+
+const toNumber = (value) => {
+    if (value === undefined || value === null || value === "") return 0;
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+    let text = String(value).trim();
+    if (!text) return 0;
+
+    text = text.replace(/\s/g, "");
+    const lastComma = text.lastIndexOf(",");
+    const lastDot = text.lastIndexOf(".");
+
+    if (lastComma > -1 && lastDot > -1) {
+        if (lastComma > lastDot) {
+            text = text.replace(/\./g, "").replace(",", ".");
+        } else {
+            text = text.replace(/,/g, "");
+        }
+    } else if (lastComma > -1) {
+        text = text.replace(/\./g, "").replace(",", ".");
+    } else if (lastDot > -1) {
+        if (/^\d{1,3}(\.\d{3})+$/.test(text)) {
+            text = text.replace(/\./g, "");
+        }
+    }
+
+    text = text.replace(/[^\d.-]/g, "");
+    const parsed = Number.parseFloat(text);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const toBoolean = (value) => {
+    if (value === undefined || value === null) return false;
+    if (typeof value === "boolean") return value;
+
+    const text = String(value).trim().toLowerCase();
+    return ["true", "1", "yes", "y", "v", "☑", "✅", "checked"].includes(
+        text,
+    );
+};
+
+const maskKtp = (value) => {
+    const text = toNullableString(value);
+    if (!text) return null;
+    if (text.length <= 3) return text;
+    return `${text.slice(0, 3)}${"*".repeat(text.length - 3)}`;
+};
+
+const getExcelDate = (value) => {
+    if (value === undefined || value === null || value === "") return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString();
+    }
+    if (typeof value === "number") {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (!parsed) return null;
+        const date = new Date(
+            Date.UTC(
+                parsed.y,
+                (parsed.m || 1) - 1,
+                parsed.d || 1,
+                parsed.H || 0,
+                parsed.M || 0,
+                parsed.S || 0,
+            ),
+        );
+        return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    }
+    const text = String(value).trim();
+    if (!text) return null;
+    const date = new Date(text);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
 
 export default function ClaimSubmit() {
     const [user, setUser] = useState(null);
@@ -170,18 +287,135 @@ export default function ClaimSubmit() {
         a.click();
     };
 
-    const formatDateToISO = (dateString) => {
-        if (!dateString || typeof dateString !== "string") return null;
+    const formatDateToISO = (dateInput) => getExcelDate(dateInput);
 
-        // Jika sudah format ISO, return langsung
-        if (dateString.includes("T")) return dateString;
-
-        // Jika format YYYY-MM-DD, tambahkan waktu
-        if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            return new Date(`${dateString}T00:00:00.000Z`).toISOString();
+    const parseUploadRows = async (file) => {
+        const fileName = (file?.name || "").toLowerCase();
+        if (
+            !(
+                fileName.endsWith(".csv") ||
+                fileName.endsWith(".xlsx") ||
+                fileName.endsWith(".xls")
+            )
+        ) {
+            throw new Error("Unsupported file format. Please upload .csv, .xlsx, or .xls");
         }
 
-        return null;
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, {
+            type: "array",
+            cellDates: true,
+            raw: false,
+        });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            raw: false,
+            defval: "",
+            blankrows: false,
+        });
+
+        if (!Array.isArray(rows) || rows.length <= 1) {
+            throw new Error("No data found in file");
+        }
+
+        const headers = (rows[0] || []).map((h) => normalizeHeader(h));
+        const headerIndexMap = headers.reduce((acc, header, idx) => {
+            if (!acc[header]) acc[header] = [];
+            acc[header].push(idx);
+            return acc;
+        }, {});
+
+        const getFirstIndex = (candidates) => {
+            for (const candidate of candidates) {
+                const indices = headerIndexMap[candidate];
+                if (Array.isArray(indices) && indices.length > 0) return indices[0];
+            }
+            return -1;
+        };
+
+        const idxNomorPeserta = getFirstIndex(["nomor_peserta"]);
+        const idxPolicyNo = getFirstIndex(["policy_no", "policyno"]);
+        const idxNomorSertifikat = getFirstIndex(["nomor_sertifikat"]);
+        const idxNamaTertanggung = getFirstIndex(["nama_tertanggung"]);
+        const idxKtp = getFirstIndex(["no_ktp_npwp", "noktp_npwp"]);
+        const idxFasilitas = getFirstIndex(["no_fasilitas_kredit"]);
+        const idxBdoPremi = getFirstIndex(["bdo_premi"]);
+        const idxTanggalRealisasi = getFirstIndex(["tanggal_realisasi_kredit"]);
+        const idxPlafond = getFirstIndex(["plafond"]);
+        const idxMaxCoverage = getFirstIndex(["max_coverage"]);
+        const idxKolDebitur = getFirstIndex(["kol_debitur"]);
+        const idxDol = getFirstIndex(["dol"]);
+        const idxNilaiKlaim = getFirstIndex(["nilai_klaim"]);
+        const idxCheckBdoPremi = getFirstIndex(["check_bdo_premi"]);
+        const idxSharePctDirect = getFirstIndex(["share_tugure_percentage"]);
+        const idxShareAmtDirect = getFirstIndex(["share_tugure_amount"]);
+
+        const shareHeaderIndices = headerIndexMap.share_tugure || [];
+
+        const bodyRows = rows.slice(1);
+        return bodyRows.map((rowValues, index) => {
+            const values = Array.isArray(rowValues) ? rowValues : [];
+            const read = (idx) => (idx >= 0 ? values[idx] : "");
+            const findShareValues = () => {
+                if (idxSharePctDirect >= 0 || idxShareAmtDirect >= 0) {
+                    return {
+                        percentage: read(idxSharePctDirect),
+                        amount: read(idxShareAmtDirect),
+                    };
+                }
+
+                const candidateIndexes = [...shareHeaderIndices];
+                if (candidateIndexes.length === 0) {
+                    const start = idxNomorSertifikat >= 0 ? idxNomorSertifikat + 1 : 0;
+                    const end =
+                        idxCheckBdoPremi >= 0 ? idxCheckBdoPremi : Math.max(values.length - 1, 0);
+                    for (let i = start; i < end; i++) {
+                        candidateIndexes.push(i);
+                    }
+                }
+
+                let percentage = null;
+                let amount = null;
+                for (const idx of candidateIndexes) {
+                    const raw = read(idx);
+                    const text = String(raw ?? "").trim();
+                    if (!text) continue;
+                    if (text.includes("%") && percentage === null) {
+                        percentage = raw;
+                        continue;
+                    }
+                    if (amount === null) {
+                        amount = raw;
+                    }
+                }
+
+                return { percentage, amount };
+            };
+
+            const shareValues = findShareValues();
+
+            return {
+                excelRow: index + 2,
+                policy_no: toNullableString(read(idxPolicyNo)),
+                nomor_sertifikat: toNullableString(read(idxNomorSertifikat)),
+                nama_tertanggung: toNullableString(read(idxNamaTertanggung)),
+                no_ktp_npwp_raw: toNullableString(read(idxKtp)),
+                no_fasilitas_kredit: toNullableString(read(idxFasilitas)),
+                bdo_premi: toNullableString(read(idxBdoPremi)),
+                tanggal_realisasi_kredit: read(idxTanggalRealisasi),
+                plafond: toNumber(read(idxPlafond)),
+                max_coverage: toNumber(read(idxMaxCoverage)),
+                kol_debitur: toNullableString(read(idxKolDebitur)),
+                dol: read(idxDol),
+                nilai_klaim: toNumber(read(idxNilaiKlaim)),
+                share_tugure_percentage: toNumber(shareValues.percentage),
+                share_tugure_amount: toNumber(shareValues.amount),
+                check_bdo_premi: toBoolean(read(idxCheckBdoPremi)),
+                nomor_peserta: toNullableString(read(idxNomorPeserta)),
+            };
+        });
     };
 
     const handleFileUpload = async (file) => {
@@ -193,8 +427,10 @@ export default function ClaimSubmit() {
         setParsedClaims([]);
 
         try {
-            // Cari batch berdasarkan selectedBatch (yang berisi batch_id)
-            const batch = batches.find((b) => b.batch_id === selectedBatch);
+            // selectedBatch bisa berupa id atau batch_id
+            const batch = batches.find(
+                (b) => b.batch_id === selectedBatch || b.id === selectedBatch,
+            );
 
             if (!batch) {
                 setErrorMessage("Batch not found");
@@ -207,49 +443,31 @@ export default function ClaimSubmit() {
                 (d) => d.batch_id === batch.batch_id,
             );
 
-            const text = await file.text();
-            const lines = text.split("\n").filter((line) => line.trim());
-
-            if (lines.length <= 1) {
-                setErrorMessage("No data found in file");
-                setProcessing(false);
-                return;
-            }
+            const rows = await parseUploadRows(file);
 
             const parsed = [];
             const validationErrors = [];
 
-            for (let i = 1; i < lines.length; i++) {
-                const values = lines[i].split(",");
-                const headers = lines[0].split(",").map((h) => h.trim());
-
-                if (values.length !== headers.length) {
-                    validationErrors.push({
-                        row: i + 1,
-                        participant: "N/A",
-                        issues: ["Invalid CSV format - column mismatch"],
-                    });
-                    continue;
-                }
-
-                const row = {};
-                headers.forEach((header, index) => {
-                    row[header] = values[index]?.trim() || "";
-                });
-
+            for (const row of rows) {
                 const debtor = batchDebtors.find(
-                    (d) => d.nomor_peserta === row.nomor_peserta,
+                    (d) =>
+                        String(d.nomor_peserta || "").trim() ===
+                            String(row.nomor_peserta || "").trim() &&
+                        String(d.policy_no || "").trim() ===
+                            String(row.policy_no || "").trim(),
                 );
 
                 let rowRemarks = [];
                 if (!debtor) {
-                    rowRemarks.push("Debtor not found in batch");
+                    rowRemarks.push(
+                        "Debtor not found in batch (match by nomor peserta & policy no)",
+                    );
                 } else {
                     if (debtor.status !== "APPROVED") {
                         rowRemarks.push("Debtor not approved");
                     }
                     if (
-                        parseFloat(row.nilai_klaim) >
+                        Number(row.nilai_klaim) >
                         (parseFloat(debtor.plafon) || 0)
                     ) {
                         rowRemarks.push(`Exceeds plafond (${debtor.plafon})`);
@@ -258,7 +476,7 @@ export default function ClaimSubmit() {
 
                 if (rowRemarks.length > 0) {
                     validationErrors.push({
-                        row: i + 1,
+                        row: row.excelRow,
                         participant: row.nomor_peserta || "Unknown",
                         issues: rowRemarks,
                     });
@@ -268,22 +486,18 @@ export default function ClaimSubmit() {
                     policy_no: row.policy_no,
                     nomor_sertifikat: row.nomor_sertifikat,
                     nama_tertanggung: row.nama_tertanggung,
-                    no_ktp_npwp: row.no_ktp_npwp,
+                    no_ktp_npwp: maskKtp(row.no_ktp_npwp_raw),
                     no_fasilitas_kredit: row.no_fasilitas_kredit,
                     bdo_premi: row.bdo_premi,
                     tanggal_realisasi_kredit: row.tanggal_realisasi_kredit,
-                    plafond: parseFloat(row.plafond) || 0,
-                    max_coverage: parseFloat(row.max_coverage) || 0,
+                    plafond: Number(row.plafond) || 0,
+                    max_coverage: Number(row.max_coverage) || 0,
                     kol_debitur: row.kol_debitur,
                     dol: row.dol,
-                    nilai_klaim: parseFloat(row.nilai_klaim) || 0,
-                    share_tugure_percentage:
-                        parseFloat(row.share_tugure_percentage) || 0,
-                    share_tugure_amount:
-                        parseFloat(row.share_tugure_amount) || 0,
-                    check_bdo_premi:
-                        row.check_bdo_premi === "true" ||
-                        row.check_bdo_premi === "1",
+                    nilai_klaim: Number(row.nilai_klaim) || 0,
+                    share_tugure_percentage: Number(row.share_tugure_percentage) || 0,
+                    share_tugure_amount: Number(row.share_tugure_amount) || 0,
+                    check_bdo_premi: !!row.check_bdo_premi,
                     validation_remarks: rowRemarks.join("; "),
                     debtor_id: debtor?.id,
                     contract_id: debtor?.contract_id,
@@ -345,7 +559,7 @@ export default function ClaimSubmit() {
             }
 
             const hasCompletedPayment = batchNotas.some(
-                (n) => n.status === "Paid",
+                (n) => n.status === "Nota Closed",
             );
 
             if (!hasCompletedPayment && batchNotas.length > 0) {
@@ -430,7 +644,7 @@ export default function ClaimSubmit() {
                         }),
                         user_email: user?.email,
                         user_role: user?.role,
-                        reason: "Bulk upload from CSV",
+                        reason: "Bulk upload from file",
                     });
 
                     uploaded++;
@@ -787,7 +1001,7 @@ export default function ClaimSubmit() {
                     <DialogHeader>
                         <DialogTitle>Bulk Upload Claims</DialogTitle>
                         <DialogDescription>
-                            Select batch and upload CSV file
+                            Select batch and upload CSV/Excel file
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
@@ -816,7 +1030,7 @@ export default function ClaimSubmit() {
                             <Label>Upload File</Label>
                             <Input
                                 type="file"
-                                accept=".csv"
+                                accept=".csv,.xlsx,.xls"
                                 onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) {
@@ -883,7 +1097,7 @@ export default function ClaimSubmit() {
                         </Alert>
                         <Input
                             type="file"
-                            accept=".csv"
+                            accept=".csv,.xlsx,.xls"
                             onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (file) {

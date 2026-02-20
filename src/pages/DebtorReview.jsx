@@ -142,7 +142,12 @@ export default function DebtorReview() {
             // include filters as JSON string in `q`
             if (filters) query.q = JSON.stringify(filters);
 
-            const result = await backend.listPaginated("Debtor", query);
+            const useReviseLog =
+                filters?.submitStatus === "REVISION" ||
+                filters?.status === "REVISION";
+            const entityName = useReviseLog ? "ReviseLog" : "Debtor";
+
+            const result = await backend.listPaginated(entityName, query);
 
             setDebtors(Array.isArray(result.data) ? result.data : []);
             setTotalDebtors(Number(result.pagination?.total) || 0);

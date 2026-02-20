@@ -233,5 +233,175 @@ export const backend = {
       }
     }
     return handleResponse(res);
+  },
+
+  /**
+   * List notifications from backend. Supports optional filters.
+   * GET /api/notifications
+   */
+  async listNotifications(query = {}) {
+    const qs = new URLSearchParams(query).toString();
+    const url = `/api/notifications${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { credentials: 'same-origin' });
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        throw new Error(error || res.statusText);
+      }
+    }
+    return handleResponse(res);
+  },
+
+  /**
+   * Create a new notification.
+   * POST /api/notifications
+   */
+  async createNotification(payload) {
+    const url = '/api/notifications';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        throw new Error(error || res.statusText);
+      }
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.success !== undefined && parsed.success === true) {
+          return parsed.data || null;
+        }
+        if ('data' in parsed) {
+          return parsed.data;
+        }
+      }
+      return parsed;
+    } catch (e) {
+      console.error('Failed to parse response:', e);
+      return null;
+    }
+  },
+
+  /**
+   * Update a notification.
+   * PUT /api/notifications/:id
+   */
+  async updateNotification(id, payload) {
+    const url = `/api/notifications/${encodeURIComponent(id)}`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        throw new Error(error || res.statusText);
+      }
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.success !== undefined && parsed.success === true) {
+          return parsed.data || null;
+        }
+        if ('data' in parsed) {
+          return parsed.data;
+        }
+      }
+      return parsed;
+    } catch (e) {
+      console.error('Failed to parse response:', e);
+      return null;
+    }
+  },
+
+  /**
+   * Mark a notification as read.
+   * PUT /api/notifications/:id/read
+   */
+  async markNotificationAsRead(id) {
+    const url = `/api/notifications/${encodeURIComponent(id)}/read`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        throw new Error(error || res.statusText);
+      }
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.success !== undefined && parsed.success === true) {
+          return parsed.data || null;
+        }
+        if ('data' in parsed) {
+          return parsed.data;
+        }
+      }
+      return parsed;
+    } catch (e) {
+      console.error('Failed to parse response:', e);
+      return null;
+    }
+  },
+
+  /**
+   * Delete a notification.
+   * DELETE /api/notifications/:id
+   */
+  async deleteNotification(id) {
+    const url = `/api/notifications/${encodeURIComponent(id)}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        throw new Error(error || res.statusText);
+      }
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      return parsed;
+    } catch (e) {
+      return null;
+    }
   }
 };

@@ -15,11 +15,11 @@ import {
   CheckCircle2, RefreshCw, Loader2, Plus, Edit, Trash2, Eye, User, TestTube, AlertCircle
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { base44 } from '@/api/base44Client';
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import { format } from 'date-fns';
+import { backend } from '@/api/backendClient';
 
 export default function SystemConfiguration() {
   const [user, setUser] = useState(null);
@@ -83,22 +83,17 @@ export default function SystemConfiguration() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
-      
       const [configData, notifData, settingsData, templates, rules] = await Promise.all([
-        base44.entities.SystemConfig.list(),
-        base44.entities.Notification.list(),
-        base44.entities.NotificationSetting.list(),
-        base44.entities.EmailTemplate.list(),
-        base44.entities.SlaRule.list()
+        backend.list('SystemConfig'),
+        backend.list('Notification'),
+        backend.list('NotificationSetting'),
+        backend.list('EmailTemplate'),
+        backend.list('SlaRule')
       ]);
       
-      // Create sample data if any is empty
-      const needsSampleData = !configData || configData.length === 0 || 
-                              !notifData || notifData.length === 0 ||
-                              !templates || templates.length === 0 ||
-                              !rules || rules.length === 0;
+      // Debug logging
+      console.log('Loaded notifications:', notifData);
+      console.log('Notifications type:', typeof notifData, Array.isArray(notifData));
       
       setSystemConfigs(configData || []);
       setNotifications(notifData || []);
@@ -106,17 +101,6 @@ export default function SystemConfiguration() {
       setSlaRules(rules || []);
       
       setNotificationSettings(settingsData || []);
-      
-      const userSetting = settingsData.find(s => s.user_email === currentUser.email);
-      if (userSetting) {
-        setCurrentSetting(userSetting);
-      } else {
-        setCurrentSetting(prev => ({
-          ...prev,
-          full_name: currentUser.full_name || currentUser.email,
-          user_email: currentUser.email
-        }));
-      }
     } catch (error) {
       console.error('Failed to load data:', error);
     }
@@ -151,7 +135,7 @@ export default function SystemConfiguration() {
 
     for (const config of sampleConfigs) {
       try {
-        await base44.entities.SystemConfig.create(config);
+        await backend.create('SystemConfig', config);
       } catch (error) {
         console.error('Failed to create sample config:', error);
       }
@@ -324,7 +308,7 @@ export default function SystemConfiguration() {
     
     for (const notif of sampleNotifications) {
       try {
-        await base44.entities.Notification.create(notif);
+        await backend.createNotification(notif);
       } catch (error) {
         console.error('Failed to create sample notification:', error);
       }
@@ -623,7 +607,7 @@ export default function SystemConfiguration() {
     
     for (const template of sampleTemplates) {
       try {
-        await base44.entities.EmailTemplate.create(template);
+        await backend.create('EmailTemplate', template);
       } catch (error) {
         console.error('Failed to create sample template:', error);
       }
@@ -957,7 +941,7 @@ export default function SystemConfiguration() {
 
     for (const rule of sampleSlaRules) {
       try {
-        await base44.entities.SlaRule.create({
+        await backend.create('SlaRule', {
           ...rule,
           trigger_count: 0
         });
@@ -970,19 +954,7 @@ export default function SystemConfiguration() {
   const handleSaveUserSettings = async () => {
     setProcessing(true);
     try {
-      const existing = notificationSettings.find(s => s.user_email === user.email);
-      
-      if (existing) {
-        await base44.entities.NotificationSetting.update(existing.id, currentSetting);
-      } else {
-        await base44.entities.NotificationSetting.create({
-          ...currentSetting,
-          full_name: currentSetting.full_name || user.full_name || user.email,
-          user_email: user.email,
-          user_role: user.role.toUpperCase()
-        });
-      }
-
+      await backend.create('NotificationSetting', currentSetting);
       setSuccessMessage('Settings saved successfully');
       loadData();
     } catch (error) {
@@ -1011,9 +983,9 @@ export default function SystemConfiguration() {
       };
 
       if (editingConfig) {
-        await base44.entities.SystemConfig.update(editingConfig.id, configData);
+        await backend.update('SystemConfig', editingConfig.id, configData);
       } else {
-        await base44.entities.SystemConfig.create(configData);
+        await backend.create('SystemConfig', configData);
       }
 
       setSuccessMessage('Configuration saved successfully');
@@ -1028,7 +1000,7 @@ export default function SystemConfiguration() {
 
   const handleMarkAsRead = async (notifId) => {
     try {
-      await base44.entities.Notification.update(notifId, { is_read: true });
+      await backend.updateNotification(notifId, { is_read: true });
       loadData();
     } catch (error) {
       console.error('Mark as read error:', error);
@@ -1041,7 +1013,7 @@ export default function SystemConfiguration() {
     setProcessing(true);
     try {
       for (const id of selectedSettings) {
-        await base44.entities.NotificationSetting.delete(id);
+        await backend.delete('NotificationSetting', id);
       }
       setSuccessMessage(`Deleted ${selectedSettings.length} settings`);
       setSelectedSettings([]);
@@ -1101,85 +1073,85 @@ export default function SystemConfiguration() {
       let deletedCount = 0;
       
       if (dataType === 'debtors') {
-        const debtors = await base44.entities.Debtor.list();
+        const debtors = await backend.list('Debtor');
         for (const debtor of debtors) {
-          await base44.entities.Debtor.delete(debtor.id);
+          await backend.delete('Debtor', debtor.id);
         }
         deletedCount = debtors.length;
         
-        const batches = await base44.entities.Batch.list();
+        const batches = await backend.list('Batch');
         for (const batch of batches) {
-          await base44.entities.Batch.delete(batch.id);
+          await backend.delete('Batch', batch.id);
         }
         
-        const records = await base44.entities.Record.list();
+        const records = await backend.list('Record');
         for (const record of records) {
-          await base44.entities.Record.delete(record.id);
+          await backend.delete('Record', record.id);
         }
         
-        const documents = await base44.entities.Document.list();
+        const documents = await backend.list('Document');
         for (const doc of documents) {
-          await base44.entities.Document.delete(doc.id);
+          await backend.delete('Document', doc.id);
         }
         
-        const borderos = await base44.entities.Bordero.list();
+        const borderos = await backend.list('Bordero');
         for (const bordero of borderos) {
-          await base44.entities.Bordero.delete(bordero.id);
+          await backend.delete('Bordero', bordero.id);
         }
         
-        const notas = await base44.entities.Nota.list();
+        const notas = await backend.list('Nota');
         for (const nota of notas) {
-          await base44.entities.Nota.delete(nota.id);
+          await backend.delete('Nota', nota.id);
         }
         
-        const dnCnNotes = await base44.entities.DebitCreditNote.list();
+        const dnCnNotes = await backend.list('DebitCreditNote');
         for (const note of dnCnNotes) {
-          await base44.entities.DebitCreditNote.delete(note.id);
+          await backend.delete('DebitCreditNote', note.id);
         }
       } else if (dataType === 'claims') {
-        const claims = await base44.entities.Claim.list();
+        const claims = await backend.list('Claim');
         for (const claim of claims) {
-          await base44.entities.Claim.delete(claim.id);
+          await backend.delete('Claim', claim.id);
         }
         deletedCount = claims.length;
         
-        const subrogations = await base44.entities.Subrogation.list();
+        const subrogations = await backend.list('Subrogation');
         for (const subrogation of subrogations) {
-          await base44.entities.Subrogation.delete(subrogation.id);
+          await backend.delete('Subrogation', subrogation.id);
         }
       } else if (dataType === 'financial') {
-        const invoices = await base44.entities.Invoice.list();
+        const invoices = await backend.list('Invoice');
         for (const invoice of invoices) {
-          await base44.entities.Invoice.delete(invoice.id);
+          await backend.delete('Invoice', invoice.id);
         }
         
-        const payments = await base44.entities.Payment.list();
+        const payments = await backend.list('Payment');
         for (const payment of payments) {
-          await base44.entities.Payment.delete(payment.id);
+          await backend.delete('Payment', payment.id);
         }
         
-        const paymentIntents = await base44.entities.PaymentIntent.list();
+        const paymentIntents = await backend.list('PaymentIntent');
         for (const intent of paymentIntents) {
-          await base44.entities.PaymentIntent.delete(intent.id);
+          await backend.delete('PaymentIntent', intent.id);
         }
         
-        const dnCnNotes = await base44.entities.DebitCreditNote.list();
+        const dnCnNotes = await backend.list('DebitCreditNote');
         for (const note of dnCnNotes) {
-          await base44.entities.DebitCreditNote.delete(note.id);
+          await backend.delete('DebitCreditNote', note.id);
         }
         
         deletedCount = invoices.length + payments.length;
       } else if (dataType === 'notifications') {
-        const notifications = await base44.entities.Notification.list();
+        const notifications = await backend.listNotifications();
         for (const notif of notifications) {
-          await base44.entities.Notification.delete(notif.id);
+          await backend.deleteNotification(notif.id);
         }
         deletedCount = notifications.length;
         loadData();
       } else if (dataType === 'contracts') {
-        const contracts = await base44.entities.MasterContract.list();
+        const contracts = await backend.list('MasterContract');
         for (const contract of contracts) {
-          await base44.entities.MasterContract.delete(contract.id);
+          await backend.delete('MasterContract', contract.id);
         }
         deletedCount = contracts.length;
       } else if (dataType === 'all') {
@@ -1330,7 +1302,7 @@ export default function SystemConfiguration() {
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="notifications">
             <Bell className="w-4 h-4 mr-2" />
-            Notifications ({unreadNotifications.length})
+            Notifications ({notifications.filter(notif => !notif.is_read).length})
           </TabsTrigger>
           <TabsTrigger value="email-templates">
             <Mail className="w-4 h-4 mr-2" />
@@ -1353,41 +1325,48 @@ export default function SystemConfiguration() {
         {/* Notifications Tab */}
         <TabsContent value="notifications" className="mt-4">
           <div className="space-y-3">
-            {unreadNotifications.length === 0 ? (
+            {!notifications || notifications.length === 0 ? (
               <Card>
                 <CardContent className="p-12 text-center">
                   <Bell className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                  <p className="text-gray-500">No unread notifications</p>
+                  <p className="text-gray-500">No notifications</p>
                 </CardContent>
               </Card>
             ) : (
-              unreadNotifications.map((notif) => (
-                <Card key={notif.id} className="bg-blue-50 border-blue-200">
+              notifications
+              .filter(notif => !notif.is_read) // untuk hide notification yang sudah dibaca
+              .map((notif) => (
+                <Card key={notif.id} className={notif.is_read ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200'}>
                   <CardContent className="p-4">
                     <div className="flex items-start gap-4">
-                      <div className="p-3 rounded-lg bg-blue-100">
-                        <Bell className="w-5 h-5 text-blue-600" />
+                      <div className={`p-3 rounded-lg ${notif.is_read ? 'bg-gray-100' : 'bg-blue-100'}`}>
+                        <Bell className={`w-5 h-5 ${notif.is_read ? 'text-gray-600' : 'text-blue-600'}`} />
                       </div>
                       <div className="flex-1">
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex items-center gap-3">
                             <h4 className="font-semibold text-gray-900">{notif.title}</h4>
                             <Badge variant="outline">{notif.type.replace(/_/g, ' ')}</Badge>
-                            <Badge variant="outline">{notif.module}</Badge>
+                            {notif.module && <Badge variant="outline">{notif.module}</Badge>}
+                            {notif.is_read && <Badge className="bg-gray-300 text-gray-700">Read</Badge>}
                           </div>
-                          <span className="text-xs text-gray-500">
-                            {format(new Date(notif.created_date), 'MMM d, HH:mm')}
-                          </span>
+                          {notif.created_at && (
+                            <span className="text-xs text-gray-500">
+                              {format(new Date(notif.created_at), 'MMM d, HH:mm')}
+                            </span>
+                          )}
                         </div>
                         <p className="text-gray-600 text-sm mb-3">{notif.message}</p>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleMarkAsRead(notif.id)}
-                        >
-                          <CheckCircle2 className="w-4 h-4 mr-1" />
-                          Mark as Read
-                        </Button>
+                        {!notif.is_read && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleMarkAsRead(notif.id)}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-1" />
+                            Mark as Read
+                          </Button>
+                        )} 
                       </div>
                     </div>
                   </CardContent>
@@ -1412,7 +1391,7 @@ export default function SystemConfiguration() {
                   let deleted = 0;
                   for (const id of selectedTemplates) {
                     try {
-                      await base44.entities.EmailTemplate.delete(id);
+                      await backend.delete('EmailTemplate', id);
                       deleted++;
                     } catch (error) {
                       console.error('Delete error:', error);
@@ -1537,7 +1516,7 @@ export default function SystemConfiguration() {
                       onClick={async () => {
                         if (window.confirm('Delete this template?')) {
                           try {
-                            await base44.entities.EmailTemplate.delete(row.id);
+                            await backend.delete('EmailTemplate', row.id);
                             setSuccessMessage('Template deleted');
                           } catch (error) {
                             console.error('Delete error:', error);
@@ -1739,7 +1718,7 @@ export default function SystemConfiguration() {
                       let deleted = 0;
                       for (const id of selectedRules) {
                         try {
-                          await base44.entities.SlaRule.delete(id);
+                          await backend.delete('SlaRule', id);
                           deleted++;
                         } catch (error) {
                           console.error('Delete error:', error);
@@ -1911,7 +1890,7 @@ export default function SystemConfiguration() {
                           onClick={async () => {
                             if (window.confirm('Delete this rule?')) {
                               try {
-                                await base44.entities.SlaRule.delete(row.id);
+                                await backend.delete('SlaRule', row.id);
                                 setSuccessMessage('Rule deleted');
                               } catch (error) {
                                 console.error('Delete error:', error);
@@ -2302,9 +2281,9 @@ export default function SystemConfiguration() {
                 setProcessing(true);
                 try {
                   if (selectedRule?.id) {
-                    await base44.entities.SlaRule.update(selectedRule.id, selectedRule);
+                    await backend.update('SlaRule', selectedRule.id, selectedRule);
                   } else {
-                    await base44.entities.SlaRule.create({
+                    await backend.create('SlaRule', {
                       ...selectedRule,
                       trigger_count: 0
                     });
@@ -2433,9 +2412,9 @@ export default function SystemConfiguration() {
             <Button onClick={async () => {
               try {
                 if (selectedTemplate?.id) {
-                  await base44.entities.EmailTemplate.update(selectedTemplate.id, selectedTemplate);
+                  await backend.update('EmailTemplate', selectedTemplate.id, selectedTemplate);
                 } else {
-                  await base44.entities.EmailTemplate.create(selectedTemplate);
+                  await backend.create('EmailTemplate', selectedTemplate);
                 }
                 await loadData();
                 setShowTemplateDialog(false);

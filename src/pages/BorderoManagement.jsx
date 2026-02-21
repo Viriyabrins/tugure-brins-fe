@@ -42,12 +42,15 @@ import FilterTab from "@/components/common/FilterTab";
 const defaultFilter = {
     contract: "all",
     batch: "",
+    branch: "",
+    region: "",
     submitStatus: "all",
     reconStatus: "all",
     claimStatus: "all",
     subrogationStatus: "all",
     startDate: "",
     endDate: "",
+    period: ""
 }
 
 export default function BorderoManagement() {
@@ -133,7 +136,7 @@ export default function BorderoManagement() {
                         (debtor) =>
                             debtor.contract_id === bordero.contract_id &&
                             debtor.batch_id === bordero.batch_id &&
-                            debtor.status === "APPROVED",
+                            debtor.status === "APPROVED"
                     );
 
                     // Hitung totals APPROVED (for monitoring progress)
@@ -186,15 +189,11 @@ export default function BorderoManagement() {
         setLoading(false);
     };
 
-    const handleFilterChange = (key, value) => {
-        setFilters({ ...filters, [key]: value });
-    };
-
     const handleExportExcel = () => {
         let data = [];
         let headers = [];
         let sourceData = [];
-        if (activeTab === "debtors") {
+        if (activeTab === "debtors") { //Export Debtors
             sourceData =
                 selectedItems.length > 0
                     ? filteredDebtors.filter((d) =>
@@ -215,13 +214,13 @@ export default function BorderoManagement() {
                 d.net_premi,
                 d.status,
             ]);
-        } else if (activeTab === "borderos") {
+        } else if (activeTab === "borderos") { //Export Borderos
             sourceData =
                 selectedItems.length > 0
-                    ? borderos.filter((b) =>
+                    ? filteredBorderos.filter((b) =>
                           selectedItems.includes(b.id),
                       )
-                    : borderos;
+                    : filteredBorderos;
             headers = [
                 "Bordero ID",
                 "Period",
@@ -238,7 +237,7 @@ export default function BorderoManagement() {
                 b.total_premium,
                 b.status,
             ]);
-        } else if (activeTab === "claims") {
+        } else if (activeTab === "claims") { //Export Claims
             sourceData = filteredClaims;
             headers = [
                 "Claim No",
@@ -254,7 +253,7 @@ export default function BorderoManagement() {
                 c.nilai_klaim,
                 c.claim_status,
             ]);
-        } else if (activeTab === "subrogation") {
+        } else if (activeTab === "subrogation") { //Export Subrogation
             sourceData = filteredSubrogations;
             headers = [
                 "Subrogation ID",
@@ -339,6 +338,8 @@ export default function BorderoManagement() {
         let filtered = debtors.filter((d) => {
             if (filters.contract !== "all" && d.contract_id !== filters.contract) return false;
             if (filters.batch && !d.batch_id?.includes(filters.batch)) return false;
+            if (filters.branch && !d.branch_desc?.includes(filters.branch)) return false;
+            if (filters.region && !d.region_desc?.includes(filters.region)) return false;
             // Filter global berdasarkan submitStatus jika ada
             if (filters.submitStatus !== "all" && d.status !== filters.submitStatus) return false;
             if (filters.startDate && d.created_date < filters.startDate) return false;
@@ -367,6 +368,21 @@ export default function BorderoManagement() {
 
     // Use filteredDebtors for KPIs to ensure they match the table and filter selection
     const kpiDebtors = filteredDebtors;
+
+    // Filter Bordero
+    const getTabBorderos = () => {
+        let filtered = borderos.filter((b) => {
+            if (filters.period && !b.period?.includes(filters.period)) return false;
+            return true;
+        });
+        if (activeTab === "debtors") return filtered;
+        else if (activeTab === "exposure") return filtered;
+        else if (activeTab === "borderos") return filtered;
+        return filtered;
+    };
+
+    // Filter Bordero
+    const filteredBorderos = getTabBorderos();
 
     const filteredClaims = claims.filter((c) => {
         if (
@@ -409,6 +425,20 @@ export default function BorderoManagement() {
                     <p className="text-sm text-gray-500">{row.nomor_peserta}</p>
                 </div>
             ),
+        },
+        {
+            header: "Branch",
+            accessorKey: "branch_desc",
+            cell: (row) => (
+                <span className="text-sm">{row.branch_desc}</span>
+            )
+        },
+        {
+            header: "Region",
+            accessorKey: "region_desc",
+            cell: (row) => (
+                <span className="text-sm">{row.region_desc}</span>
+            )
         },
         {
             header: "Batch",
@@ -578,7 +608,7 @@ export default function BorderoManagement() {
                 </DialogContent>
             </Dialog>
 
-            {/* Gradient Card */}
+            {/* KPI Card */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 {activeTab === "debtors" && (<>
                     <GradientStatCard
@@ -592,8 +622,8 @@ export default function BorderoManagement() {
                     />
                     <GradientStatCard
                         title="Borderos"
-                        value={borderos.length}
-                        subtitle={`${borderos.filter(
+                        value={filteredBorderos.length}
+                        subtitle={`${filteredBorderos.filter(
                             (b) => b.status === "FINAL",
                         ).length} finalized`}
                         icon={FileText}
@@ -653,30 +683,32 @@ export default function BorderoManagement() {
                 onFilterChange={setFilters}
                 defaultFilters={defaultFilter}
                 filterConfig={[
-                    // ...(['debtors', 'borderos'].includes(activeTab) ? [{
-                    //     key: "batch",
-                    //     label: "Batch ID",
-                    //     placeholder: "Search batch",
-                    //     type: "input",
-                    //     inputType: "text"
-                    // }] : []),
-                    {
+                    ...(['debtors'].includes(activeTab) ? [{
                         key: "batch",
                         label: "Batch ID",
                         placeholder: "Search batch",
                         type: "input",
                         inputType: "text"
-                    },
-                    {
-                        key: "startDate",
-                        label: "Start Date",
-                        type: "date",
-                    },
-                    {
-                        key: "endDate",
-                        label: "End Date",
-                        type: "date",
-                    },
+                    },{
+                        key:"region",
+                        label:"Region",
+                        placeholder:"Search Region",
+                        type: "input",
+                        inputType: "text"
+                    },{
+                        key:"branch",
+                        label:"Branch",
+                        placeholder:"Search Branch",
+                        type: "input",
+                        inputType: "text",
+                    }] : []),
+                    ...(['borderos'].includes(activeTab) ? [{
+                        key:"period",
+                        label:"Period",
+                        placeholder:"Search Period",
+                        type: "input",
+                        inputType: "text",
+                    }] : []),
                     {
                         key:"submitStatus",
                         label: "Submit Status",
@@ -711,7 +743,7 @@ export default function BorderoManagement() {
                     </TabsTrigger>
                     <TabsTrigger value="borderos">
                         <FileText className="w-4 h-4 mr-2" />
-                        Borderos ({borderos.length})
+                        Borderos ({filteredBorderos.length})
                     </TabsTrigger>
                     <TabsTrigger value="claims">
                         <FileText className="w-4 h-4 mr-2" />
@@ -733,8 +765,8 @@ export default function BorderoManagement() {
                 </TabsContent>
 
                 <TabsContent value="borderos" className="mt-4">
-                    {borderos.length === 0 ? (
-                        <Alert className="bg-blue-50 border-blue-200">
+                    {filteredBorderos.length === 0 ? (
+                        <Alert className="bg-blue-50 border-blue-200 mb-4">
                             <AlertCircle className="h-4 w-4 text-blue-600" />
                             <AlertDescription className="text-blue-700">
                                 No borderos yet. Borderos are automatically
@@ -745,7 +777,7 @@ export default function BorderoManagement() {
                     ) : null}
                     <DataTable
                         columns={borderoColumns}
-                        data={borderos}
+                        data={filteredBorderos}
                         isLoading={loading}
                         emptyMessage="No borderos generated yet"
                     />
@@ -897,6 +929,30 @@ export default function BorderoManagement() {
                                             status={selectedItem.status}
                                         />
                                     </div>
+                                    <div>
+                                        <Label className="text-gray-500">
+                                            Bordero
+                                        </Label>
+                                        <p className="font-medium">
+                                            {selectedItem.bordero_id}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-gray-500">
+                                            Region
+                                        </Label>
+                                        <p className="font-medium">
+                                            {selectedItem.region_desc}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-gray-500">
+                                            Branch
+                                        </Label>
+                                        <p className="font-medium">
+                                            {selectedItem.branch_desc}
+                                        </p>
+                                    </div>
                                 </div>
                             )}
                             {activeTab === "borderos" && (
@@ -930,10 +986,7 @@ export default function BorderoManagement() {
                                             Total Exposure
                                         </Label>
                                         <p className="font-medium">
-                                            IDR{" "}
-                                            {(
-                                                selectedItem.total_exposure || 0
-                                            ).toLocaleString()}
+                                            {formatRupiahAdaptive(selectedItem.total_exposure)}
                                         </p>
                                     </div>
                                     <div>
@@ -941,10 +994,7 @@ export default function BorderoManagement() {
                                             Total Premium
                                         </Label>
                                         <p className="font-medium">
-                                            IDR{" "}
-                                            {(
-                                                selectedItem.total_premium || 0
-                                            ).toLocaleString()}
+                                            {formatRupiahAdaptive(selectedItem.total_premium)}
                                         </p>
                                     </div>
                                     <div>

@@ -219,6 +219,31 @@ export const backend = {
     }
   },
 
+  async delete(entityName, id) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        throw new Error(error || res.statusText);
+      }
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? { id };
+      return { id };
+    } catch {
+      return { id };
+    }
+  },
+
   async filter(entityName, query = {}) {
     const qs = new URLSearchParams({ limit: '0', q: JSON.stringify(query) }).toString();
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}?${qs}`;

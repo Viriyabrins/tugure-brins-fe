@@ -33,13 +33,17 @@ export default function SystemConfiguration() {
   const [user, setUser] = useState(null);
   const [configs, setConfigs] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [totalNotifications, setTotalNotifications] = useState(0);
   const [notificationSettings, setNotificationSettings] = useState([]);
+  const [totalSettings, setTotalSettings] = useState(0);
   const [selectedSettings, setSelectedSettings] = useState([]);
   const [systemConfigs, setSystemConfigs] = useState([]);
   const [slaRules, setSlaRules] = useState([]);
+  const [totalSlaRules, setTotalSlaRules] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('notifications');
   const [emailTemplates, setEmailTemplates] = useState([]);
+  const [totalTemplates, setTotalTemplates] = useState(0);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [selectedTemplates, setSelectedTemplates] = useState([]);
   const [selectedRule, setSelectedRule] = useState(null);
@@ -58,50 +62,40 @@ export default function SystemConfiguration() {
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
   
-  // Notifications Pagination
+  // Notifications Pagination (server-side)
   const [notifPage, setNotifPage] = useState(1);
   const notifPageSize = 10;
-  const notifTotal = Array.isArray(notifications) ? notifications.length : 0;
+  const notifTotal = totalNotifications;
   const notifTotalPages = Math.max(1, Math.ceil(notifTotal / notifPageSize));
   const notifFrom = notifTotal === 0 ? 0 : (notifPage - 1) * notifPageSize + 1;
   const notifTo = Math.min(notifTotal, notifPage * notifPageSize);
-  const pageNotifications = Array.isArray(notifications)
-    ? notifications.slice((notifPage - 1) * notifPageSize, notifPage * notifPageSize)
-    : [];
+  const pageNotifications = Array.isArray(notifications) ? notifications : [];
   
-  // Email Template Pagination
+  // Email Template Pagination (server-side)
   const [templatePage, setTemplatePage] = useState(1);
-  const templatePageSize = 15;
-  
-  const filteredTemplates = emailTemplates.filter(t => {
-    if (templateFilters.object_type !== 'all' && t.object_type !== templateFilters.object_type) return false;
-    return true;
-  });
-  
-  const templateTotal = filteredTemplates.length;
+  const templatePageSize = 10;
+  const templateTotal = totalTemplates;
   const templateTotalPages = Math.max(1, Math.ceil(templateTotal / templatePageSize));
   const templateFrom = templateTotal === 0 ? 0 : (templatePage - 1) * templatePageSize + 1;
   const templateTo = Math.min(templateTotal, templatePage * templatePageSize);
-  const pagedTemplates = filteredTemplates.slice((templatePage - 1) * templatePageSize, templatePage * templatePageSize);
+  const pagedTemplates = Array.isArray(emailTemplates) ? emailTemplates : [];
   
-  // Notification Settings Pagination
+  // Notification Settings Pagination (server-side)
+  const [settingsPage, setSettingsPage] = useState(1);
+  const settingsPageSize = 10;
+  const settingsTotal = totalSettings;
+  const settingsTotalPages = Math.max(1, Math.ceil(settingsTotal / settingsPageSize));
+  const settingsFrom = settingsTotal === 0 ? 0 : (settingsPage - 1) * settingsPageSize + 1;
+  const settingsTo = Math.min(settingsTotal, settingsPage * settingsPageSize);
+
+  // SLA Rules Pagination (server-side)
   const [slaPage, setSlaPage] = useState(1);
   const slaPageSize = 10;
-
-  const filteredSla = slaRules.filter(r => {
-    if (SlaFilters.ruleName && !r.rule_name.toLowerCase().includes(SlaFilters.ruleName.toLowerCase()) &&
-      !r.entity_type.toLowerCase().includes(SlaFilters.ruleName.toLowerCase())) return false;
-    if (SlaFilters.triggerCondition !== 'all' && r.trigger_condition !== SlaFilters.triggerCondition) return false;
-    if (SlaFilters.status === 'active' && !r.is_active) return false;
-    if (SlaFilters.status === 'inactive' && r.is_active) return false;
-    return true;
-  });
-
-  const slaTotal = filteredSla.length
+  const slaTotal = totalSlaRules;
   const slaTotalPages = Math.max(1, Math.ceil(slaTotal / slaPageSize));
-  const slaFrom = slaTotal === 0 ? 0 : (templatePage - 1) * slaPageSize + 1;
+  const slaFrom = slaTotal === 0 ? 0 : (slaPage - 1) * slaPageSize + 1;
   const slaTo = Math.min(slaTotal, slaPage * slaPageSize);
-  const pagedSla = filteredSla.slice((slaPage - 1) * slaPageSize, slaPage * slaPageSize);
+  const pagedSla = Array.isArray(slaRules) ? slaRules : [];
 
 
   // User notification setting
@@ -135,46 +129,119 @@ export default function SystemConfiguration() {
     loadData();
   }, []);
 
+  // Keep page within bounds
   useEffect(() => {
-    if (notifPage > notifTotalPages && notifTotalPages > 0) {
-      setNotifPage(notifTotalPages);
-    }
+    if (notifPage > notifTotalPages && notifTotalPages > 0) setNotifPage(notifTotalPages);
   }, [notifTotalPages, notifPage]);
 
   useEffect(() => {
-    if (templatePage > templateTotalPages && templateTotalPages > 0) {
-      setTemplatePage(templateTotalPages);
-    }
+    if (templatePage > templateTotalPages && templateTotalPages > 0) setTemplatePage(templateTotalPages);
   }, [templateTotalPages, templatePage]);
 
   useEffect(() => {
+    if (settingsPage > settingsTotalPages && settingsTotalPages > 0) setSettingsPage(settingsTotalPages);
+  }, [settingsTotalPages, settingsPage]);
+
+  useEffect(() => {
+    if (slaPage > slaTotalPages && slaTotalPages > 0) setSlaPage(slaTotalPages);
+  }, [slaTotalPages, slaPage]);
+
+  // Reset to page 1 when filters change, then reload
+  useEffect(() => {
     setTemplatePage(1);
-  }, [templateFilters]);
+    loadTemplates(1);
+  }, [templateFilters.object_type]);
+
+  useEffect(() => {
+    setSlaPage(1);
+    loadSlaRules(1);
+  }, [SlaFilters.ruleName, SlaFilters.triggerCondition, SlaFilters.status]);
+
+  // Reload when page changes
+  useEffect(() => { loadNotifications(notifPage); }, [notifPage]);
+  useEffect(() => { loadTemplates(templatePage); }, [templatePage]);
+  useEffect(() => { loadSettings(settingsPage); }, [settingsPage]);
+  useEffect(() => { loadSlaRules(slaPage); }, [slaPage]);
+
+  // --- Dedicated paginated load functions ---
+
+  const loadNotifications = async (pageToLoad = notifPage) => {
+    try {
+      const result = await backend.listNotifications({
+        unread: 'true',
+        page: pageToLoad,
+        limit: notifPageSize,
+      });
+      console.log('Notification', result);
+      setNotifications(Array.isArray(result.data) ? result.data : []);
+      setTotalNotifications(Number(result.pagination?.total) || 0);
+    } catch (error) {
+      console.error('Failed to load notifications:', error);
+      setNotifications([]);
+      setTotalNotifications(0);
+    }
+  };
+
+  const loadTemplates = async (pageToLoad = templatePage) => {
+    try {
+      const result = await backend.listPaginated('EmailTemplate', {
+        page: pageToLoad,
+        limit: templatePageSize,
+        q: JSON.stringify(templateFilters),
+      });
+      console.log('EmailTemplate', result)
+      setEmailTemplates(Array.isArray(result.data) ? result.data : []);
+      setTotalTemplates(Number(result.pagination?.total) || 0);
+    } catch (error) {
+      console.error('Failed to load templates:', error);
+      setEmailTemplates([]);
+      setTotalTemplates(0);
+    }
+  };
+
+  const loadSettings = async (pageToLoad = settingsPage) => {
+    try {
+      const result = await backend.listPaginated('NotificationSetting', {
+        page: pageToLoad,
+        limit: settingsPageSize,
+      });
+      setNotificationSettings(Array.isArray(result.data) ? result.data : []);
+      setTotalSettings(Number(result.pagination?.total) || 0);
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      setNotificationSettings([]);
+      setTotalSettings(0);
+    }
+  };
+
+  const loadSlaRules = async (pageToLoad = slaPage) => {
+    try {
+      const result = await backend.listPaginated('SlaRule', {
+        page: pageToLoad,
+        limit: slaPageSize,
+        q: JSON.stringify(SlaFilters),
+      });
+      setSlaRules(Array.isArray(result.data) ? result.data : []);
+      setTotalSlaRules(Number(result.pagination?.total) || 0);
+    } catch (error) {
+      console.error('Failed to load SLA rules:', error);
+      setSlaRules([]);
+      setTotalSlaRules(0);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [configData, notifData, settingsData, templates, rules] = await Promise.all([
-        backend.list('SystemConfig'),
-        backend.listNotifications({unread: 'true'}),
-        backend.list('NotificationSetting'),
-        backend.list('EmailTemplate'),
-        backend.list('SlaRule')
-      ]);
-      
-      // Debug logging
-      console.log('Loaded notifications:', notifData);
-      console.log('Notifications type:', typeof notifData, Array.isArray(notifData));
-
-      console.log('Loaded Templates', templates)
-      console.log('Loaded Sla Rules', rules)
-      
+      const configData = await backend.list('SystemConfig');
       setSystemConfigs(configData || []);
-      setNotifications(notifData || []);
-      setEmailTemplates(templates || []);
-      setSlaRules(rules || []);
-      
-      setNotificationSettings(settingsData || []);
+
+      await Promise.all([
+        loadNotifications(1),
+        loadTemplates(1),
+        loadSettings(1),
+        loadSlaRules(1),
+      ]);
     } catch (error) {
       console.error('Failed to load data:', error);
     }
@@ -186,7 +253,7 @@ export default function SystemConfiguration() {
     try {
       await backend.create('NotificationSetting', currentSetting);
       setSuccessMessage('Settings saved successfully');
-      loadData();
+      loadSettings(settingsPage);
     } catch (error) {
       console.error('Failed to save settings:', error);
     }
@@ -221,7 +288,8 @@ export default function SystemConfiguration() {
       setSuccessMessage('Configuration saved successfully');
       setShowDialog(false);
       resetForm();
-      loadData();
+      const refreshedConfigs = await backend.list('SystemConfig');
+      setSystemConfigs(refreshedConfigs || []);
     } catch (error) {
       console.error('Save error:', error);
     }
@@ -232,7 +300,7 @@ export default function SystemConfiguration() {
       try {
         setProcessing(true);
         await backend.create('EmailTemplate', template);
-        await loadData();
+        await loadTemplates(templatePage);
         setShowTemplateDialog(false);
         setSelectedTemplate(null);
         setSuccessMessage('Email template created successfully');
@@ -253,7 +321,7 @@ export default function SystemConfiguration() {
       try {
         setProcessing(true);
         await backend.update('EmailTemplate', template.id, template);
-        await loadData();
+        await loadTemplates(templatePage);
         setShowTemplateDialog(false);
         setSelectedTemplate(null);
         setSuccessMessage('Email template updated successfully');
@@ -292,7 +360,7 @@ export default function SystemConfiguration() {
       try {
         await backend.delete('EmailTemplate', row.id);
         setSuccessMessage('Template deleted');
-        loadData();
+        loadTemplates(templatePage);
       } catch (error) {
         console.error('Delete error:', error);
         setSuccessMessage('Template already deleted or not found');
@@ -302,7 +370,7 @@ export default function SystemConfiguration() {
   const handleMarkAsRead = async (notifId) => {
     try {
       await backend.updateNotification(notifId, { is_read: true });
-      loadData();
+      loadNotifications(notifPage);
     } catch (error) {
       console.error('Mark as read error:', error);
     }
@@ -318,7 +386,7 @@ export default function SystemConfiguration() {
       }
       setSuccessMessage(`Deleted ${selectedSettings.length} settings`);
       setSelectedSettings([]);
-      loadData();
+      loadSettings(settingsPage);
     } catch (error) {
       console.error('Delete error:', error);
     }
@@ -646,7 +714,7 @@ export default function SystemConfiguration() {
         <TabsList className="grid w-fit grid-cols-4">
           <TabsTrigger value="notifications">
             <Bell className="w-4 h-4 mr-2" />
-            Notifications ({notifications.filter(notif => !notif.is_read).length})
+            Notifications ({notifTotal})
           </TabsTrigger>
           <TabsTrigger value="email-templates">
             <Mail className="w-4 h-4 mr-2" />
@@ -950,6 +1018,8 @@ export default function SystemConfiguration() {
                 data={notificationSettings}
                 isLoading={loading}
                 emptyMessage="No notification settings found"
+                pagination={{ from: settingsFrom, to: settingsTo, total: settingsTotal, page: settingsPage, totalPages: settingsTotalPages }}
+                onPageChange={(p) => setSettingsPage(p)}
               />
             </CardContent>
           </Card>
@@ -1275,7 +1345,7 @@ export default function SystemConfiguration() {
                       trigger_count: 0
                     });
                   }
-                  await loadData();
+                  await loadSlaRules(slaPage);
                   setShowRuleDialog(false);
                   setSuccessMessage('SLA rule saved successfully');
                 } catch (error) {
@@ -1403,7 +1473,7 @@ export default function SystemConfiguration() {
                 } else {
                   await backend.create('EmailTemplate', selectedTemplate);
                 }
-                await loadData();
+                await loadTemplates(templatePage);
                 setShowTemplateDialog(false);
                 setSuccessMessage('Email template saved successfully');
               } catch (error) {

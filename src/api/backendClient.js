@@ -261,8 +261,9 @@ export const backend = {
   },
 
   /**
-   * List notifications from backend. Supports optional filters.
+   * List notifications from backend with pagination. Supports optional filters.
    * GET /api/notifications
+   * Returns { data: [...], pagination: { total, ... } }
    */
   async listNotifications(query = {}) {
     const qs = new URLSearchParams(query).toString();
@@ -277,7 +278,7 @@ export const backend = {
         throw new Error(error || res.statusText);
       }
     }
-    return handleResponse(res);
+    return handlePaginatedResponse(res);
   },
 
   /**

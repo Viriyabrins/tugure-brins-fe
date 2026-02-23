@@ -33,7 +33,6 @@ import {
     FileSpreadsheet,
     Loader2,
     CheckCircle2,
-    XCircle,
     AlertCircle,
     RefreshCw,
     FileText,
@@ -68,6 +67,29 @@ const HEADER_ALIAS_MAP = {
     flag_restruktur: "flag_restruk",
     policyno: "policy_no",
 };
+
+const REQUIRED_UPLOAD_COLUMNS = ["nomor_peserta", "nama_peserta"];
+const NUMERIC_UPLOAD_COLUMNS = [
+    "plafon",
+    "nominal_premi",
+    "premi_percentage",
+    "premium_amount",
+    "ric_percentage",
+    "ric_amount",
+    "bf_percentage",
+    "bf_amount",
+    "net_premi",
+];
+const INTEGER_UPLOAD_COLUMNS = ["status_aktif", "flag_restruk", "flag_restruktur", "kolektabilitas"];
+const DATE_UPLOAD_COLUMNS = [
+    "tanggal_mulai_covering",
+    "tanggal_akhir_covering",
+    "tanggal_terima",
+    "tanggal_validasi",
+    "teller_premium_date",
+];
+
+const FLAG_COLUMNS = ["status_aktif", "flag_restruk", "flag_restruktur"];
 
 const normalizeHeader = (header = "") => {
     const normalized = String(header)
@@ -172,6 +194,160 @@ const toIsoDate = (value) => {
     return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate.toISOString();
 };
 
+const normalizePolicyNumber = (value) => {
+    if (value === undefined || value === null || value === "") {
+        return { value: null, error: null };
+    }
+
+    if (typeof value === "number") {
+        if (!Number.isFinite(value)) {
+            return {
+                value: null,
+                error: "must be a valid text/number value",
+            };
+        }
+
+        if (!Number.isSafeInteger(value)) {
+            return {
+                value: null,
+                error: "is too large as numeric Excel value and may lose precision. Format this column as Text",
+            };
+        }
+
+        return { value: String(Math.trunc(value)), error: null };
+    }
+
+    let text = String(value).trim();
+    if (!text) {
+        return { value: null, error: null };
+    }
+
+    if (text.startsWith("'")) {
+        text = text.slice(1).trim();
+    }
+
+    text = text.replace(/\s/g, "");
+
+    const digitWithOptionalDecimalZero = text.match(/^(\d+)(?:[.,]0+)?$/);
+    if (digitWithOptionalDecimalZero) {
+        return { value: digitWithOptionalDecimalZero[1], error: null };
+    }
+
+    if (/^\d+[.,]\d+$/.test(text)) {
+        return {
+            value: null,
+            error: "must not contain decimal values other than .00 or ,00",
+        };
+    }
+
+    return {
+        value: null,
+        error: "must contain digits only",
+    };
+};
+
+const validateUploadRows = (rows = [], headers = []) => {
+    const validationErrors = [];
+    const normalizedRows = [];
+    const normalizedHeaders = (headers || []).map((header) => normalizeHeader(header));
+    const headerSet = new Set(normalizedHeaders);
+
+    const missingColumns = REQUIRED_UPLOAD_COLUMNS.filter((column) => !headerSet.has(column));
+    if (missingColumns.length > 0) {
+        validationErrors.push(
+            `Invalid file format: missing required column \"${missingColumns[0]}\".`,
+        );
+        return { normalizedRows: [], validationErrors };
+    }
+
+    for (let index = 0; index < rows.length; index++) {
+        const row = rows[index] || {};
+        const rowNumber = index + 2;
+        const normalizedRow = { ...row };
+
+        if (Array.isArray(row.__parsed_extra) && row.__parsed_extra.length > 0) {
+            validationErrors.push(
+                `Row ${rowNumber}: too many columns detected. Please check for unescaped commas in the CSV row.`,
+            );
+        }
+
+        REQUIRED_UPLOAD_COLUMNS.forEach((column) => {
+            const value = toNullableString(row[column]);
+            if (!value) {
+                validationErrors.push(
+                    `Row ${rowNumber}: missing required value in column \"${column}\".`,
+                );
+            }
+        });
+
+        NUMERIC_UPLOAD_COLUMNS.forEach((column) => {
+            const rawValue = row[column];
+            if (rawValue === undefined || rawValue === null || rawValue === "") {
+                return;
+            }
+
+            if (toNumber(rawValue) === null) {
+                validationErrors.push(
+                    `Row ${rowNumber}: invalid numeric format in column \"${column}\".`,
+                );
+            }
+        });
+
+        INTEGER_UPLOAD_COLUMNS.forEach((column) => {
+            const rawValue = row[column];
+            if (rawValue === undefined || rawValue === null || rawValue === "") {
+                return;
+            }
+
+            const parsedInteger = toInteger(rawValue);
+            if (parsedInteger === null) {
+                validationErrors.push(
+                    `Row ${rowNumber}: invalid integer format in column \"${column}\".`,
+                );
+                return;
+            }
+
+            if (FLAG_COLUMNS.includes(column) && ![0, 1].includes(parsedInteger)) {
+                validationErrors.push(
+                    `Row ${rowNumber}: invalid value in column \"${column}\". Allowed values are 0 or 1.`,
+                );
+                return;
+            }
+
+            if (column === "kolektabilitas" && (parsedInteger < 0 || parsedInteger > 5)) {
+                validationErrors.push(
+                    `Row ${rowNumber}: invalid value in column \"kolektabilitas\". Allowed range is 0 to 5.`,
+                );
+            }
+        });
+
+        DATE_UPLOAD_COLUMNS.forEach((column) => {
+            const rawValue = row[column];
+            if (rawValue === undefined || rawValue === null || rawValue === "") {
+                return;
+            }
+
+            if (toIsoDate(rawValue) === null) {
+                validationErrors.push(
+                    `Row ${rowNumber}: invalid date format in column \"${column}\".`,
+                );
+            }
+        });
+
+        const policyNoResult = normalizePolicyNumber(row.policy_no);
+        if (policyNoResult.error) {
+            validationErrors.push(
+                `Row ${rowNumber}: invalid format in column \"policy_no\" (${policyNoResult.error}).`,
+            );
+        }
+        normalizedRow.policy_no = policyNoResult.value;
+
+        normalizedRows.push(normalizedRow);
+    }
+
+    return { normalizedRows, validationErrors };
+};
+
 const parseUploadRows = async (file) => {
     const fileName = (file?.name || "").toLowerCase();
 
@@ -185,11 +361,16 @@ const parseUploadRows = async (file) => {
                 typeof value === "string" ? value.trim() : value,
         });
 
-        if (parseResult.errors.length > 0) {
-            console.warn("CSV parsing warnings:", parseResult.errors);
-        }
+        const rows = (parseResult.data || []).map((row) => normalizeRow(row));
+        const headers = Array.isArray(parseResult.meta?.fields)
+            ? parseResult.meta.fields
+            : Object.keys(rows[0] || {});
 
-        return (parseResult.data || []).map((row) => normalizeRow(row));
+        return {
+            rows,
+            headers,
+            parseErrors: parseResult.errors || [],
+        };
     }
 
     if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
@@ -199,7 +380,13 @@ const parseUploadRows = async (file) => {
             cellDates: true,
         });
         const firstSheetName = workbook.SheetNames?.[0];
-        if (!firstSheetName) return [];
+        if (!firstSheetName) {
+            return {
+                rows: [],
+                headers: [],
+                parseErrors: [],
+            };
+        }
 
         const sheet = workbook.Sheets[firstSheetName];
         const rows = XLSX.utils.sheet_to_json(sheet, {
@@ -208,7 +395,14 @@ const parseUploadRows = async (file) => {
             blankrows: false,
         });
 
-        return rows.map((row) => normalizeRow(row));
+        const normalizedRows = rows.map((row) => normalizeRow(row));
+        const headers = Object.keys(normalizedRows[0] || {});
+
+        return {
+            rows: normalizedRows,
+            headers,
+            parseErrors: [],
+        };
     }
 
     throw new Error("Unsupported file format. Please upload .csv, .xlsx, or .xls");
@@ -244,6 +438,41 @@ export default function SubmitDebtor() {
     const [filters, setFilters] = useState(defaultFilter);
     const [page, setPage] = useState(1);
     const isFirstPageEffect = useRef(true);
+
+    const formatUploadError = (message) => {
+        if (!message) {
+            return {
+                title: "",
+                items: [],
+                summary: "",
+            };
+        }
+
+        const lines = String(message)
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        const summary = lines[0] || "Upload failed.";
+        const rowItems = lines.filter((line) => /^Row\s+\d+:/i.test(line));
+
+        if (rowItems.length > 0) {
+            return {
+                title: "Please review the following issues:",
+                items: rowItems.slice(0, 6),
+                summary,
+            };
+        }
+
+        const fallbackItems = lines.slice(1, 7);
+        return {
+            title: "Please review the following issues:",
+            items: fallbackItems,
+            summary,
+        };
+    };
+
+    const uploadErrorView = formatUploadError(errorMessage);
 
     const pageSize = 10;
     const total = totalDebtors;
@@ -427,16 +656,19 @@ export default function SubmitDebtor() {
     const handleBulkUpload = async () => {
         if (!selectedContract) {
             setErrorMessage("Please select a contract");
+            toast.error("Please select a contract");
             return;
         }
 
         if (batchMode === "revise" && !selectedBatch) {
             setErrorMessage("Please select a batch to revise");
+            toast.error("Please select a batch to revise");
             return;
         }
 
         if (!uploadFile) {
             setErrorMessage("Please select a file to upload");
+            toast.error("Please select a file to upload");
             return;
         }
 
@@ -451,10 +683,11 @@ export default function SubmitDebtor() {
             );
 
             if (revisionDebtorsInBatch.length === 0) {
-                setErrorMessage(
+                const revisionMessage =
                     `No debtors with status REVISION found in batch ${selectedBatch} for contract ${selectedContract}. ` +
-                        `Please ensure the contract and batch match the debtor(s) that were marked for revision.`,
-                );
+                    `Please ensure the contract and batch match the debtor(s) that were marked for revision.`;
+                setErrorMessage(revisionMessage);
+                toast.error(revisionMessage);
                 return;
             }
         }
@@ -464,13 +697,46 @@ export default function SubmitDebtor() {
         setSuccessMessage("");
 
         let uploaded = 0;
-        let errors = [];
+        const createdDebtorIds = [];
+        let batchId = null;
+        let borderoId = null;
 
         try {
             const rows = await parseUploadRows(uploadFile);
 
-            if (!rows || rows.length === 0) {
+            if (rows.parseErrors?.length > 0) {
+                const firstParseError = rows.parseErrors[0];
+                const parseMessage = `Invalid CSV format${firstParseError?.row ? ` on row ${firstParseError.row}` : ""}: ${firstParseError?.message || "Unable to parse the uploaded file."}`;
+                setErrorMessage(parseMessage);
+                toast.error(parseMessage);
+                setUploading(false);
+                return;
+            }
+
+            let normalizedRows = Array.isArray(rows.rows) ? rows.rows : [];
+
+            const uploadValidation = validateUploadRows(
+                normalizedRows,
+                rows.headers,
+            );
+            normalizedRows = uploadValidation.normalizedRows;
+
+            if (uploadValidation.validationErrors.length > 0) {
+                const shortMessage = uploadValidation.validationErrors[0];
+                const detailedMessage =
+                    `Upload validation failed: ${uploadValidation.validationErrors.length} issue(s) found.\n` +
+                    `${uploadValidation.validationErrors.slice(0, 5).join("\n")}` +
+                    `${uploadValidation.validationErrors.length > 5 ? `\n...and ${uploadValidation.validationErrors.length - 5} more issue(s)` : ""}`;
+
+                setErrorMessage(detailedMessage);
+                toast.error(shortMessage);
+                setUploading(false);
+                return;
+            }
+
+            if (!normalizedRows || normalizedRows.length === 0) {
                 setErrorMessage("File is empty or invalid format");
+                toast.error("File is empty or invalid format");
                 setUploading(false);
                 return;
             }
@@ -488,8 +754,8 @@ export default function SubmitDebtor() {
                 );
 
                 const invalidRows = [];
-                for (let i = 0; i < rows.length; i++) {
-                    const nomorPeserta = toNullableString(rows[i].nomor_peserta);
+                for (let i = 0; i < normalizedRows.length; i++) {
+                    const nomorPeserta = toNullableString(normalizedRows[i].nomor_peserta);
                     if (!revisionNomorPesertaSet.has(nomorPeserta)) {
                         invalidRows.push({
                             row: i + 2,
@@ -509,13 +775,15 @@ export default function SubmitDebtor() {
                     setErrorMessage(
                         `Validation failed — file contains debtors that are not marked as REVISION in batch ${selectedBatch}:\n${details}${invalidRows.length > 5 ? `\n...and ${invalidRows.length - 5} more` : ""}`,
                     );
+                    toast.error(
+                        `Validation failed: non-REVISION debtor found for batch ${selectedBatch}`,
+                    );
                     setUploading(false);
                     return;
                 }
             }
 
             // Generate batch ID
-            let batchId;
             if (batchMode === "revise") {
                 batchId = selectedBatch;
             } else {
@@ -527,17 +795,16 @@ export default function SubmitDebtor() {
             }
 
             // Calculate batch totals
-            const totalExposure = rows.reduce(
-                (sum, row) => sum + (toNumber(row.plafon) || 0),
+            const totalExposure = normalizedRows.reduce(
+                (sum, row) => Number(sum) + (toNumber(row.plafon) || 0),
                 0,
             );
-            const totalPremium = rows.reduce(
-                (sum, row) => sum + (toNumber(row.nominal_premi) || 0),
+            const totalPremium = normalizedRows.reduce(
+                (sum, row) => Number(sum) + (toNumber(row.nominal_premi) || 0),
                 0,
             );
 
             // Create or update batch
-            let borderoId = null;
             let period = null;
 
             if (batchMode === "new") {
@@ -546,7 +813,7 @@ export default function SubmitDebtor() {
                     batch_month: new Date().getMonth() + 1,
                     batch_year: new Date().getFullYear(),
                     contract_id: selectedContract,
-                    total_records: rows.length,
+                    total_records: normalizedRows.length,
                     total_exposure: totalExposure,
                     total_premium: totalPremium,
                     status: "Uploaded",
@@ -580,9 +847,9 @@ export default function SubmitDebtor() {
                     : null;
 
                 if (!match?.bordero_id) {
-                    setErrorMessage(
-                        `Bordero not found for batch ${batchId} and contract ${selectedContract}. Please generate Bordero first.`,
-                    );
+                    const borderoMessage = `Bordero not found for batch ${batchId} and contract ${selectedContract}. Please generate Bordero first.`;
+                    setErrorMessage(borderoMessage);
+                    toast.error(borderoMessage);
                     setUploading(false);
                     return;
                 }
@@ -592,18 +859,17 @@ export default function SubmitDebtor() {
             }
 
             // Create debtors
-            for (let i = 0; i < rows.length; i++) {
+            for (let i = 0; i < normalizedRows.length; i++) {
                 try {
-                    const row = rows[i];
+                    const row = normalizedRows[i];
 
                     const nomorPeserta = toNullableString(row.nomor_peserta);
                     const namaPeserta = toNullableString(row.nama_peserta);
 
                     if (!nomorPeserta || !namaPeserta) {
-                        errors.push(
+                        throw new Error(
                             `Row ${i + 2}: nomor_peserta and nama_peserta are required`,
                         );
-                        continue;
                     }
 
                     const payload = {
@@ -666,10 +932,17 @@ export default function SubmitDebtor() {
                         is_locked: false,
                     };
 
-                    await backend.create("Debtor", payload);
+                    const createdDebtor = await backend.create("Debtor", payload);
+                    if (createdDebtor?.id) {
+                        createdDebtorIds.push(createdDebtor.id);
+                    }
                     uploaded++;
                 } catch (rowError) {
-                    errors.push(`Row ${i + 2}: ${rowError.message}`);
+                    const rowMessage = rowError?.message || "Unknown upload error";
+                    if (/^Row\s+\d+:/i.test(rowMessage)) {
+                        throw new Error(rowMessage);
+                    }
+                    throw new Error(`Row ${i + 2}: ${rowMessage}`);
                 }
             }
 
@@ -695,10 +968,10 @@ export default function SubmitDebtor() {
                     entity_type: "Debtor",
                     entity_id: batchId,
                     old_value: "",
-                    new_value: JSON.stringify({ count: rows.length }),
+                    new_value: JSON.stringify({ count: normalizedRows.length }),
                     user_email: user?.email,
                     user_role: user?.role,
-                    reason: `Uploaded ${rows.length} debtors to batch ${batchId}`,
+                    reason: `Uploaded ${normalizedRows.length} debtors to batch ${batchId}`,
                 });
             } catch (auditError) {
                 console.warn("Failed to create audit log:", auditError);
@@ -715,7 +988,7 @@ export default function SubmitDebtor() {
 
                 // Get the nomor_peserta of newly uploaded debtors
                 const uploadedNomorPeserta = new Set(
-                    rows
+                    normalizedRows
                         .map((r) => toNullableString(r.nomor_peserta))
                         .filter(Boolean),
                 );
@@ -821,18 +1094,16 @@ export default function SubmitDebtor() {
                 console.warn("Failed to create notification:", notifError);
             }
 
-            if (errors.length > 0) {
-                setErrorMessage(
-                    `Uploaded ${uploaded} debtors. ${errors.length} errors:\n${errors.slice(0, 5).join("\n")}${errors.length > 5 ? "\n..." : ""}`,
-                );
-            } else if (batchMode === "revise") {
+            if (batchMode === "revise") {
                 setSuccessMessage(
                     `Successfully uploaded ${uploaded} revised debtor(s) to batch ${batchId}. Old REVISION data has been moved to ReviseLog.`,
                 );
+                toast.success(`Successfully uploaded ${uploaded} revised debtor(s).`);
             } else {
                 setSuccessMessage(
                     `Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
                 );
+                toast.success(`Successfully uploaded ${uploaded} debtors.`);
             }
 
             setUploadDialogOpen(false);
@@ -846,7 +1117,76 @@ export default function SubmitDebtor() {
             await loadDebtors();
         } catch (error) {
             console.error("Upload error:", error);
-            setErrorMessage(`Upload failed: ${error.message}`);
+
+            if (createdDebtorIds.length > 0) {
+                for (const debtorId of createdDebtorIds.reverse()) {
+                    try {
+                        const appId =
+                            import.meta.env.VITE_BASE44_APP_ID ||
+                            "brin-app-dev";
+                        const rollbackRes = await fetch(
+                            `/api/apps/${encodeURIComponent(appId)}/entities/Debtor/${encodeURIComponent(debtorId)}`,
+                            {
+                                method: "DELETE",
+                                credentials: "same-origin",
+                            },
+                        );
+
+                        if (!rollbackRes.ok) {
+                            console.error(
+                                `Rollback failed for Debtor ${debtorId}: HTTP ${rollbackRes.status}`,
+                            );
+                        }
+                    } catch (rollbackError) {
+                        console.error(
+                            `Rollback failed for Debtor ${debtorId}:`,
+                            rollbackError,
+                        );
+                    }
+                }
+            }
+
+            if (batchMode === "new") {
+                const appId = import.meta.env.VITE_BASE44_APP_ID || "brin-app-dev";
+
+                if (borderoId) {
+                    try {
+                        await fetch(
+                            `/api/apps/${encodeURIComponent(appId)}/entities/Bordero/${encodeURIComponent(borderoId)}`,
+                            {
+                                method: "DELETE",
+                                credentials: "same-origin",
+                            },
+                        );
+                    } catch (rollbackError) {
+                        console.error(
+                            `Rollback failed for Bordero ${borderoId}:`,
+                            rollbackError,
+                        );
+                    }
+                }
+
+                if (batchId) {
+                    try {
+                        await fetch(
+                            `/api/apps/${encodeURIComponent(appId)}/entities/Batch/${encodeURIComponent(batchId)}`,
+                            {
+                                method: "DELETE",
+                                credentials: "same-origin",
+                            },
+                        );
+                    } catch (rollbackError) {
+                        console.error(
+                            `Rollback failed for Batch ${batchId}:`,
+                            rollbackError,
+                        );
+                    }
+                }
+            }
+
+            const uploadFailedMessage = `Upload failed: ${error.message}`;
+            setErrorMessage(uploadFailedMessage);
+            toast.error(uploadFailedMessage);
         }
         setUploading(false);
     };
@@ -1076,15 +1416,6 @@ export default function SubmitDebtor() {
                 </Alert>
             )}
 
-            {errorMessage && (
-                <Alert className="border-red-200 bg-red-50">
-                    <XCircle className="h-4 w-4 text-red-600" />
-                    <AlertDescription className="text-red-800">
-                        {errorMessage}
-                    </AlertDescription>
-                </Alert>
-            )}
-
             {/* Gradient Card */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 justify-center items-center">
                 <GradientStatCard
@@ -1202,7 +1533,15 @@ export default function SubmitDebtor() {
             </div>
 
             {/* Upload Dialog */}
-            <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <Dialog
+                open={uploadDialogOpen}
+                onOpenChange={(open) => {
+                    setUploadDialogOpen(open);
+                    if (!open) {
+                        setErrorMessage("");
+                    }
+                }}
+            >
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>Upload Debtors</DialogTitle>
@@ -1210,6 +1549,25 @@ export default function SubmitDebtor() {
                             Upload a CSV/XLS/XLSX file containing debtor information
                         </DialogDescription>
                     </DialogHeader>
+
+                    {errorMessage && (
+                        <Alert className="border-red-200 bg-red-50">
+                            <AlertCircle className="h-4 w-4 text-red-600" />
+                            <AlertDescription className="text-red-800 space-y-2">
+                                <p className="font-medium">{uploadErrorView.summary}</p>
+                                {uploadErrorView.title && (
+                                    <p className="text-sm">{uploadErrorView.title}</p>
+                                )}
+                                {uploadErrorView.items.length > 0 && (
+                                    <ul className="list-disc pl-5 space-y-1 text-sm">
+                                        {uploadErrorView.items.map((item) => (
+                                            <li key={item}>{item}</li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </AlertDescription>
+                        </Alert>
+                    )}
 
                     <div className="space-y-4">
                         <div>

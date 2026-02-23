@@ -51,11 +51,6 @@ import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 import SuccessAlert from "@/components/common/SuccessAlert";
 
-const toNumber = (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
 const defaultFilter = {
     contract: "all",
     batch: "",
@@ -70,7 +65,6 @@ export default function DebtorReview() {
     const [debtors, setDebtors] = useState([]);
     const [totalDebtors, setTotalDebtors] = useState(0);
     const [contracts, setContracts] = useState([]);
-    const [batches, setBatches] = useState([]);
     const [pendingCountLocal, setPendingCountLocal] = useState(0);
     const [approvedCountLocal, setApprovedCountLocal] = useState(0);
     const [revisionCountLocal, setRevisionCountLocal] = useState(0);
@@ -113,13 +107,9 @@ export default function DebtorReview() {
 
         try {
             // Load small reference data (contracts, batches)
-            const [contractData, batchData] = await Promise.all([
-                backend.list("MasterContract"),
-                backend.list("Batch"),
-            ]);
+            const contractData = await backend.list("MasterContract");
 
             setContracts(Array.isArray(contractData) ? contractData : []);
-            setBatches(Array.isArray(batchData) ? batchData : []);
 
             // Load first page of debtors with current filters
             await loadDebtors(1);
@@ -129,7 +119,6 @@ export default function DebtorReview() {
             console.error("Failed to load data:", error);
             setDebtors([]);
             setContracts([]);
-            setBatches([]);
         } finally {
             setLoading(false);
         }
@@ -219,9 +208,6 @@ export default function DebtorReview() {
                 return;
             }
 
-            // FINANCIAL GATE: Track batch updates
-            const batchUpdates = {};
-
             for (const debtor of debtorsToProcess) {
                 if (!debtor || !debtor.id) continue;
 
@@ -250,246 +236,34 @@ export default function DebtorReview() {
                         });
                     }
 
-                    // Track batch for final amount calculation
-                    if (debtor.batch_id) {
-                        if (!batchUpdates[debtor.batch_id]) {
-                            batchUpdates[debtor.batch_id] = {
-                                batchIdString: debtor.batch_id,
-                                approvedExposure: 0,
-                                approvedPremium: 0,
-                                approvedCount: 0,
-                                totalCount: 0,
-                                allDebtors: debtors.filter(
-                                    (d) => d.batch_id === debtor.batch_id,
-                                ),
-                            };
-                        }
-                        batchUpdates[debtor.batch_id].totalCount++;
-
-                        if (action === "approve") {
-                            batchUpdates[debtor.batch_id].approvedExposure +=
-                                parseFloat(debtor.plafon) || 0;
-                            batchUpdates[debtor.batch_id].approvedPremium +=
-                                parseFloat(debtor.net_premi) || 0;
-                            batchUpdates[debtor.batch_id].approvedCount++;
-                        }
-
-                        // Create audit log using backend client
-                        try {
-                            await backend.create("AuditLog", {
-                                action: `DEBTOR_${newStatus}`,
-                                module: "DEBTOR",
-                                entity_type: "Debtor",
-                                entity_id: debtor.id,
-                                old_value: JSON.stringify({
-                                    status: debtor.status,
-                                }),
-                                new_value: JSON.stringify({
-                                    status: newStatus,
-                                    remarks: approvalRemarks,
-                                }),
-                                user_email: user?.email,
-                                user_role: user?.role,
-                                reason: approvalRemarks,
-                            });
-                        } catch (auditError) {
-                            console.warn(
-                                "Failed to create audit log:",
-                                auditError,
-                            );
-                        }
+                    // Create audit log using backend client
+                    try {
+                        await backend.create("AuditLog", {
+                            action: `DEBTOR_${newStatus}`,
+                            module: "DEBTOR",
+                            entity_type: "Debtor",
+                            entity_id: debtor.id,
+                            old_value: JSON.stringify({
+                                status: debtor.status,
+                            }),
+                            new_value: JSON.stringify({
+                                status: newStatus,
+                                remarks: approvalRemarks,
+                            }),
+                            user_email: user?.email,
+                            user_role: user?.role,
+                            reason: approvalRemarks,
+                        });
+                    } catch (auditError) {
+                        console.warn(
+                            "Failed to create audit log:",
+                            auditError,
+                        );
                     }
                 } catch (error) {
                     console.error(
                         `Error processing debtor ${debtor.id}:`,
                         error,
-                    );
-                }
-            }
-
-            // CRITICAL: Update batch with FINAL amounts after Debtor Review
-            for (const [batchId, batchData] of Object.entries(batchUpdates)) {
-                try {
-                    // Find batch using backend client
-                    const batchRecord = batches.find(
-                        (b) => b.batch_id === batchId,
-                    );
-
-                    if (batchRecord) {
-                        // Re-count ALL debtors with updated status
-                        const updatedDebtors = batchData.allDebtors.map((d) => {
-                            const processed = debtorsToProcess.find(
-                                (dp) => dp.id === d.id,
-                            );
-                            if (processed) {
-                                return { ...d, status: newStatus };
-                            }
-                            return d;
-                        });
-
-                        const approvedDebtors = updatedDebtors.filter(
-                            (d) =>
-                                (d.status || "").toString().toUpperCase() ===
-                                "APPROVED",
-                        );
-
-                        const allApproved =
-                            updatedDebtors.length > 0 &&
-                            approvedDebtors.length === updatedDebtors.length;
-
-                        const revisionDebtors = updatedDebtors.filter(
-                            (d) =>
-                                (d.status || "").toString().toUpperCase() ===
-                                "REVISION",
-                        );
-                        const hasRevisions = revisionDebtors.length > 0;
-                        // All debtors are reviewed (either APPROVED or REVISION, no SUBMITTED left)
-                        const allReviewed = updatedDebtors.every((d) => {
-                            const s = (d.status || "").toString().toUpperCase();
-                            return (
-                                s === "APPROVED" ||
-                                s === "REVISION" ||
-                                s === "CONDITIONAL"
-                            );
-                        });
-
-                        const totalApprovedExposure = approvedDebtors.reduce(
-                            (sum, d) => sum + toNumber(d.plafon),
-                            0,
-                        );
-                        const totalApprovedPremium = approvedDebtors.reduce(
-                            (sum, d) => sum + toNumber(d.net_premi),
-                            0,
-                        );
-
-                        await backend.update("Batch", batchRecord.batch_id, {
-                            final_exposure_amount: totalApprovedExposure,
-                            final_premium_amount: totalApprovedPremium,
-                            debtor_review_completed: allApproved,
-                            batch_ready_for_nota: allApproved,
-                        });
-
-                        if (allApproved) {
-                            // Auto-transition batch to Approved status
-                            await backend.update(
-                                "Batch",
-                                batchRecord.batch_id,
-                                {
-                                    status: "Approved",
-                                    approved_by: user?.email,
-                                    approved_date: new Date()
-                                        .toISOString()
-                                        .split("T")[0],
-                                },
-                            );
-
-                            // Create notification using backend client
-                            try {
-                                await backend.create("Notification", {
-                                    title: "✅ Debtor Review COMPLETED - Ready for Nota",
-                                    message: `Batch ${batchId}: ALL ${updatedDebtors.length} debtors reviewed. ${approvedDebtors.length} approved. Final premium: Rp ${totalApprovedPremium.toLocaleString()}. ✓ debtor_review_completed = TRUE. ✓ batch_ready_for_nota = TRUE.`,
-                                    type: "ACTION_REQUIRED",
-                                    module: "DEBTOR",
-                                    reference_id: batchRecord.batch_id,
-                                    target_role: "TUGURE",
-                                });
-                            } catch (notifError) {
-                                console.warn(
-                                    "Failed to create notification:",
-                                    notifError,
-                                );
-                            }
-
-                            // Create audit log
-                            try {
-                                await backend.create("AuditLog", {
-                                    action: "DEBTOR_REVIEW_COMPLETED",
-                                    module: "DEBTOR",
-                                    entity_type: "Batch",
-                                    entity_id: batchRecord.batch_id,
-                                    old_value: JSON.stringify({
-                                        debtor_review_completed: false,
-                                    }),
-                                    new_value: JSON.stringify({
-                                        debtor_review_completed: true,
-                                        batch_ready_for_nota: true,
-                                        final_premium_amount:
-                                            totalApprovedPremium,
-                                        status: "Approved",
-                                    }),
-                                    user_email: user?.email,
-                                    user_role: user?.role,
-                                    reason: `All ${updatedDebtors.length} debtors reviewed - ${approvedDebtors.length} approved`,
-                                });
-                            } catch (auditError) {
-                                console.warn(
-                                    "Failed to create audit log:",
-                                    auditError,
-                                );
-                            }
-                        } else if (approvedDebtors.length === 0) {
-                            await backend.update(
-                                "Batch",
-                                batchRecord.batch_id,
-                                {
-                                    status: "Revision",
-                                    revision_reason:
-                                        "All debtors marked for revision in review",
-                                    debtor_review_completed: false,
-                                    batch_ready_for_nota: false,
-                                },
-                            );
-
-                            // Create notification
-                            try {
-                                await backend.create("Notification", {
-                                    title: "Batch Requires Revision - All Debtors Marked",
-                                    message: `Batch ${batchId}: All debtors marked for revision. BRINS must revise and resubmit.`,
-                                    type: "WARNING",
-                                    module: "DEBTOR",
-                                    reference_id: batchRecord.batch_id,
-                                    target_role: "BRINS",
-                                });
-                            } catch (notifError) {
-                                console.warn(
-                                    "Failed to create notification:",
-                                    notifError,
-                                );
-                            }
-                        } else if (hasRevisions && allReviewed) {
-                            // Mixed: some approved, some revision — batch not complete
-                            await backend.update(
-                                "Batch",
-                                batchRecord.batch_id,
-                                {
-                                    status: "Partial Revision",
-                                    revision_reason: `${revisionDebtors.length} debtor(s) marked for revision`,
-                                    debtor_review_completed: false,
-                                    batch_ready_for_nota: false,
-                                },
-                            );
-
-                            try {
-                                await backend.create("Notification", {
-                                    title: "Batch Partial Revision",
-                                    message: `Batch ${batchId}: ${approvedDebtors.length} approved, ${revisionDebtors.length} need revision. BRINS must revise and resubmit revision debtors.`,
-                                    type: "WARNING",
-                                    module: "DEBTOR",
-                                    reference_id: batchRecord.batch_id,
-                                    target_role: "BRINS",
-                                });
-                            } catch (notifError) {
-                                console.warn(
-                                    "Failed to create notification:",
-                                    notifError,
-                                );
-                            }
-                        }
-                    }
-                } catch (batchError) {
-                    console.error(
-                        `Error updating batch ${batchId}:`,
-                        batchError,
                     );
                 }
             }
@@ -522,8 +296,8 @@ export default function DebtorReview() {
                       : "marked for revision";
             setSuccessMessage(
                 isBulk
-                    ? `${actionDisplay}. Batch final amounts updated.`
-                    : `Debtor ${actionDisplay}. Batch final amounts updated.`,
+                    ? `${actionDisplay}. Batch reconciliation handled by backend.`
+                    : `Debtor ${actionDisplay}. Batch reconciliation handled by backend.`,
             );
             setShowApprovalDialog(false);
             setSelectedDebtor(null);
@@ -539,36 +313,6 @@ export default function DebtorReview() {
         }
         setProcessing(false);
     };
-
-    const filteredDebtors = Array.isArray(debtors)
-        ? debtors.filter((d) => {
-              if (
-                  filters.contract !== "all" &&
-                  d.contract_id !== filters.contract
-              )
-                  return false;
-              if (filters.batch && !(d.batch_id || "").includes(filters.batch))
-                  return false;
-              if (
-                  filters.submitStatus !== "all" &&
-                  d.underwriting_status !== filters.submitStatus
-              )
-                  return false;
-              if (filters.status !== "all" && d.batch_status !== filters.status)
-                  return false;
-              if (
-                  filters.startDate &&
-                  new Date(d.created_date) < new Date(filters.startDate)
-              )
-                  return false;
-              if (
-                  filters.endDate &&
-                  new Date(d.created_date) > new Date(filters.endDate)
-              )
-                  return false;
-              return true;
-          })
-        : [];
 
     // Pagination for Debtor Review (pageSize 10) - server-driven
     const [page, setPage] = useState(1);

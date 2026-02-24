@@ -12,43 +12,16 @@ import {
 import PageHeader from "@/components/common/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { format } from 'date-fns';
-import { base44 } from '@/api/base44Client';
-import { createPageUrl } from "@/utils";
+import { useKeycloakAuth } from '@/lib/KeycloakContext';
 
 export default function Profile() {
-  const [user, setUser] = useState(null);
+  const { user, logout, tokenParsed } = useKeycloakAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [changing, setChanging] = useState(false);
-
-  useEffect(() => {
-    loadUser();
-  }, []);
-
-  const loadUser = async () => {
-    try {
-      // Load demo user from localStorage
-      const demoUserStr = localStorage.getItem('demo_user');
-      if (demoUserStr) {
-        const demoUser = JSON.parse(demoUserStr);
-        setUser(demoUser);
-      } else {
-        // Fallback to base44 user if no demo user
-        const currentUser = await base44.auth.me();
-        setUser(currentUser);
-      }
-    } catch (error) {
-      console.error('Failed to load user:', error);
-    }
-  };
-
-  const logout = async () => {
-    localStorage.removeItem('demo_user');
-    window.location.href = createPageUrl('Home');
-  };
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
@@ -148,7 +121,7 @@ export default function Profile() {
                   <div className="flex items-center gap-3 mt-2">
                     <Shield className="w-4 h-4 text-gray-400" />
                     <Badge variant="outline" className={currentRoleInfo.color}>
-                      {currentRoleInfo.label}
+                      {user?.role || '-'}
                     </Badge>
                   </div>
                 </div>
@@ -159,7 +132,7 @@ export default function Profile() {
                     <span className="font-medium">{currentRoleInfo.access}</span>
                   </div>
                 </div>
-                <div>
+                {/* <div>
                   <Label className="text-gray-500">Last Login</Label>
                   <div className="flex items-center gap-3 mt-2">
                     <Calendar className="w-4 h-4 text-gray-400" />
@@ -167,7 +140,7 @@ export default function Profile() {
                       {user?.last_login ? format(new Date(user.last_login), 'MMM d, yyyy HH:mm') : 'N/A'}
                     </span>
                   </div>
-                </div>
+                </div> */}
               </div>
             </CardContent>
           </Card>
@@ -246,21 +219,31 @@ export default function Profile() {
                 </div>
               </div>
 
-              <div>
+              {/* <div>
                 <Label className="text-gray-500 text-xs">Last Login IP</Label>
                 <p className="text-sm font-medium mt-1">192.168.1.100</p>
+              </div> */}
+
+              <div className="mt-3">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => console.log('Keycloak tokenParsed:', tokenParsed)}
+                >
+                  Show Keycloak tokenParsed (dev)
+                </Button>
               </div>
 
-              <Separator />
+              {/* <Separator /> */}
 
-              <Button 
+              {/* <Button 
                 variant="outline" 
                 className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
                 onClick={handleLogoutAll}
               >
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout All Sessions
-              </Button>
+              </Button> */}
             </CardContent>
           </Card>
 

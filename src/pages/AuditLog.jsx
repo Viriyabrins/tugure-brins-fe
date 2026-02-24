@@ -85,7 +85,7 @@ export default function AuditLog() {
                 data = data.filter(
                     (log) =>
                         !log.user_email?.includes("sibernetik") &&
-                        !log.user_email?.includes("@base44"),
+                        !log.user_email?.includes("@system"),
                 );
             }
 

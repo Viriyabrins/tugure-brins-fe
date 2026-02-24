@@ -82,8 +82,7 @@ fastify.setNotFoundHandler(async (request, reply) => {
       // Build a small runtime config and inject into the page so the client
       // can read runtime flags without needing a rebuild.
       const runtime = {
-        VITE_BYPASS_AUTH: process.env.VITE_BYPASS_AUTH === 'true',
-        VITE_BASE44_APP_ID: process.env.VITE_BASE44_APP_ID || null,
+        VITE_APP_ID: process.env.VITE_APP_ID || null,
         VITE_API_PROXY: process.env.VITE_API_PROXY || process.env.PROXY_TARGET || null,
         PROXY_PREFIX
       };

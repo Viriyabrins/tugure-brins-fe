@@ -3,7 +3,7 @@
  * Handles email template variable replacement and sending
  */
 
-import { base44 } from '@/api/base44Client';
+import { backend } from '@/api/backendClient';
 
 /**
  * Replace variables in email template
@@ -34,7 +34,7 @@ export function replaceTemplateVariables(template, variables) {
  */
 export async function getEmailTemplate(objectType, statusTo, recipientRole) {
   try {
-    const templates = await base44.entities.EmailTemplate.list();
+    const templates = await backend.list('EmailTemplate');
     
     // Find matching template
     const template = templates.find(t => 
@@ -59,7 +59,7 @@ export async function getEmailTemplate(objectType, statusTo, recipientRole) {
  */
 export async function getNotificationRecipients(targetRole, notificationType) {
   try {
-    const allSettings = await base44.entities.NotificationSetting.list();
+    const allSettings = await backend.list('NotificationSetting');
     
     // Filter settings based on role and notification type preference
     const recipients = allSettings.filter(setting => {
@@ -118,7 +118,7 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
     
     // Send email to all recipients
     const emailPromises = recipients.map(recipient =>
-      base44.integrations.Core.SendEmail({
+      backend.sendEmail({
         to: recipient.notification_email,
         subject: subject,
         body: body
@@ -147,7 +147,7 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
  */
 export async function createNotification(title, message, type, module, referenceId, targetRole) {
   try {
-    await base44.entities.Notification.create({
+    await backend.create('Notification', {
       title,
       message,
       type,
@@ -176,7 +176,7 @@ export async function createNotification(title, message, type, module, reference
  */
 export async function createAuditLog(action, module, entityType, entityId, oldValue, newValue, userEmail, userRole, reason) {
   try {
-    await base44.entities.AuditLog.create({
+    await backend.create('AuditLog', {
       action,
       module,
       entity_type: entityType,

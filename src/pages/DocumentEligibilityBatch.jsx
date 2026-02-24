@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import keycloakService from '@/services/keycloakService';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import {
   Upload, RefreshCw, Eye, Folder, File,
   CheckCircle2, AlertCircle, Plus, Download, DollarSign, Clock
 } from "lucide-react";
-import { base44 } from '@/api/base44Client';
+import { backend } from '@/api/backendClient';
 import PageHeader from "@/components/common/PageHeader";
 import StatusBadge from "@/components/ui/StatusBadge";
 import ModernKPI from "@/components/dashboard/ModernKPI";
@@ -50,9 +51,14 @@ export default function DocumentEligibilityBatch() {
 
   const loadUser = () => {
     try {
-      const demoUserStr = localStorage.getItem('demo_user');
-      if (demoUserStr) {
-        setUser(JSON.parse(demoUserStr));
+      const userInfo = keycloakService.getCurrentUserInfo();
+      if (userInfo) {
+        const roles = keycloakService.getRoles();
+        let role = 'USER';
+        if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
+        else if (roles.includes('BRINS')) role = 'BRINS';
+        else if (roles.includes('TUGURE')) role = 'TUGURE';
+        setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
       }
     } catch (error) {
       console.error('Failed to load user:', error);
@@ -63,10 +69,10 @@ export default function DocumentEligibilityBatch() {
     setLoading(true);
     try {
       const [batchData, debtorData, docData, contractData] = await Promise.all([
-        base44.entities.Batch.list(),
-        base44.entities.Debtor.list(),
-        base44.entities.Document.list(),
-        base44.entities.MasterContract.list()
+        backend.list('Batch'),
+        backend.list('Debtor'),
+        backend.list('Document'),
+        backend.list('MasterContract')
       ]);
       setBatches(batchData || []);
       setDebtors(debtorData || []);
@@ -96,7 +102,7 @@ export default function DocumentEligibilityBatch() {
       const batch = batches.find(b => b.id === selectedBatch);
       
       for (const file of uploadFiles) {
-        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        const { file_url } = await backend.uploadFile(file);
 
         // Check existing versions for this file name
         const existingDocs = documents.filter(d => 
@@ -108,7 +114,7 @@ export default function DocumentEligibilityBatch() {
           ? Math.max(...existingDocs.map(d => d.version || 1))
           : 0;
 
-        await base44.entities.Document.create({
+        await backend.create('Document', {
           batch_id: batch.batch_id,
           document_type: 'General Document',
           document_name: file.name,
@@ -121,7 +127,7 @@ export default function DocumentEligibilityBatch() {
         });
       }
 
-      await base44.entities.Notification.create({
+      await backend.create('Notification', {
         title: 'Batch Documents Uploaded',
         message: `${uploadFiles.length} documents uploaded for batch ${batch.batch_id}`,
         type: 'INFO',
@@ -149,7 +155,7 @@ export default function DocumentEligibilityBatch() {
     setProcessing(true);
     try {
       for (const docId of selectedDocs) {
-        await base44.entities.Document.delete(docId);
+        await backend.delete('Document', docId);
       }
       setSuccessMessage(`${selectedDocs.length} document(s) deleted`);
       setSelectedDocs([]);

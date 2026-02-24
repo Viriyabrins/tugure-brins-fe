@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import keycloakService from "@/services/keycloakService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,9 +67,14 @@ export default function DocumentClaim() {
 
     const loadUser = () => {
         try {
-            const demoUserStr = localStorage.getItem("demo_user");
-            if (demoUserStr) {
-                setUser(JSON.parse(demoUserStr));
+            const userInfo = keycloakService.getCurrentUserInfo();
+            if (userInfo) {
+                const roles = keycloakService.getRoles();
+                let role = 'USER';
+                if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
+                else if (roles.includes('BRINS')) role = 'BRINS';
+                else if (roles.includes('TUGURE')) role = 'TUGURE';
+                setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
             }
         } catch (error) {
             console.error("Failed to load user:", error);

@@ -7,7 +7,7 @@ import {
   CreditCard, DollarSign, CheckCircle2, AlertTriangle, 
   Clock, RefreshCw, Eye, TrendingDown, Download, FileText
 } from "lucide-react";
-import { base44 } from '@/api/base44Client';
+import { backend } from '@/api/backendClient';
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -31,9 +31,9 @@ export default function PaymentStatus() {
     setLoading(true);
     try {
       const [invoiceData, paymentData, contractData] = await Promise.all([
-        base44.entities.Invoice.list(),
-        base44.entities.Payment.list(),
-        base44.entities.Contract.list()
+        backend.list('Invoice'),
+        backend.list('Payment'),
+        backend.list('Contract')
       ]);
       setInvoices(invoiceData || []);
       setPayments(paymentData || []);

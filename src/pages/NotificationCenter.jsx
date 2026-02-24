@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { 
   Bell, CheckCircle2, AlertCircle, RefreshCw, Trash2, Check
 } from "lucide-react";
-import { base44 } from '@/api/base44Client';
+import { backend } from '@/api/backendClient';
 import PageHeader from "@/components/common/PageHeader";
 import { format } from 'date-fns';
 
@@ -22,7 +22,7 @@ export default function NotificationCenter() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const data = await base44.entities.Notification.list();
+      const data = await backend.list('Notification');
       setNotifications(data || []);
     } catch (error) {
       console.error('Failed to load notifications:', error);
@@ -32,7 +32,7 @@ export default function NotificationCenter() {
 
   const handleMarkAsRead = async (id) => {
     try {
-      await base44.entities.Notification.update(id, { is_read: true });
+      await backend.update('Notification', id, { is_read: true });
       loadData();
     } catch (error) {
       console.error('Mark as read error:', error);
@@ -43,7 +43,7 @@ export default function NotificationCenter() {
     try {
       const unread = notifications.filter(n => !n.is_read);
       for (const notif of unread) {
-        await base44.entities.Notification.update(notif.id, { is_read: true });
+        await backend.update('Notification', notif.id, { is_read: true });
       }
       setSuccessMessage('All notifications marked as read');
       loadData();
@@ -57,7 +57,7 @@ export default function NotificationCenter() {
     
     try {
       for (const notif of notifications) {
-        await base44.entities.Notification.delete(notif.id);
+        await backend.delete('Notification', notif.id);
       }
       setSuccessMessage('All notifications deleted');
       loadData();

@@ -19,9 +19,10 @@ import StatCard from "@/components/dashboard/StatCard";
 import ModernKPI from "@/components/dashboard/ModernKPI";
 import { sendTemplatedEmail, createNotification, createAuditLog } from "@/components/utils/emailTemplateHelper";
 import { formatRupiahAdaptive } from '@/utils/currency';
+import { useKeycloakAuth } from '@/lib/KeycloakContext';
 
 export default function BatchProcessing() {
-  const [user, setUser] = useState(null);
+  const { user } = useKeycloakAuth();
   const [batches, setBatches] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [debtors, setDebtors] = useState([]);
@@ -45,20 +46,8 @@ export default function BatchProcessing() {
   });
 
   useEffect(() => {
-    loadUser();
     loadData();
   }, []);
-
-  const loadUser = async () => {
-    try {
-      const demoUserStr = localStorage.getItem('demo_user');
-      if (demoUserStr) {
-        setUser(JSON.parse(demoUserStr));
-      }
-    } catch (error) {
-      console.error('Failed to load user:', error);
-    }
-  };
 
   const loadData = async () => {
     setLoading(true);

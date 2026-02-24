@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { twMerge } from 'tailwind-merge'
 
 export default function VisualEditAgent() {
+	const isEmbeddedInIframe = window.self !== window.top;
+
+	if (!isEmbeddedInIframe) {
+		return null;
+	}
+
 	// this functions job is to receive first a message from the parent window, to set or unset visual edits mode. 
 	// once in visual edits mode, every hover over an elelmnt that has linenumbers should show an overlay, when clicked - it should stick the overlay and send a message to the parent window with the selected element
 	// then, the parent window will have an editor, allow for changes to the tailwind css classes of the selected element, and send the updated css classes back to the iframe. 

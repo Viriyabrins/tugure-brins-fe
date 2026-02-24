@@ -33,7 +33,7 @@ import FilterPanel from "@/components/common/FilterPanel";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import { Label } from "@/components/ui/label";
-import { useAuth } from "@/lib/AuthContext";
+import { useKeycloakAuth } from "@/lib/KeycloakContext";
 import { backend } from "@/api/backendClient";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
@@ -54,7 +54,7 @@ const defaultFilter = {
 }
 
 export default function BorderoManagement() {
-    const [user, setUser] = useState(null);
+    const { user } = useKeycloakAuth();
     const [activeTab, setActiveTab] = useState("debtors");
     const [debtors, setDebtors] = useState([]);
     const [batches, setBatches] = useState([]);
@@ -72,30 +72,9 @@ export default function BorderoManagement() {
     const [successMessage, setSuccessMessage] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
 
-    const { bypassAuth } = useAuth();
-    const useBackendApi = import.meta.env.VITE_USE_BACKEND_API === "true";
-
     useEffect(() => {
-        if (bypassAuth && !useBackendApi) {
-            setLoading(false);
-            return;
-        }
-        if (!bypassAuth) {
-            loadUser();
-        }
         loadData();
     }, []);
-
-    const loadUser = () => {
-        try {
-            const demoUserStr = localStorage.getItem("demo_user");
-            if (demoUserStr) {
-                setUser(JSON.parse(demoUserStr));
-            }
-        } catch (error) {
-            console.error("Failed to load user:", error);
-        }
-    };
 
     const loadData = async () => {
         setLoading(true);

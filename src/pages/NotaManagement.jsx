@@ -142,10 +142,15 @@ export default function NotaManagement() {
 
     const loadUser = async () => {
         try {
-            const demoUserStr = localStorage.getItem("demo_user");
-            if (demoUserStr) {
-                const demoUser = JSON.parse(demoUserStr);
-                setUser(demoUser);
+            const { default: keycloakService } = await import('@/services/keycloakService');
+            const userInfo = keycloakService.getCurrentUserInfo();
+            if (userInfo) {
+                const roles = keycloakService.getRoles();
+                let role = 'USER';
+                if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
+                else if (roles.includes('BRINS')) role = 'BRINS';
+                else if (roles.includes('TUGURE')) role = 'TUGURE';
+                setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
             }
         } catch (error) {
             console.error("Failed to load user:", error);

@@ -39,7 +39,6 @@ import {
 } from "recharts";
 import ModernKPI from "@/components/dashboard/ModernKPI";
 import { backend } from "@/api/backendClient";
-import { useAuth } from "@/lib/AuthContext";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 
@@ -58,7 +57,6 @@ const toNumber = (value) => {
 };
 
 export default function Dashboard() {
-    const [user, setUser] = useState(null);
     const [period, setPeriod] = useState("2025-03");
     const [loading, setLoading] = useState(true);
     const [filters, setFilters] = useState({
@@ -94,24 +92,9 @@ export default function Dashboard() {
     const [payments, setPayments] = useState([]);
     const [contracts, setContracts] = useState([]);
 
-    const { bypassAuth } = useAuth();
-    const useBackendApi = import.meta.env.VITE_USE_BACKEND_API === "true";
-
     useEffect(() => {
-        loadUser();
         loadDashboardData();
     }, [period]);
-
-    const loadUser = async () => {
-        try {
-            const demoUserStr = localStorage.getItem("demo_user");
-            if (demoUserStr) {
-                setUser(JSON.parse(demoUserStr));
-            }
-        } catch (error) {
-            console.error("Failed to load user:", error);
-        }
-    };
 
     const loadDashboardData = async () => {
         setLoading(true);
@@ -187,19 +170,7 @@ export default function Dashboard() {
                     ),
                 0,
             );
-
-            // Calculate total premium from approved batches
-            const totalBatchPremium = nextBatches
-                .filter((b) => b.status === "Approved")
-                .reduce(
-                    (sum, b) => sum + (parseFloat(b.final_premium_amount) || 0),
-                    0,
-                );
-
-            const totalClaimValue = nextClaims.reduce(
-                (sum, c) => sum + (parseFloat(c.nilai_klaim) || 0),
-                0,
-            );
+            
             const claimsPaid = nextClaims
                 .filter((c) => c.status === "Paid")
                 .reduce((sum, c) => sum + (parseFloat(c.nilai_klaim) || 0), 0);

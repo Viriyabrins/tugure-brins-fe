@@ -1,6 +1,19 @@
 import { appParams } from '@/lib/app-params';
+import { getKeycloakToken } from '@/lib/keycloak';
 
-const appId = appParams.appId || import.meta.env.VITE_BASE44_APP_ID;
+const appId = appParams.appId || import.meta.env.VITE_APP_ID || 'brin-app-dev';
+
+/**
+ * Build default fetch options with Keycloak Bearer token injected.
+ */
+function authFetchOptions(extra = {}) {
+  const token = getKeycloakToken();
+  const headers = { ...(extra.headers || {}) };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return { ...extra, headers };
+}
 
 /**
  * Extract a plain array from any backend response shape.
@@ -82,7 +95,7 @@ export const backend = {
     const params = { limit: '0', ...query };
     const qs = new URLSearchParams(params).toString();
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url, { credentials: 'same-origin' });
+    const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -102,7 +115,7 @@ export const backend = {
   async listPaginated(entityName, query = {}) {
     const qs = new URLSearchParams(query).toString();
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url, { credentials: 'same-origin' });
+    const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -117,7 +130,7 @@ export const backend = {
 
   async get(entityName, id) {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
-    const res = await fetch(url, { credentials: 'same-origin' });
+    const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -147,14 +160,11 @@ export const backend = {
 
   async create(entityName, payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}`;
-    const res = await fetch(url, {
+    const res = await fetch(url, authFetchOptions({
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }));
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -184,14 +194,11 @@ export const backend = {
 
   async update(entityName, id, payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
-    const res = await fetch(url, {
+    const res = await fetch(url, authFetchOptions({
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }));
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -222,7 +229,7 @@ export const backend = {
   async filter(entityName, query = {}) {
     const qs = new URLSearchParams({ limit: '0', q: JSON.stringify(query) }).toString();
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}?${qs}`;
-    const res = await fetch(url, { credentials: 'same-origin' });
+    const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -242,7 +249,7 @@ export const backend = {
   async listNotifications(query = {}) {
     const qs = new URLSearchParams(query).toString();
     const url = `/api/notifications${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url, { credentials: 'same-origin' });
+    const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -261,14 +268,11 @@ export const backend = {
    */
   async createNotification(payload) {
     const url = '/api/notifications';
-    const res = await fetch(url, {
+    const res = await fetch(url, authFetchOptions({
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }));
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -302,14 +306,11 @@ export const backend = {
    */
   async updateNotification(id, payload) {
     const url = `/api/notifications/${encodeURIComponent(id)}`;
-    const res = await fetch(url, {
+    const res = await fetch(url, authFetchOptions({
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }));
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -343,13 +344,10 @@ export const backend = {
    */
   async markNotificationAsRead(id) {
     const url = `/api/notifications/${encodeURIComponent(id)}/read`;
-    const res = await fetch(url, {
+    const res = await fetch(url, authFetchOptions({
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'same-origin',
-    });
+      headers: { 'Content-Type': 'application/json' },
+    }));
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -383,10 +381,9 @@ export const backend = {
    */
   async deleteNotification(id) {
     const url = `/api/notifications/${encodeURIComponent(id)}`;
-    const res = await fetch(url, {
+    const res = await fetch(url, authFetchOptions({
       method: 'DELETE',
-      credentials: 'same-origin',
-    });
+    }));
     if (!res.ok) {
       const error = await res.text();
       try {
@@ -403,5 +400,71 @@ export const backend = {
     } catch (e) {
       return null;
     }
+  },
+
+  async logUserInApp(pageName) {
+    const url = `/api/app-logs/${encodeURIComponent(appId)}/log-user-in-app/${encodeURIComponent(pageName)}`;
+    const res = await fetch(url, authFetchOptions({ method: 'POST' }));
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        throw new Error(error || res.statusText);
+      }
+    }
+    return true;
+  },
+
+  async sendEmail(payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/integration-endpoints/Core/SendEmail`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }));
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        throw new Error(error || res.statusText);
+      }
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      return parsed?.data ?? parsed;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async uploadFile(file) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = getKeycloakToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const url = `/api/apps/${encodeURIComponent(appId)}/integration-endpoints/Core/UploadFile`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      if (res.ok) {
+        const text = await res.text();
+        const parsed = text ? JSON.parse(text) : null;
+        const maybeUrl = parsed?.data?.file_url || parsed?.file_url;
+        if (maybeUrl) {
+          return { file_url: maybeUrl };
+        }
+      }
+    } catch (_) {
+    }
+
+    return { file_url: URL.createObjectURL(file) };
   }
 };

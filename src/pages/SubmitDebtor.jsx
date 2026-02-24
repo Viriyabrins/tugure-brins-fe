@@ -488,9 +488,15 @@ export default function SubmitDebtor() {
 
     const loadUser = async () => {
         try {
-            const demoUserStr = localStorage.getItem("demo_user");
-            if (demoUserStr) {
-                setUser(JSON.parse(demoUserStr));
+            const { default: keycloakService } = await import('@/services/keycloakService');
+            const userInfo = keycloakService.getCurrentUserInfo();
+            if (userInfo) {
+                const roles = keycloakService.getRoles();
+                let role = 'USER';
+                if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
+                else if (roles.includes('BRINS')) role = 'BRINS';
+                else if (roles.includes('TUGURE')) role = 'TUGURE';
+                setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
             }
         } catch (error) {
             console.error("Failed to load user:", error);
@@ -1027,22 +1033,7 @@ export default function SubmitDebtor() {
 
                         // Try to delete, fall back to status update if delete not supported
                         try {
-                            // Use a direct fetch to delete endpoint
-                            const appId =
-                                import.meta.env.VITE_BASE44_APP_ID ||
-                                "brin-app-dev";
-                            const res = await fetch(
-                                `/api/apps/${encodeURIComponent(appId)}/entities/Debtor/${encodeURIComponent(oldDebtor.id)}`,
-                                {
-                                    method: "DELETE",
-                                    credentials: "same-origin",
-                                },
-                            );
-                            if (!res.ok) {
-                                console.warn(
-                                    `Could not delete old debtor ${oldDebtor.id}, marked as ARCHIVED_REVISION instead`,
-                                );
-                            }
+                            await backend.delete("Debtor", oldDebtor.id);
                         } catch (deleteErr) {
                             console.warn(
                                 `Delete failed for debtor ${oldDebtor.id}:`,
@@ -1121,22 +1112,7 @@ export default function SubmitDebtor() {
             if (createdDebtorIds.length > 0) {
                 for (const debtorId of createdDebtorIds.reverse()) {
                     try {
-                        const appId =
-                            import.meta.env.VITE_BASE44_APP_ID ||
-                            "brin-app-dev";
-                        const rollbackRes = await fetch(
-                            `/api/apps/${encodeURIComponent(appId)}/entities/Debtor/${encodeURIComponent(debtorId)}`,
-                            {
-                                method: "DELETE",
-                                credentials: "same-origin",
-                            },
-                        );
-
-                        if (!rollbackRes.ok) {
-                            console.error(
-                                `Rollback failed for Debtor ${debtorId}: HTTP ${rollbackRes.status}`,
-                            );
-                        }
+                        await backend.delete("Debtor", debtorId);
                     } catch (rollbackError) {
                         console.error(
                             `Rollback failed for Debtor ${debtorId}:`,
@@ -1147,17 +1123,9 @@ export default function SubmitDebtor() {
             }
 
             if (batchMode === "new") {
-                const appId = import.meta.env.VITE_BASE44_APP_ID || "brin-app-dev";
-
                 if (borderoId) {
                     try {
-                        await fetch(
-                            `/api/apps/${encodeURIComponent(appId)}/entities/Bordero/${encodeURIComponent(borderoId)}`,
-                            {
-                                method: "DELETE",
-                                credentials: "same-origin",
-                            },
-                        );
+                        await backend.delete("Bordero", borderoId);
                     } catch (rollbackError) {
                         console.error(
                             `Rollback failed for Bordero ${borderoId}:`,
@@ -1168,13 +1136,7 @@ export default function SubmitDebtor() {
 
                 if (batchId) {
                     try {
-                        await fetch(
-                            `/api/apps/${encodeURIComponent(appId)}/entities/Batch/${encodeURIComponent(batchId)}`,
-                            {
-                                method: "DELETE",
-                                credentials: "same-origin",
-                            },
-                        );
+                        await backend.delete("Batch", batchId);
                     } catch (rollbackError) {
                         console.error(
                             `Rollback failed for Batch ${batchId}:`,

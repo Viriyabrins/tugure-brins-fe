@@ -1,5 +1,5 @@
 {
-  "name": "base44-app",
+  "name": "brins-app",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -22,8 +22,6 @@
     "prisma:seed:production": "cross-env DATABASE_URL=postgresql://postgres:admin1234@10.10.5.8:5445/viriya?schema=brins_prod prisma db seed --schema=prisma/schema.prisma"
   },
   "dependencies": {
-    "@base44/sdk": "^0.8.3",
-    "@base44/vite-plugin": "^0.2.10",
     "@fastify/cors": "^11.2.0",
     "@fastify/http-proxy": "^11.4.1",
     "@fastify/static": "^9.0.0",
@@ -72,6 +70,7 @@
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "jspdf": "^2.5.2",
+    "keycloak-js": "^26.2.3",
     "lodash": "^4.17.21",
     "lucide-react": "^0.475.0",
     "moment": "^2.30.1",

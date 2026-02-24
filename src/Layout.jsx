@@ -9,66 +9,20 @@ import {
   DollarSign, CreditCard, Scale, Bell, User, Settings, 
   LogOut, Menu, X, ChevronRight, Shield, Activity, Lock
 } from "lucide-react";
-import { useAuth } from './lib/AuthContext';
+import { useKeycloakAuth } from './lib/KeycloakContext';
 export default function Layout({ children, currentPageName }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { user, logout } = useKeycloakAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const { bypassAuth, user: authUser } = useAuth();
 
   useEffect(() => {
-    if (bypassAuth) {
-      if (authUser) {
-        setUser(authUser);
-        loadNotificationCount();
-      }
-      setLoading(false);
-      return;
-    }
-    checkAuth();
-  }, [bypassAuth, authUser]);
-
-  const checkAuth = async () => {
-    try {
-      // Check for demo user in localStorage
-      const demoUserStr = localStorage.getItem('demo_user');
-      if (demoUserStr) {
-        const demoUser = JSON.parse(demoUserStr);
-        setUser(demoUser);
-        loadNotificationCount();
-      } else if (currentPageName !== 'Home') {
-        // Not logged in, redirect to Home
-        window.location.href = createPageUrl('Home');
-      }
-    } catch (error) {
-      // Error, redirect to Home
-      if (currentPageName !== 'Home') {
-        window.location.href = createPageUrl('Home');
-      }
-    }
-    setLoading(false);
-  };
-
-  const logout = async () => {
-    try {
-      localStorage.removeItem('demo_user');
-      window.location.href = createPageUrl('Home');
-    } catch (error) {
-      window.location.href = createPageUrl('Home');
-    }
-  };
-
-  const hasAccess = (allowedRoles) => {
-    if (!user) return false;
-    if (user.role === 'admin') return true;
-    return allowedRoles.includes(user.role?.toUpperCase());
-  };
+    loadNotificationCount();
+  }, []);
 
   const loadNotificationCount = async () => {
     try {
-      const { base44 } = await import('@/api/base44Client');
-      const notifs = await base44.entities.Notification.list();
+      const { backend } = await import('@/api/backendClient');
+      const notifs = await backend.list('Notification');
       const unread = (notifs || []).filter(n => !n.is_read).length;
       setUnreadNotifications(unread);
     } catch (error) {
@@ -76,15 +30,6 @@ export default function Layout({ children, currentPageName }) {
       setUnreadNotifications(0);
     }
   };
-
-  // Show loading
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
 
   // Menu structure with role-based access control
   const menuItems = {

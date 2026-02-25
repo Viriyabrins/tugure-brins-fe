@@ -18,6 +18,7 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import { format } from 'date-fns';
 import { backend } from '@/api/backendClient';
 import FilterTab from '@/components/common/FilterTab';
+import keycloakService from '@/services/keycloakService';
 
 const defaultTemplateFilter = {
   object_type: "all"
@@ -62,6 +63,7 @@ export default function SystemConfiguration() {
   const [successMessage, setSuccessMessage] = useState('');
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
+  const [isUserLoaded, setIsUserLoaded] = useState(false);
   
   // Notifications Pagination (server-side)
   const [notifPage, setNotifPage] = useState(1);
@@ -127,8 +129,13 @@ export default function SystemConfiguration() {
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
-    loadUser().then(() => {
-      loadData();
+    loadUser();
+    backend.list('SystemConfig').then(configData => {
+      setSystemConfigs(configData || []);
+      setLoading(false);
+    }).catch(e => {
+      console.error(e);
+      setLoading(false);
     });
   }, []);
 
@@ -149,22 +156,24 @@ export default function SystemConfiguration() {
     if (slaPage > slaTotalPages && slaTotalPages > 0) setSlaPage(slaTotalPages);
   }, [slaTotalPages, slaPage]);
 
-  // Reset to page 1 when filters change, then reload
+  // Reset to page 1 when filters change
   useEffect(() => {
-    setTemplatePage(1);
-    loadTemplates(1);
+    if (templatePage !== 1) setTemplatePage(1);
   }, [templateFilters.object_type]);
 
   useEffect(() => {
-    setSlaPage(1);
-    loadSlaRules(1);
+    if (slaPage !== 1) setSlaPage(1);
   }, [SlaFilters.ruleName, SlaFilters.triggerCondition, SlaFilters.status]);
 
-  // Reload when page changes
-  useEffect(() => { loadNotifications(notifPage, userRoles); }, [notifPage, userRoles]);
-  useEffect(() => { loadTemplates(templatePage); }, [templatePage]);
+  // Reload when page or filters change
+  useEffect(() => {
+    if (isUserLoaded) {
+      loadNotifications(notifPage, userRoles);
+    }
+  }, [notifPage, userRoles, isUserLoaded]);
+  useEffect(() => { loadTemplates(templatePage); }, [templatePage, templateFilters.object_type]);
   useEffect(() => { loadSettings(settingsPage); }, [settingsPage]);
-  useEffect(() => { loadSlaRules(slaPage); }, [slaPage]);
+  useEffect(() => { loadSlaRules(slaPage); }, [slaPage, SlaFilters.ruleName, SlaFilters.triggerCondition, SlaFilters.status]);
 
   // Load User
   const loadUser = async () => {
@@ -175,11 +184,13 @@ export default function SystemConfiguration() {
         const roles = keycloakService.getRoles();
         const roleList = Array.isArray(roles) ? roles : [];
         setUserRoles(roleList);
+        setIsUserLoaded(true);
         return roleList;
       }
     } catch (error) {
       console.error("Failed to load user:", error);
     }
+    setIsUserLoaded(true);
     return [];
   };
 
@@ -187,19 +198,23 @@ export default function SystemConfiguration() {
 
   const loadNotifications = async (pageToLoad = notifPage, roles = userRoles) => {
     try {
-      let targetRole = "ALL";
+      let targetRoles = ["ALL"];
       if (roles && roles.length > 0) {
         const normalizedRoles = roles.map((r) => String(r || "").trim().toLowerCase());
         const knownRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role", "admin", "admin-brins-role"];
-        targetRole = normalizedRoles.find(r => knownRoles.includes(r)) || "ALL";
+        const matchedRoles = normalizedRoles.filter(r => knownRoles.includes(r));
+        if (matchedRoles.length > 0) {
+          targetRoles = [...targetRoles, ...matchedRoles];
+        }
       }
 
       const result = await backend.listNotifications({
         unread: 'true',
         page: pageToLoad,
         limit: notifPageSize,
-        target_role: targetRole
+        target_role: targetRoles.join(',')
       });
+      console.log('Role', targetRoles);
       console.log('Notification', result);
       setNotifications(Array.isArray(result.data) ? result.data : []);
       setTotalNotifications(Number(result.pagination?.total) || 0);
@@ -265,10 +280,10 @@ export default function SystemConfiguration() {
       setSystemConfigs(configData || []);
 
       await Promise.all([
-        loadNotifications(1),
-        loadTemplates(1),
-        loadSettings(1),
-        loadSlaRules(1),
+        loadNotifications(notifPage, userRoles),
+        loadTemplates(templatePage),
+        loadSettings(settingsPage),
+        loadSlaRules(slaPage),
       ]);
     } catch (error) {
       console.error('Failed to load data:', error);

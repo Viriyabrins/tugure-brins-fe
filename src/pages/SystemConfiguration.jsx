@@ -447,7 +447,7 @@ export default function SystemConfiguration() {
     {
       header: 'Recipient',
       accessorKey: 'recipient_role',
-      cell: (row) => <Badge>{row.recipient_role}</Badge>
+      cell: (row) => <Badge variant="outline">{row.recipient_role}</Badge>
     },
     {
       header: 'Subject',
@@ -458,9 +458,12 @@ export default function SystemConfiguration() {
       header: 'Status',
       accessorKey: 'is_active',
       cell: (row) => (
-        <Badge variant={row.is_active ? 'default' : 'secondary'}>
-          {row.is_active ? 'Active' : 'Inactive'}
-        </Badge>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${row.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
+            <span className="text-sm">{row.is_active ? 'Active' : 'Inactive'}</span>
+          </div>
+        </div>
       )
     },
     {
@@ -654,7 +657,7 @@ export default function SystemConfiguration() {
       cell: (row) => (
         <div className="flex gap-2">
           <Button 
-            variant="outline" 
+            variant="ghost" 
             size="sm"
             onClick={() => {
               setSelectedRule(row);

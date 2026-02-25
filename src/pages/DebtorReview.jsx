@@ -160,8 +160,13 @@ export default function DebtorReview() {
         setLoading(true);
         try {
             const query = { page: pageToLoad, limit: pageSize };
+            // Always exclude pre-BRINS-approval statuses from DebtorReview
+            const reviewFilters = {
+                ...filters,
+                excludeStatuses: "SUBMITTED,CHECKED_BRINS,DRAFT",
+            };
             // include filters as JSON string in `q`
-            if (filters) query.q = JSON.stringify(filters);
+            query.q = JSON.stringify(reviewFilters);
 
             const useReviseLog =
                 filters?.submitStatus === "REVISION" ||

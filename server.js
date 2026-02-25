@@ -1,5 +1,6 @@
 import path from 'path';
 import { promises as fs } from 'fs';
+import fsSync from 'fs';
 import dotenv from 'dotenv';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -29,6 +30,9 @@ const {
   PROXY_PREFIX = '/api',
   CORS_ORIGIN = '*'
 } = process.env;
+
+// Optional SSL certificate paths (can be relative to the env file directory)
+const { SSL_KEY_PATH, SSL_CERT_PATH, SSL_CA_PATH } = process.env;
 
 // Keep track of which env file was loaded
 const ENV_FILE = envPath;
@@ -110,11 +114,37 @@ fastify.setNotFoundHandler(async (request, reply) => {
   return reply.status(404).send({ error: 'Not found' });
 });
 
+// Resolve and load HTTPS options from environment if provided
+const resolveFromEnvDir = (p) => {
+  if (!p) return undefined;
+  return path.isAbsolute(p) ? p : path.resolve(path.dirname(ENV_FILE), p);
+};
+
+let httpsOptions;
+if (SSL_KEY_PATH && SSL_CERT_PATH) {
+  try {
+    const keyPath = resolveFromEnvDir(SSL_KEY_PATH);
+    const certPath = resolveFromEnvDir(SSL_CERT_PATH);
+    httpsOptions = {
+      key: fsSync.readFileSync(keyPath),
+      cert: fsSync.readFileSync(certPath)
+    };
+    if (SSL_CA_PATH) {
+      const caPath = resolveFromEnvDir(SSL_CA_PATH);
+      httpsOptions.ca = fsSync.readFileSync(caPath);
+    }
+    console.log('Loaded SSL files:', keyPath, certPath, SSL_CA_PATH ? resolveFromEnvDir(SSL_CA_PATH) : '');
+  } catch (err) {
+    console.error('Failed to load SSL certificate files:', err.message);
+    httpsOptions = undefined;
+  }
+}
+
 const start = async () => {
   try {
-    await fastify.listen({ port: Number(PORT), host: HOST });
+    await fastify.listen({ port: Number(PORT), host: HOST, ...(httpsOptions ? { https: httpsOptions } : {}) });
     console.log(`Loaded env file: ${ENV_FILE}`);
-    console.log(`Server running: http://${HOST}:${PORT}`);
+    console.log(`Server running: ${httpsOptions ? 'https' : 'http'}://${HOST}:${PORT}`);
     console.log(`Proxy mapping: ${PROXY_PREFIX} -> ${PROXY_TARGET}`);
     console.log(`CORS origin: ${CORS_ORIGIN}`);
   } catch (err) {

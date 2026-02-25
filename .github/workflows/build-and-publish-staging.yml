@@ -129,8 +129,22 @@ jobs:
 
             echo "Starting new brins-fe-staging container from ${IMAGE}"
             # Run frontend using host networking so it can reach backend at localhost:10011
+            # Mount host certs directory /home/brins/cert into the container so private keys
+            # remain on the host and are not baked into the image.
+            CERT_HOST_DIR=/home/brins/cert
+            CERT_CONTAINER_DIR=/app/src/cert
+
+            if [ ! -d "${CERT_HOST_DIR}" ]; then
+              echo "Warning: host cert directory ${CERT_HOST_DIR} does not exist. Container will start without mounted certs." || true
+              MOUNT_ARG=""
+              SSL_ENV_ARGS=""
+            else
+              MOUNT_ARG="-v ${CERT_HOST_DIR}:${CERT_CONTAINER_DIR}:Z"
+              SSL_ENV_ARGS="-e SSL_KEY_PATH=${CERT_CONTAINER_DIR}/server-dev.key -e SSL_CERT_PATH=${CERT_CONTAINER_DIR}/server-dev.crt"
+            fi
+
             podman rm -f brins-fe-staging >/dev/null 2>&1 || true
-            podman run -d --name brins-fe-staging --restart=always --network host -e BACKEND_URL="http://127.0.0.1:10011" "${IMAGE}"
+            podman run -d --name brins-fe-staging --restart=always --network host ${MOUNT_ARG} -e BACKEND_URL="http://127.0.0.1:10011" ${SSL_ENV_ARGS} "${IMAGE}"
 
             sleep 2
             podman ps -a --filter name=^brins-fe-staging$

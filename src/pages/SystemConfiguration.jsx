@@ -31,6 +31,7 @@ const defaultSlaFilter = {
 
 export default function SystemConfiguration() {
   const [user, setUser] = useState(null);
+  const [userRoles, setUserRoles] = useState([]);
   const [configs, setConfigs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [totalNotifications, setTotalNotifications] = useState(0);
@@ -126,7 +127,9 @@ export default function SystemConfiguration() {
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
-    loadData();
+    loadUser().then(() => {
+      loadData();
+    });
   }, []);
 
   // Keep page within bounds
@@ -158,19 +161,44 @@ export default function SystemConfiguration() {
   }, [SlaFilters.ruleName, SlaFilters.triggerCondition, SlaFilters.status]);
 
   // Reload when page changes
-  useEffect(() => { loadNotifications(notifPage); }, [notifPage]);
+  useEffect(() => { loadNotifications(notifPage, userRoles); }, [notifPage, userRoles]);
   useEffect(() => { loadTemplates(templatePage); }, [templatePage]);
   useEffect(() => { loadSettings(settingsPage); }, [settingsPage]);
   useEffect(() => { loadSlaRules(slaPage); }, [slaPage]);
 
+  // Load User
+  const loadUser = async () => {
+    try {
+      const { default: keycloakService } = await import('@/services/keycloakService');
+      const userInfo = keycloakService.getCurrentUserInfo();
+      if (userInfo) {
+        const roles = keycloakService.getRoles();
+        const roleList = Array.isArray(roles) ? roles : [];
+        setUserRoles(roleList);
+        return roleList;
+      }
+    } catch (error) {
+      console.error("Failed to load user:", error);
+    }
+    return [];
+  };
+
   // --- Dedicated paginated load functions ---
 
-  const loadNotifications = async (pageToLoad = notifPage) => {
+  const loadNotifications = async (pageToLoad = notifPage, roles = userRoles) => {
     try {
+      let targetRole = "ALL";
+      if (roles && roles.length > 0) {
+        const normalizedRoles = roles.map((r) => String(r || "").trim().toLowerCase());
+        const knownRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role", "admin", "admin-brins-role"];
+        targetRole = normalizedRoles.find(r => knownRoles.includes(r)) || "ALL";
+      }
+
       const result = await backend.listNotifications({
         unread: 'true',
         page: pageToLoad,
         limit: notifPageSize,
+        target_role: targetRole
       });
       console.log('Notification', result);
       setNotifications(Array.isArray(result.data) ? result.data : []);

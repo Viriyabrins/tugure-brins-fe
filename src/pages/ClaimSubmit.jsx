@@ -212,11 +212,16 @@ export default function ClaimSubmit() {
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
-                setUserRoles(Array.isArray(roles) ? roles : []);
+                const roleList = Array.isArray(roles) ? roles : [];
+                const normalizedRoles = roleList
+                    .map((roleName) => String(roleName || "").trim().toLowerCase())
+                    .filter(Boolean);
+                setUserRoles(roleList);
                 let role = 'USER';
-                if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
-                else if (roles.includes('BRINS')) role = 'BRINS';
-                else if (roles.includes('TUGURE')) role = 'TUGURE';
+                if (normalizedRoles.includes('admin')) role = 'admin';
+                else if (normalizedRoles.includes('approver-brins-role')) role = 'approver';
+                else if (normalizedRoles.includes('checker-brins-role')) role = 'checker';
+                else if (normalizedRoles.includes('maker-brins-role')) role = 'maker';
                 setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
             }
         } catch (error) {

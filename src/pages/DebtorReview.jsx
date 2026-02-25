@@ -60,8 +60,18 @@ const defaultFilter = {
     endDate: "",
 };
 
+const normalizeRole = (role = "") => String(role).trim().toLowerCase();
+const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
+const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role"];
+const hasTugureActionRole = (roles = []) =>
+    (Array.isArray(roles) ? roles : [])
+        .map(normalizeRole)
+        .some((role) => TUGURE_ACTION_ROLES.includes(role));
+
 export default function DebtorReview() {
     const [user, setUser] = useState(null);
+    const [tokenRoles, setTokenRoles] = useState([]);
+    const [auditActor, setAuditActor] = useState(null);
     const [debtors, setDebtors] = useState([]);
     const [totalDebtors, setTotalDebtors] = useState(0);
     const [contracts, setContracts] = useState([]);
@@ -87,20 +97,29 @@ export default function DebtorReview() {
         // load contracts/batches and initial page of debtors
         loadData();
     }, []);
-
-    const isTugure = user?.role === "TUGURE" || user?.role === "admin";
+    const canManageDebtorActions = hasTugureActionRole(tokenRoles);
 
     const loadUser = async () => {
         try {
-            const { default: keycloakService } = await import('@/services/keycloakService');
+            const { default: keycloakService } =
+                await import("@/services/keycloakService");
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
-                let role = 'USER';
-                if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
-                else if (roles.includes('BRINS')) role = 'BRINS';
-                else if (roles.includes('TUGURE')) role = 'TUGURE';
-                setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
+                const actor = keycloakService.getAuditActor();
+                setAuditActor(actor);
+                setTokenRoles(Array.isArray(roles) ? roles : []);
+                const role =
+                    actor?.user_role ||
+                    (Array.isArray(roles) && roles.length > 0
+                        ? normalizeRole(roles[0])
+                        : "user");
+                setUser({
+                    id: userInfo.id,
+                    email: userInfo.email,
+                    full_name: userInfo.name,
+                    role,
+                });
             }
         } catch (error) {
             console.error("Failed to load user:", error);
@@ -157,9 +176,18 @@ export default function DebtorReview() {
 
     const loadStatusCounts = async () => {
         try {
-            const statuses = ["SUBMITTED", "APPROVED", "REVISION", "CONDITIONAL"];
+            const statuses = [
+                "SUBMITTED",
+                "APPROVED",
+                "REVISION",
+                "CONDITIONAL",
+            ];
             const promises = statuses.map((s) =>
-                backend.listPaginated("Debtor", { page: 1, limit: 1, q: JSON.stringify({ submitStatus: s }) }),
+                backend.listPaginated("Debtor", {
+                    page: 1,
+                    limit: 1,
+                    q: JSON.stringify({ submitStatus: s }),
+                }),
             );
             const results = await Promise.all(promises);
             const counts = results.map((r) => Number(r.pagination?.total) || 0);
@@ -170,15 +198,24 @@ export default function DebtorReview() {
             setConditionalCountLocal(counts[3] || 0);
             // sample approved debtors to estimate total plafon (limited to reasonable page)
             try {
-                const approvedSample = await backend.listPaginated("Debtor", { page: 1, limit: 100, q: JSON.stringify({ submitStatus: 'APPROVED' }) });
-                const approvedRows = Array.isArray(approvedSample.data) ? approvedSample.data : [];
-                const samplePlafon = approvedRows.reduce((s, d) => s + (parseFloat(d.plafon) || 0), 0);
+                const approvedSample = await backend.listPaginated("Debtor", {
+                    page: 1,
+                    limit: 100,
+                    q: JSON.stringify({ submitStatus: "APPROVED" }),
+                });
+                const approvedRows = Array.isArray(approvedSample.data)
+                    ? approvedSample.data
+                    : [];
+                const samplePlafon = approvedRows.reduce(
+                    (s, d) => s + (parseFloat(d.plafon) || 0),
+                    0,
+                );
                 setTotalPlafondLocal(samplePlafon);
             } catch (e) {
-                console.warn('Failed to load approved sample for plafon', e);
+                console.warn("Failed to load approved sample for plafon", e);
             }
         } catch (e) {
-            console.warn('Failed to load status counts', e);
+            console.warn("Failed to load status counts", e);
         }
     };
 
@@ -205,8 +242,8 @@ export default function DebtorReview() {
             const debtorsToProcess = isBulk
                 ? debtors.filter((d) => selectedDebtors.includes(d.id))
                 : selectedDebtor
-                  ? [selectedDebtor]
-                  : [];
+                    ? [selectedDebtor]
+                    : [];
 
             if (debtorsToProcess.length === 0) {
                 console.error("No debtors to process");
@@ -256,15 +293,12 @@ export default function DebtorReview() {
                                 status: newStatus,
                                 remarks: approvalRemarks,
                             }),
-                            user_email: user?.email,
-                            user_role: user?.role,
+                            user_email: auditActor?.user_email || user?.email,
+                            user_role: auditActor?.user_role || user?.role,
                             reason: approvalRemarks,
                         });
                     } catch (auditError) {
-                        console.warn(
-                            "Failed to create audit log:",
-                            auditError,
-                        );
+                        console.warn("Failed to create audit log:", auditError);
                     }
                 } catch (error) {
                     console.error(
@@ -286,7 +320,7 @@ export default function DebtorReview() {
                     reference_id: isBulk
                         ? debtorsToProcess[0]?.batch_id
                         : selectedDebtor?.id,
-                    target_role: "BRINS",
+                    target_role: BRINS_ACTION_ROLES[0],
                 });
             } catch (notifError) {
                 console.warn("Failed to create notification:", notifError);
@@ -361,15 +395,23 @@ export default function DebtorReview() {
         }
     };
 
-    const pendingCount = pendingCountLocal || debtors.filter((d) => d.status === "SUBMITTED").length;
-    const approvedCount = approvedCountLocal || debtors.filter((d) => d.status === "APPROVED").length;
-    const revisionCount = revisionCountLocal || debtors.filter((d) => d.status === "REVISION").length;
-    const conditionalCount = conditionalCountLocal || debtors.filter(
-        (d) => d.status === "CONDITIONAL",
-    ).length;
-    const totalPlafond = totalPlafondLocal || debtors
-        .filter((d) => d.status === "APPROVED")
-        .reduce((sum, d) => sum + (parseFloat(d.plafon) || 0), 0);
+    const pendingCount =
+        pendingCountLocal ||
+        debtors.filter((d) => d.status === "SUBMITTED").length;
+    const approvedCount =
+        approvedCountLocal ||
+        debtors.filter((d) => d.status === "APPROVED").length;
+    const revisionCount =
+        revisionCountLocal ||
+        debtors.filter((d) => d.status === "REVISION").length;
+    const conditionalCount =
+        conditionalCountLocal ||
+        debtors.filter((d) => d.status === "CONDITIONAL").length;
+    const totalPlafond =
+        totalPlafondLocal ||
+        debtors
+            .filter((d) => d.status === "APPROVED")
+            .reduce((sum, d) => sum + (parseFloat(d.plafon) || 0), 0);
 
     const columns = [
         {
@@ -381,9 +423,7 @@ export default function DebtorReview() {
                     }
                     onCheckedChange={(checked) => {
                         if (checked) {
-                            setSelectedDebtors(
-                                pageData.map((d) => d.id),
-                            );
+                            setSelectedDebtors(pageData.map((d) => d.id));
                         } else {
                             setSelectedDebtors([]);
                         }
@@ -601,7 +641,7 @@ export default function DebtorReview() {
             />
 
             {/* Bulk Actions */}
-            {isTugure && selectedDebtors.length >= 0 && (
+            {canManageDebtorActions && selectedDebtors.length >= 0 && (
                 <div className="flex flex-wrap gap-2">
                     <>
                         <Button

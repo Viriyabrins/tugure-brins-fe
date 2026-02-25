@@ -1,13 +1,46 @@
-import Keycloak from 'keycloak-js';
-
 const keycloakConfig = {
-    url: import.meta.env.VITE_KEYCLOAK_URL || 'https://cred.sibernetik.co.id',
-    realm: import.meta.env.VITE_KEYCLOAK_REALM || 'insurance',
     clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'brins-tugure',
-    redirectUri: import.meta.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard'
+    redirectUri: import.meta.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard',
 };
 
-const keycloak = new Keycloak(keycloakConfig);
+const apiBase = '';
+
+const authState = {
+    authenticated: false,
+    token: null,
+    refreshToken: null,
+    idToken: null,
+    tokenParsed: null,
+};
+
+const decodeJwtPayload = (jwt) => {
+    if (!jwt || typeof jwt !== 'string') return null;
+    const parts = jwt.split('.');
+    if (parts.length < 2) return null;
+    try {
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const pad = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4));
+        return JSON.parse(atob(base64 + pad));
+    } catch {
+        return null;
+    }
+};
+
+const setTokens = ({ accessToken, refreshToken, idToken }) => {
+    authState.token = accessToken || null;
+    authState.refreshToken = refreshToken || null;
+    authState.idToken = idToken || null;
+    authState.tokenParsed = decodeJwtPayload(accessToken);
+    authState.authenticated = Boolean(accessToken);
+};
+
+const clearTokens = () => {
+    authState.token = null;
+    authState.refreshToken = null;
+    authState.idToken = null;
+    authState.tokenParsed = null;
+    authState.authenticated = false;
+};
 
 // Auto-refresh token interval (every 30 seconds)
 let _tokenRefreshInterval = null;
@@ -21,11 +54,24 @@ function cleanupAuthParamsFromUrl() {
             currentUrl.searchParams.delete(param);
         });
 
-        // Remove OIDC callback params from hash (if responseMode=fragment appears)
+        // Remove callback params from hash
         if (currentUrl.hash) {
             const hash = currentUrl.hash.replace(/^#/, '');
             const hashParams = new URLSearchParams(hash);
-            ['code', 'state', 'session_state', 'iss'].forEach((param) => {
+            [
+                'code',
+                'state',
+                'session_state',
+                'iss',
+                'kc_access_token',
+                'kc_refresh_token',
+                'kc_id_token',
+                'kc_expires_in',
+                'kc_token_type',
+                'kc_email',
+                'kc_name',
+                'kc_sub',
+            ].forEach((param) => {
                 hashParams.delete(param);
             });
             const nextHash = hashParams.toString();
@@ -41,46 +87,49 @@ function cleanupAuthParamsFromUrl() {
 function startTokenRefresh() {
     if (_tokenRefreshInterval) clearInterval(_tokenRefreshInterval);
     _tokenRefreshInterval = setInterval(async () => {
-        if (keycloak.authenticated) {
-            try {
-                await keycloak.updateToken(60); // refresh if expires within 60s
-            } catch (err) {
-                console.error('Auto token refresh failed:', err);
-                keycloakLogout();
-            }
+        if (!authState.authenticated || !authState.tokenParsed?.exp) return;
+
+        const expiresIn = authState.tokenParsed.exp - Math.floor(Date.now() / 1000);
+        if (expiresIn > 60) return;
+
+        try {
+            await refreshKeycloakToken();
+        } catch (err) {
+            console.error('Auto token refresh failed:', err);
+            keycloakLogout();
         }
     }, 30000); // run every 30s
+}
+
+function ingestTokensFromHash() {
+    if (!window.location.hash) return false;
+    const hash = window.location.hash.replace(/^#/, '');
+    const params = new URLSearchParams(hash);
+
+    const accessToken = params.get('kc_access_token');
+    const refreshToken = params.get('kc_refresh_token');
+    const idToken = params.get('kc_id_token');
+
+    if (!accessToken) return false;
+
+    setTokens({ accessToken, refreshToken, idToken });
+    cleanupAuthParamsFromUrl();
+    return true;
 }
 
 // Keycloak Initialization Function
 export async function initKeycloak() {
     try {
-        const authenticated = await keycloak.init({
-            onLoad: 'login-required',
-            flow: 'standard',
-            pkceMethod: 'S256',
-            responseMode: 'query',
-            checkLoginIframe: false,
-            redirectUri: keycloakConfig.redirectUri,
-        });
+        const authenticatedFromCallback = ingestTokensFromHash();
 
-        console.log('Keycloak initialized:', authenticated);
-
-        if (authenticated) {
-            cleanupAuthParamsFromUrl();
+        if (authenticatedFromCallback) {
             startTokenRefresh();
+            return true;
         }
 
-        // Handle token expiry event
-        keycloak.onTokenExpired = () => {
-            console.warn('Keycloak token expired, attempting refresh...');
-            keycloak.updateToken(30).catch(() => {
-                console.error('Token refresh after expiry failed, logging out');
-                keycloakLogout();
-            });
-        };
-
-        return authenticated;
+        clearTokens();
+        await keycloakLogin({ redirectUri: keycloakConfig.redirectUri });
+        return false;
     } catch (error) {
         console.error('Failed to initialize adapter:', error);
         throw error;
@@ -88,8 +137,10 @@ export async function initKeycloak() {
 }
 
 // Keycloak Login Function
-export function keycloakLogin() {
-    return keycloak.login();
+export async function keycloakLogin(options = {}) {
+    const redirectUri = options.redirectUri || keycloakConfig.redirectUri;
+    const loginUrl = `${apiBase}/api/auth/keycloak/login?redirect_uri=${encodeURIComponent(redirectUri)}`;
+    window.location.href = loginUrl;
 }
 
 // Keycloak Logout Function
@@ -102,17 +153,26 @@ export async function keycloakLogout(options = {}) {
     }
 
     try {
-        await keycloak.logout({ redirectUri: window.location.origin });
+        await fetch(`${apiBase}/api/auth/keycloak/logout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                refreshToken: authState.refreshToken,
+                idToken: authState.idToken,
+                redirectUri,
+            }),
+        });
     } catch (error) {
-        console.error('Keycloak JS logout failed, falling back to local redirect:', error);
-        keycloak.clearToken();
-        window.location.href = redirectUri;
+        console.error('Keycloak logout request failed:', error);
     }
+
+    clearTokens();
+    window.location.href = redirectUri;
 }
 
 // Check if the user is authenticated
 export function isAuthenticated() {
-    return !!keycloak.authenticated;
+    return !!authState.authenticated;
 }
 
 // Alias used by keycloakService
@@ -120,24 +180,38 @@ export const isKeycloakAuthenticated = isAuthenticated;
 
 // Get the Keycloak token
 export function getKeycloakToken() {
-    return keycloak.token;
+    return authState.token;
 }
 
 // Get the Keycloak user info
 export function getKeycloakUserInfo() {
-    return keycloak.tokenParsed;
+    return authState.tokenParsed;
 }
 
 // Refresh the Keycloak token
 export async function refreshKeycloakToken() {
     try {
-        const refreshed = await keycloak.updateToken(30); // Refresh if token will expire in 30 seconds
-
-        if (refreshed) {
-            console.log('Token refreshed successfully');
+        if (!authState.refreshToken) {
+            throw new Error('No refresh token available');
         }
 
-        return keycloak.token;
+        const response = await fetch(`${apiBase}/api/auth/keycloak/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: authState.refreshToken }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.success || !payload?.data?.accessToken) {
+            throw new Error(payload?.message || 'Failed to refresh token');
+        }
+
+        setTokens({
+            accessToken: payload.data.accessToken,
+            refreshToken: payload.data.refreshToken,
+            idToken: payload.data.idToken,
+        });
+        return authState.token;
     } catch (error) {
         console.error('Failed to refresh token:', error);
         keycloakLogout(); // Force logout 
@@ -147,7 +221,8 @@ export async function refreshKeycloakToken() {
 
 // Check if the user has a specific role
 export function hasRole(role) {
-    return keycloak.hasRealmRole(role) || keycloak.hasResourceRole(role);
+    const roles = getUserRoles();
+    return roles.includes(role);
 }
 
 // Alias used by keycloakService
@@ -155,13 +230,26 @@ export const hasKeycloakRole = hasRole;
 
 // Get user roles
 export function getUserRoles() {
-    const realmRoles = keycloak.realmAccess?.roles || [];
-    const clientRoles = keycloak.resourceAccess?.[keycloakConfig.clientId]?.roles || [];
+    const token = authState.tokenParsed || {};
+    const realmRoles = token.realm_access?.roles || [];
+    const clientRoles = token.resource_access?.[keycloakConfig.clientId]?.roles || [];
 
     return [...realmRoles, ...clientRoles];
 }
 
 // Alias used by keycloakService
 export const getKeycloakRoles = getUserRoles;
+
+const keycloak = {
+    get authenticated() {
+        return authState.authenticated;
+    },
+    get token() {
+        return authState.token;
+    },
+    get tokenParsed() {
+        return authState.tokenParsed;
+    },
+};
 
 export default keycloak;

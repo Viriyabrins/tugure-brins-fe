@@ -93,8 +93,18 @@ const defaultFilterDnCn = {
     status: "all",
 };
 
+const normalizeRole = (role = "") => String(role).trim().toLowerCase();
+const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
+const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role"];
+const hasTugureActionRole = (roles = []) =>
+    (Array.isArray(roles) ? roles : [])
+        .map(normalizeRole)
+        .some((role) => TUGURE_ACTION_ROLES.includes(role));
+
 export default function NotaManagement() {
     const [user, setUser] = useState(null);
+    const [tokenRoles, setTokenRoles] = useState([]);
+    const [auditActor, setAuditActor] = useState(null);
     const [notas, setNotas] = useState([]);
     const [batches, setBatches] = useState([]);
     const [contracts, setContracts] = useState([]);
@@ -131,9 +141,7 @@ export default function NotaManagement() {
     const [filters, setFilters] = useState(defaultFilter);
     const [reconFilters, setReconFilters] = useState(defaultFilterRecon);
     const [dnCnFilters, setDnCnFilters] = useState(defaultFilterDnCn);
-
-    const isTugure = user?.role === "TUGURE" || user?.role === "admin";
-    const isBrins = user?.role === "BRINS" || user?.role === "admin";
+    const canManageNotaActions = hasTugureActionRole(tokenRoles);
 
     useEffect(() => {
         loadUser();
@@ -146,10 +154,14 @@ export default function NotaManagement() {
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
-                let role = 'USER';
-                if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
-                else if (roles.includes('BRINS')) role = 'BRINS';
-                else if (roles.includes('TUGURE')) role = 'TUGURE';
+                const actor = keycloakService.getAuditActor();
+                setAuditActor(actor);
+                setTokenRoles(Array.isArray(roles) ? roles : []);
+                const role =
+                    actor?.user_role ||
+                    (Array.isArray(roles) && roles.length > 0
+                        ? normalizeRole(roles[0])
+                        : "user");
                 setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
             }
         } catch (error) {
@@ -432,8 +444,8 @@ export default function NotaManagement() {
                     new_value: JSON.stringify({
                         blocked_reason: "is_immutable = TRUE",
                     }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: "Attempted to edit immutable Nota",
                 });
             } catch (auditError) {
@@ -471,9 +483,9 @@ export default function NotaManagement() {
 
             const targetRole =
                 nextStatus === "Issued"
-                    ? "BRINS"
+                                        ? BRINS_ACTION_ROLES[0]
                     : nextStatus === "Confirmed"
-                      ? "TUGURE"
+                                            ? TUGURE_ACTION_ROLES[0]
                       : "ALL";
 
             // Create notification using backend client
@@ -502,8 +514,8 @@ export default function NotaManagement() {
                         status: nextStatus,
                         is_immutable: nextStatus === "Issued",
                     }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: remarks,
                 });
             } catch (auditError) {
@@ -706,7 +718,7 @@ export default function NotaManagement() {
                         type: exceptionType !== "NONE" ? "WARNING" : "INFO",
                         module: "DEBTOR",
                         reference_id: selectedRecon.nota_number,
-                        target_role: "TUGURE",
+                        target_role: TUGURE_ACTION_ROLES[0],
                     });
                 } catch (notifError) {
                     console.warn("Failed to create notification:", notifError);
@@ -727,8 +739,8 @@ export default function NotaManagement() {
                         match_status: matchStatus,
                         exception_type: exceptionType,
                     }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: paymentFormData.bank_reference || "",
                 });
             } catch (auditError) {
@@ -771,8 +783,8 @@ export default function NotaManagement() {
                             blocked_reason:
                                 "PARTIAL payment - difference exists",
                         }),
-                        user_email: user?.email,
-                        user_role: user?.role,
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
                         reason: "Attempted to finalize reconciliation with outstanding difference",
                     });
                 } catch (auditError) {
@@ -829,8 +841,8 @@ export default function NotaManagement() {
                     new_value: JSON.stringify({
                         blocked_reason: "reconciliation_status not FINAL",
                     }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: "Attempted Exception creation before reconciliation finalized",
                 });
             } catch (auditError) {
@@ -887,8 +899,8 @@ export default function NotaManagement() {
                         original_nota: selectedNota.nota_number,
                         adjustment: dnCnFormData.adjustment_amount,
                     }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: dnCnFormData.reason_description,
                 });
             } catch (auditError) {
@@ -949,7 +961,10 @@ export default function NotaManagement() {
             await backend.update("DebitCreditNote", dnCn.note_number, updates);
 
             // Create notification using backend client
-            const targetRole = action === "approve" ? "BRINS" : "TUGURE";
+            const targetRole =
+                action === "approve"
+                    ? BRINS_ACTION_ROLES[0]
+                    : TUGURE_ACTION_ROLES[0];
             try {
                 await backend.create("Notification", {
                     title: `Exception ${statusMap[action]}`,
@@ -972,8 +987,8 @@ export default function NotaManagement() {
                     entity_id: dnCn.note_number,
                     old_value: JSON.stringify({ status: dnCn.status }),
                     new_value: JSON.stringify({ status: statusMap[action] }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: remarks,
                 });
             } catch (auditError) {
@@ -1014,8 +1029,8 @@ export default function NotaManagement() {
                         blocked_reason:
                             "Payment not matched and no approved Exception",
                     }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: "Attempted to close Nota without payment match or Exception approval",
                 });
             } catch (auditError) {
@@ -1342,7 +1357,8 @@ export default function NotaManagement() {
                                             <Eye className="w-4 h-4 mr-1" />
                                             View
                                         </Button>
-                                        {row.status !== "Nota Closed" &&
+                                        {canManageNotaActions &&
+                                            row.status !== "Nota Closed" &&
                                             getNextStatus(row.status) && (
                                                 <Button
                                                     size="sm"
@@ -1591,7 +1607,7 @@ export default function NotaManagement() {
                                 header: "Actions",
                                 cell: (row) => (
                                     <div className="flex gap-1 flex-wrap">
-                                        {isTugure &&
+                                        {canManageNotaActions &&
                                             row.status !== "Nota Closed" &&
                                             row.reconciliation_status !==
                                                 "FINAL" && (
@@ -1620,7 +1636,7 @@ export default function NotaManagement() {
                                                 </Button>
                                             )}
 
-                                        {isTugure &&
+                                        {canManageNotaActions &&
                                             row.reconciliation_status !==
                                                 "FINAL" &&
                                             row.total_actual_paid > 0 && (
@@ -1637,7 +1653,7 @@ export default function NotaManagement() {
                                                 </Button>
                                             )}
 
-                                        {isTugure &&
+                                        {canManageNotaActions &&
                                             row.has_exception &&
                                             row.reconciliation_status ===
                                                 "FINAL" && (
@@ -1670,7 +1686,8 @@ export default function NotaManagement() {
                                                 </Button>
                                             )}
 
-                                        {(row.reconciliation_status ===
+                                        {canManageNotaActions &&
+                                            (row.reconciliation_status ===
                                             "MATCHED" ||
                                             dnCnRecords.some(
                                                 (d) =>
@@ -1864,7 +1881,7 @@ export default function NotaManagement() {
                                             <Eye className="w-4 h-4" />
                                         </Button>
 
-                                        {isTugure &&
+                                        {canManageNotaActions &&
                                             (row.reconciliation_status ===
                                                 "FINAL" ||
                                                 row.recon_status ===
@@ -1900,7 +1917,8 @@ export default function NotaManagement() {
                                                 </Button>
                                             )}
 
-                                        {(row.reconciliation_status ===
+                                        {canManageNotaActions &&
+                                            (row.reconciliation_status ===
                                             "MATCHED" ||
                                             row.recon_status === "MATCHED" ||
                                             dnCnRecords.some(

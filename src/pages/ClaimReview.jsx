@@ -55,8 +55,18 @@ const defaultFilter = {
     subrogationStatus: "all",
 }
 
+const normalizeRole = (role = "") => String(role).trim().toLowerCase();
+const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
+const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role"];
+const hasTugureActionRole = (roles = []) =>
+    (Array.isArray(roles) ? roles : [])
+        .map(normalizeRole)
+        .some((role) => TUGURE_ACTION_ROLES.includes(role));
+
 export default function ClaimReview() {
     const [user, setUser] = useState(null);
+    const [tokenRoles, setTokenRoles] = useState([]);
+    const [auditActor, setAuditActor] = useState(null);
     const [claims, setClaims] = useState([]);
     const [subrogations, setSubrogations] = useState([]);
     const [notas, setNotas] = useState([]);
@@ -75,6 +85,7 @@ export default function ClaimReview() {
     const [errorMessage, setErrorMessage] = useState("");
     const [remarks, setRemarks] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
+    const canManageClaimActions = hasTugureActionRole(tokenRoles);
 
     useEffect(() => {
         loadUser();
@@ -87,10 +98,14 @@ export default function ClaimReview() {
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
-                let role = 'USER';
-                if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
-                else if (roles.includes('BRINS')) role = 'BRINS';
-                else if (roles.includes('TUGURE')) role = 'TUGURE';
+                const actor = keycloakService.getAuditActor();
+                setAuditActor(actor);
+                setTokenRoles(Array.isArray(roles) ? roles : []);
+                const role =
+                    actor?.user_role ||
+                    (Array.isArray(roles) && roles.length > 0
+                        ? normalizeRole(roles[0])
+                        : "user");
                 setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
             }
         } catch (error) {
@@ -174,8 +189,8 @@ export default function ClaimReview() {
                             new_value: {
                                 blocked_reason: "Nota payment not completed",
                             },
-                            user_email: user?.email,
-                            user_role: user?.role,
+                            user_email: auditActor?.user_email || user?.email,
+                            user_role: auditActor?.user_role || user?.role,
                             reason: "Attempted claim review before Nota payment",
                         });
                     } catch (auditError) {
@@ -244,7 +259,7 @@ export default function ClaimReview() {
                             module: "CLAIM",
                             reference_id:
                                 selectedClaim.claim_no || selectedClaim.id,
-                            target_role: "TUGURE",
+                            target_role: TUGURE_ACTION_ROLES[0],
                         });
                     } catch (notifError) {
                         console.warn(
@@ -273,7 +288,7 @@ export default function ClaimReview() {
                     type: "INFO",
                     module: "CLAIM",
                     reference_id: claimId,
-                    target_role: "BRINS",
+                    target_role: BRINS_ACTION_ROLES[0],
                 });
             } catch (notifError) {
                 console.warn("Failed to create notification:", notifError);
@@ -288,8 +303,8 @@ export default function ClaimReview() {
                     entity_id: claimId,
                     old_value: JSON.stringify({ status: selectedClaim.status }),
                     new_value: JSON.stringify({ status: newStatus }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: remarks,
                 });
             } catch (auditError) {
@@ -374,7 +389,7 @@ export default function ClaimReview() {
                     >
                         <Eye className="w-4 h-4" />
                     </Button>
-                    {row.status === "Draft" && (
+                    {canManageClaimActions && row.status === "Draft" && (
                         <>
                             <Button
                                 size="sm"
@@ -400,7 +415,7 @@ export default function ClaimReview() {
                             </Button>
                         </>
                     )}
-                    {row.status === "Checked" && (
+                    {canManageClaimActions && row.status === "Checked" && (
                         <Button
                             size="sm"
                             className="bg-green-600"
@@ -413,7 +428,7 @@ export default function ClaimReview() {
                             Verify Docs
                         </Button>
                     )}
-                    {row.status === "Doc Verified" && (
+                    {canManageClaimActions && row.status === "Doc Verified" && (
                         <Button
                             size="sm"
                             className="bg-purple-600"
@@ -442,7 +457,7 @@ export default function ClaimReview() {
                 ]}
                 actions={
                     <div className="flex gap-2">
-                        {selectedClaims.length > 0 && (
+                        {canManageClaimActions && selectedClaims.length > 0 && (
                             <>
                                 <Button
                                     className="bg-green-600"

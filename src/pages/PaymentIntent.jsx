@@ -51,6 +51,7 @@ const defaultFilter = {
 
 export default function PaymentIntent() {
     const [user, setUser] = useState(null);
+    const [userRoles, setUserRoles] = useState([]);
     const [notas, setNotas] = useState([]);
     const [paymentIntents, setPaymentIntents] = useState([]);
     const [contracts, setContracts] = useState([]);
@@ -66,9 +67,13 @@ export default function PaymentIntent() {
     const [plannedDate, setPlannedDate] = useState("");
     const [remarks, setRemarks] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
-
-    const isBrins = user?.role === "BRINS" || user?.role === "admin";
-    const isTugure = user?.role === "TUGURE" || user?.role === "admin";
+    const canShowActionButtons = userRoles.some((role) => {
+        const normalizedRole = String(role || "").trim().toLowerCase();
+        return (
+            normalizedRole === "maker-brins-role" ||
+            normalizedRole === "checker-brins-role"
+        );
+    });
 
     useEffect(() => {
         loadUser();
@@ -81,6 +86,7 @@ export default function PaymentIntent() {
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
+                setUserRoles(Array.isArray(roles) ? roles : []);
                 let role = 'USER';
                 if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
                 else if (roles.includes('BRINS')) role = 'BRINS';
@@ -401,7 +407,7 @@ export default function PaymentIntent() {
             header: "Actions",
             cell: (row) => (
                 <div className="flex gap-2">
-                    {row.status === "Issued" && isBrins && (
+                    {canShowActionButtons && row.status === "Issued" && (
                         <Button
                             size="sm"
                             className="bg-blue-600"
@@ -410,7 +416,7 @@ export default function PaymentIntent() {
                             Submit
                         </Button>
                     )}
-                    {row.status === "SUBMITTED" && isTugure && (
+                    {canShowActionButtons && row.status === "SUBMITTED" && (
                         <>
                             <Button
                                 size="sm"
@@ -451,21 +457,23 @@ export default function PaymentIntent() {
                     { label: "Payment Intent" },
                 ]}
                 actions={
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={loadData}>
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Refresh
-                        </Button>
-                        {isBrins && (
-                            <Button
-                                onClick={() => setShowCreateDialog(true)}
-                                variant="outline"
-                            >
-                                <DollarSign className="w-4 h-4 mr-2" />
-                                Create Intent
+                    canShowActionButtons ? (
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={loadData}>
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Refresh
                             </Button>
-                        )}
-                    </div>
+                            {canShowActionButtons && (
+                                <Button
+                                    onClick={() => setShowCreateDialog(true)}
+                                    variant="outline"
+                                >
+                                    <DollarSign className="w-4 h-4 mr-2" />
+                                    Create Intent
+                                </Button>
+                            )}
+                        </div>
+                    ) : null
                 }
             />
 
@@ -684,34 +692,36 @@ export default function PaymentIntent() {
                             />
                         </div>
                     </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowCreateDialog(false);
-                                resetForm();
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleCreateIntent}
-                            disabled={
-                                processing ||
-                                !selectedNota ||
-                                !plannedAmount ||
-                                !plannedDate
-                            }
-                            className="bg-blue-600"
-                        >
-                            {processing ? (
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                                <Send className="w-4 h-4 mr-2" />
-                            )}
-                            Create Intent
-                        </Button>
-                    </DialogFooter>
+                    {canShowActionButtons && (
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    setShowCreateDialog(false);
+                                    resetForm();
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleCreateIntent}
+                                disabled={
+                                    processing ||
+                                    !selectedNota ||
+                                    !plannedAmount ||
+                                    !plannedDate
+                                }
+                                className="bg-blue-600"
+                            >
+                                {processing ? (
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                    <Send className="w-4 h-4 mr-2" />
+                                )}
+                                Create Intent
+                            </Button>
+                        </DialogFooter>
+                    )}
                 </DialogContent>
             </Dialog>
         </div>

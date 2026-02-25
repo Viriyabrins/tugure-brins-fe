@@ -410,6 +410,8 @@ const parseUploadRows = async (file) => {
 
 export default function SubmitDebtor() {
     const [user, setUser] = useState(null);
+    const [auditActor, setAuditActor] = useState(null);
+    const [userRoles, setUserRoles] = useState([]);
     const [contracts, setContracts] = useState([]);
     const [batches, setBatches] = useState([]);
     const [debtors, setDebtors] = useState([]);
@@ -438,6 +440,13 @@ export default function SubmitDebtor() {
     const [filters, setFilters] = useState(defaultFilter);
     const [page, setPage] = useState(1);
     const isFirstPageEffect = useRef(true);
+    const canShowActionButtons = userRoles.some((role) => {
+        const normalizedRole = String(role || "").trim().toLowerCase();
+        return (
+            normalizedRole === "maker-brins-role" ||
+            normalizedRole === "checker-brins-role"
+        );
+    });
 
     const formatUploadError = (message) => {
         if (!message) {
@@ -492,6 +501,9 @@ export default function SubmitDebtor() {
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
+                const actor = keycloakService.getAuditActor();
+                setUserRoles(Array.isArray(roles) ? roles : []);
+                setAuditActor(actor || null);
                 let role = 'USER';
                 if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
                 else if (roles.includes('BRINS')) role = 'BRINS';
@@ -975,8 +987,8 @@ export default function SubmitDebtor() {
                     entity_id: batchId,
                     old_value: "",
                     new_value: JSON.stringify({ count: normalizedRows.length }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: `Uploaded ${normalizedRows.length} debtors to batch ${batchId}`,
                 });
             } catch (auditError) {
@@ -1062,8 +1074,8 @@ export default function SubmitDebtor() {
                             moved_to_revise_log: revisionDebtorsInBatch.length,
                             new_submitted: uploaded,
                         }),
-                        user_email: user?.email,
-                        user_role: user?.role,
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
                         reason: `Moved ${revisionDebtorsInBatch.length} REVISION debtors to ReviseLog and replaced with ${uploaded} new SUBMITTED debtors`,
                     });
                 } catch (auditError) {
@@ -1188,8 +1200,8 @@ export default function SubmitDebtor() {
                         entity_id: debtor.id,
                         old_value: JSON.stringify({ status: debtor.status }),
                         new_value: JSON.stringify({ status: "CONDITIONAL" }),
-                        user_email: user?.email,
-                        user_role: user?.role,
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
                         reason: revisionNote,
                     });
                 } catch (auditError) {
@@ -1345,26 +1357,28 @@ export default function SubmitDebtor() {
                     { label: "Submit Debtor" },
                 ]}
                 actions={
-                    <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleRefresh}>
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Refresh
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={handleDownloadTemplate}
-                        >
-                            <Download className="w-4 h-4 mr-2" />
-                            Download Template
-                        </Button>
-                        <Button
-                            variant="outline"
-                            onClick={() => setUploadDialogOpen(true)}
-                        >
-                            <Upload className="w-4 h-4 mr-2" />
-                            Upload Debtors
-                        </Button>
-                    </div>
+                    canShowActionButtons ? (
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={handleRefresh}>
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Refresh
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={handleDownloadTemplate}
+                            >
+                                <Download className="w-4 h-4 mr-2" />
+                                Download Template
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => setUploadDialogOpen(true)}
+                            >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Upload Debtors
+                            </Button>
+                        </div>
+                    ) : null
                 }
             />
 
@@ -1699,28 +1713,30 @@ export default function SubmitDebtor() {
                         )}
                     </div>
 
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setUploadDialogOpen(false)}
-                            disabled={uploading}
-                        >
-                            Cancel
-                        </Button>
-                        <Button onClick={handleBulkUpload} disabled={uploading}>
-                            {uploading ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Uploading...
-                                </>
-                            ) : (
-                                <>
-                                    <Upload className="w-4 h-4 mr-2" />
-                                    Upload
-                                </>
-                            )}
-                        </Button>
-                    </DialogFooter>
+                    {canShowActionButtons && (
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => setUploadDialogOpen(false)}
+                                disabled={uploading}
+                            >
+                                Cancel
+                            </Button>
+                            <Button onClick={handleBulkUpload} disabled={uploading}>
+                                {uploading ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Uploading...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload className="w-4 h-4 mr-2" />
+                                        Upload
+                                    </>
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    )}
                 </DialogContent>
             </Dialog>
 
@@ -1752,18 +1768,20 @@ export default function SubmitDebtor() {
                         </div>
                     </div>
 
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setRevisionDialogOpen(false)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button onClick={handleRequestRevision}>
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Request Revision
-                        </Button>
-                    </DialogFooter>
+                    {canShowActionButtons && (
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => setRevisionDialogOpen(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button onClick={handleRequestRevision}>
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Request Revision
+                            </Button>
+                        </DialogFooter>
+                    )}
                 </DialogContent>
             </Dialog>
 
@@ -1783,11 +1801,13 @@ export default function SubmitDebtor() {
                         </div>
                     </div>
 
-                    <DialogFooter>
-                        <Button onClick={() => setNoteDialogOpen(false)}>
-                            Close
-                        </Button>
-                    </DialogFooter>
+                    {canShowActionButtons && (
+                        <DialogFooter>
+                            <Button onClick={() => setNoteDialogOpen(false)}>
+                                Close
+                            </Button>
+                        </DialogFooter>
+                    )}
                 </DialogContent>
             </Dialog>
         </div>

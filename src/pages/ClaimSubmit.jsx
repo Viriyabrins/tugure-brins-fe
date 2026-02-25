@@ -170,6 +170,7 @@ const getExcelDate = (value) => {
 
 export default function ClaimSubmit() {
     const [user, setUser] = useState(null);
+    const [userRoles, setUserRoles] = useState([]);
     const [claims, setClaims] = useState([]);
     const [subrogations, setSubrogations] = useState([]);
     const [debtors, setDebtors] = useState([]);
@@ -192,6 +193,13 @@ export default function ClaimSubmit() {
     const [uploadFile, setUploadFile] = useState(null);
     const [parsedClaims, setParsedClaims] = useState([]);
     const [filters, setFilters] = useState(defaultFilter);
+    const canShowActionButtons = userRoles.some((role) => {
+        const normalizedRole = String(role || "").trim().toLowerCase();
+        return (
+            normalizedRole === "maker-brins-role" ||
+            normalizedRole === "checker-brins-role"
+        );
+    });
 
     useEffect(() => {
         loadUser();
@@ -204,6 +212,7 @@ export default function ClaimSubmit() {
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
+                setUserRoles(Array.isArray(roles) ? roles : []);
                 let role = 'USER';
                 if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
                 else if (roles.includes('BRINS')) role = 'BRINS';
@@ -709,29 +718,31 @@ export default function ClaimSubmit() {
                     { label: "Claim Submit" },
                 ]}
                 actions={
-                    <div className="flex gap-2">
-                        <Button 
-                            variant="outline" 
-                            onClick={loadData}
-                        >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Refresh
-                        </Button>
-                        <Button 
-                            variant="outline" 
-                            onClick={downloadTemplate}
-                        >
-                            <Download className="w-4 h-4 mr-2" />
-                            Download Template
-                        </Button>
-                        <Button 
-                            variant="outline"
-                            onClick={() => setShowUploadDialog(true)}
-                        >
-                            <Upload className="w-4 h-4 mr-2" />
-                            Bulk Upload
-                        </Button>
-                    </div>
+                    canShowActionButtons ? (
+                        <div className="flex gap-2">
+                            <Button 
+                                variant="outline" 
+                                onClick={loadData}
+                            >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Refresh
+                            </Button>
+                            <Button 
+                                variant="outline" 
+                                onClick={downloadTemplate}
+                            >
+                                <Download className="w-4 h-4 mr-2" />
+                                Download Template
+                            </Button>
+                            <Button 
+                                variant="outline"
+                                onClick={() => setShowUploadDialog(true)}
+                            >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Bulk Upload
+                            </Button>
+                        </div>
+                    ) : null
                 }
             />
 
@@ -776,13 +787,15 @@ export default function ClaimSubmit() {
                                 </Alert>
                             ))}
                         </div>
-                        <Button
-                            className="mt-3 bg-orange-600"
-                            size="sm"
-                            onClick={() => setShowRevisionDialog(true)}
-                        >
-                            Re-upload Revised Only
-                        </Button>
+                        {canShowActionButtons && (
+                            <Button
+                                className="mt-3 bg-orange-600"
+                                size="sm"
+                                onClick={() => setShowRevisionDialog(true)}
+                            >
+                                Re-upload Revised Only
+                            </Button>
+                        )}
                     </CardContent>
                 </Card>
             )}
@@ -943,13 +956,15 @@ export default function ClaimSubmit() {
 
                 <TabsContent value="subrogation" className="mt-4">
                     <div className="mb-4 flex justify-end">
-                        <Button
-                            onClick={() => setShowSubrogationDialog(true)}
-                            className="bg-green-600"
-                        >
-                            <Plus className="w-4 h-4 mr-2" />
-                            New Subrogation
-                        </Button>
+                        {canShowActionButtons && (
+                            <Button
+                                onClick={() => setShowSubrogationDialog(true)}
+                                className="bg-green-600"
+                            >
+                                <Plus className="w-4 h-4 mr-2" />
+                                New Subrogation
+                            </Button>
+                        )}
                     </div>
                     <DataTable
                         columns={[
@@ -1056,32 +1071,34 @@ export default function ClaimSubmit() {
                             </Alert>
                         )}
                     </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setShowUploadDialog(false);
-                                setParsedClaims([]);
-                                setSelectedBatch("");
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleBulkUpload}
-                            disabled={processing || parsedClaims.length === 0}
-                            className="bg-blue-600"
-                        >
-                            {processing ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Uploading...
-                                </>
-                            ) : (
-                                `Upload ${parsedClaims.length} Claims`
-                            )}
-                        </Button>
-                    </DialogFooter>
+                    {canShowActionButtons && (
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    setShowUploadDialog(false);
+                                    setParsedClaims([]);
+                                    setSelectedBatch("");
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleBulkUpload}
+                                disabled={processing || parsedClaims.length === 0}
+                                className="bg-blue-600"
+                            >
+                                {processing ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Uploading...
+                                    </>
+                                ) : (
+                                    `Upload ${parsedClaims.length} Claims`
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    )}
                 </DialogContent>
             </Dialog>
 
@@ -1114,14 +1131,16 @@ export default function ClaimSubmit() {
                             className="mt-4"
                         />
                     </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowRevisionDialog(false)}
-                        >
-                            Close
-                        </Button>
-                    </DialogFooter>
+                    {canShowActionButtons && (
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowRevisionDialog(false)}
+                            >
+                                Close
+                            </Button>
+                        </DialogFooter>
+                    )}
                 </DialogContent>
             </Dialog>
 
@@ -1181,85 +1200,87 @@ export default function ClaimSubmit() {
                             />
                         </div>
                     </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setShowSubrogationDialog(false)}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={async () => {
-                                if (!selectedClaim || !recoveryAmount) return;
+                    {canShowActionButtons && (
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowSubrogationDialog(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={async () => {
+                                    if (!selectedClaim || !recoveryAmount) return;
 
-                                try {
-                                    const claim = claims.find(
-                                        (c) => c.claim_no === selectedClaim,
-                                    );
+                                    try {
+                                        const claim = claims.find(
+                                            (c) => c.claim_no === selectedClaim,
+                                        );
 
-                                    const subrogationId = `SUB-${Date.now()}`;
+                                        const subrogationId = `SUB-${Date.now()}`;
 
-                                    await backend.create("Subrogation", {
-                                        subrogation_id: subrogationId,
-                                        claim_id: claim.claim_no,
-                                        debtor_id: claim.debtor_id,
-                                        recovery_amount:
-                                            parseFloat(recoveryAmount),
-                                        recovery_date:
-                                            formatDateToISO(recoveryDate),
-                                        status: "Draft",
-                                        remarks: subrogationRemarks,
-                                    });
-
-                                    // Create audit log
-                                    await backend.create("AuditLog", {
-                                        action: "SUBROGATION_CREATED",
-                                        module: "SUBROGATION",
-                                        entity_type: "Subrogation",
-                                        entity_id: subrogationId,
-                                        old_value: "{}",
-                                        new_value: JSON.stringify({
+                                        await backend.create("Subrogation", {
+                                            subrogation_id: subrogationId,
                                             claim_id: claim.claim_no,
-                                            recovery_amount: recoveryAmount,
-                                        }),
-                                        user_email: user?.email,
-                                        user_role: user?.role,
-                                        reason: "Manual subrogation creation",
-                                    });
+                                            debtor_id: claim.debtor_id,
+                                            recovery_amount:
+                                                parseFloat(recoveryAmount),
+                                            recovery_date:
+                                                formatDateToISO(recoveryDate),
+                                            status: "Draft",
+                                            remarks: subrogationRemarks,
+                                        });
 
-                                    // Create notification
-                                    await backend.create("Notification", {
-                                        title: "New Subrogation Created",
-                                        message: `Subrogation ${subrogationId} created for claim ${claim.claim_no}`,
-                                        type: "INFO",
-                                        module: "SUBROGATION",
-                                        reference_id: subrogationId,
-                                        target_role: "TUGURE",
-                                    });
+                                        // Create audit log
+                                        await backend.create("AuditLog", {
+                                            action: "SUBROGATION_CREATED",
+                                            module: "SUBROGATION",
+                                            entity_type: "Subrogation",
+                                            entity_id: subrogationId,
+                                            old_value: "{}",
+                                            new_value: JSON.stringify({
+                                                claim_id: claim.claim_no,
+                                                recovery_amount: recoveryAmount,
+                                            }),
+                                            user_email: user?.email,
+                                            user_role: user?.role,
+                                            reason: "Manual subrogation creation",
+                                        });
 
-                                    setSuccessMessage("Subrogation created");
-                                    setShowSubrogationDialog(false);
-                                    setSelectedClaim("");
-                                    setRecoveryAmount("");
-                                    setRecoveryDate("");
-                                    setSubrogationRemarks("");
-                                    loadData();
-                                } catch (error) {
-                                    console.error(
-                                        "Failed to create subrogation:",
-                                        error,
-                                    );
-                                    setErrorMessage(
-                                        "Failed to create subrogation: " +
-                                            error.message,
-                                    );
-                                }
-                            }}
-                            disabled={!selectedClaim || !recoveryAmount}
-                        >
-                            Create
-                        </Button>
-                    </DialogFooter>
+                                        // Create notification
+                                        await backend.create("Notification", {
+                                            title: "New Subrogation Created",
+                                            message: `Subrogation ${subrogationId} created for claim ${claim.claim_no}`,
+                                            type: "INFO",
+                                            module: "SUBROGATION",
+                                            reference_id: subrogationId,
+                                            target_role: "TUGURE",
+                                        });
+
+                                        setSuccessMessage("Subrogation created");
+                                        setShowSubrogationDialog(false);
+                                        setSelectedClaim("");
+                                        setRecoveryAmount("");
+                                        setRecoveryDate("");
+                                        setSubrogationRemarks("");
+                                        loadData();
+                                    } catch (error) {
+                                        console.error(
+                                            "Failed to create subrogation:",
+                                            error,
+                                        );
+                                        setErrorMessage(
+                                            "Failed to create subrogation: " +
+                                                error.message,
+                                        );
+                                    }
+                                }}
+                                disabled={!selectedClaim || !recoveryAmount}
+                            >
+                                Create
+                            </Button>
+                        </DialogFooter>
+                    )}
                 </DialogContent>
             </Dialog>
         </div>

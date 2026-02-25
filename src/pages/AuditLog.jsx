@@ -65,11 +65,6 @@ export default function AuditLog() {
         return Number.isNaN(d.getTime()) ? null : d;
     };
 
-    const formatDateForExport = (item) => {
-        const d = parseDateField(item);
-        return d ? d.toLocaleString("id-ID") : "";
-    };
-
     useEffect(() => {
         loadData();
     }, []);
@@ -190,6 +185,8 @@ export default function AuditLog() {
             return "bg-blue-100 text-blue-700 border-blue-200";
         if (action?.includes("APPROVE") || action?.includes("SUCCESS"))
             return "bg-green-100 text-green-700 border-green-200";
+        if (action?.includes("DEBTOR_REVISION"))
+            return "bg-yellow-100 text-yellow-700 border-yellow-200";
         if (action?.includes("REJECT") || action?.includes("DELETE"))
             return "bg-red-100 text-red-700 border-red-200";
         if (action?.includes("UPDATE") || action?.includes("MATCH"))

@@ -50,20 +50,53 @@ export default function Profile() {
     }, 1000);
   };
 
-  const handleLogoutAll = () => {
-    if (confirm('Are you sure you want to logout from all sessions?')) {
-      logout();
-    }
-  };
-
+  // Role info keyed by normalized token role names (upper-case)
   const roleInfo = {
-    admin: { label: 'Administrator', color: 'bg-purple-100 text-purple-700 border-purple-200', access: 'Full Access' },
+    ADMIN: { label: 'Administrator', color: 'bg-purple-100 text-purple-700 border-purple-200', access: 'Full Access' },
     BRINS: { label: 'BRINS User', color: 'bg-blue-100 text-blue-700 border-blue-200', access: 'BRINS Operations' },
     TUGURE: { label: 'TUGURE User', color: 'bg-green-100 text-green-700 border-green-200', access: 'TUGURE Review' },
-    user: { label: 'User', color: 'bg-blue-100 text-blue-700 border-blue-200', access: 'Standard Access' }
+    USER: { label: 'User', color: 'bg-blue-100 text-blue-700 border-blue-200', access: 'Standard Access' }
   };
 
-  const currentRoleInfo = roleInfo[user?.role] || roleInfo.user;
+  // Extract ONLY application roles for this app client from Keycloak token:
+  // prefer resource_access['brins-tugure'].roles, fallback to resource_access[azp].roles
+  const extractTokenRoles = () => {
+    const resourceAccess = tokenParsed?.resource_access;
+    const azpClientId = tokenParsed?.azp;
+
+    if (!resourceAccess || typeof resourceAccess !== 'object') {
+      return [];
+    }
+
+    if (Array.isArray(resourceAccess?.['brins-tugure']?.roles)) {
+      return resourceAccess['brins-tugure'].roles.map((r) => String(r));
+    }
+
+    if (azpClientId && Array.isArray(resourceAccess?.[azpClientId]?.roles)) {
+      return resourceAccess[azpClientId].roles.map((r) => String(r));
+    }
+
+    return [];
+  };
+
+  const tokenRoles = extractTokenRoles();
+
+  // Map token roles to normalized keys for lookups, and pick a display role
+  const deriveRoleKey = () => {
+    const upper = tokenRoles.map((r) => r.toUpperCase());
+    if (upper.includes('ADMIN') || upper.some((r) => r.includes('ADMIN'))) return 'ADMIN';
+    if (upper.includes('BRINS') || upper.some((r) => r.includes('BRINS'))) return 'BRINS';
+    if (upper.includes('TUGURE') || upper.some((r) => r.includes('TUGURE'))) return 'TUGURE';
+    const single = user?.role ? String(user.role).toUpperCase() : null;
+    if (single && Object.prototype.hasOwnProperty.call(roleInfo, single)) return single;
+    return 'USER';
+  };
+
+  const currentRoleKey = deriveRoleKey();
+  const currentRoleInfo = roleInfo[currentRoleKey] || roleInfo.USER;
+
+  // Show raw token roles in UI (no mapping), fallback only when token has no roles
+  const displayRole = tokenRoles.length > 0 ? tokenRoles.join(', ') : (user?.role || '-');
 
   return (
     <div className="space-y-6">
@@ -121,7 +154,7 @@ export default function Profile() {
                   <div className="flex items-center gap-3 mt-2">
                     <Shield className="w-4 h-4 text-gray-400" />
                     <Badge variant="outline" className={currentRoleInfo.color}>
-                      {user?.role || '-'}
+                      {displayRole}
                     </Badge>
                   </div>
                 </div>

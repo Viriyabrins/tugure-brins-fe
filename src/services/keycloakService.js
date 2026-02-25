@@ -83,6 +83,43 @@ class KeycloakService {
         return getKeycloakRoles()
     }
 
+    getAuditActor() {
+        const tokenInfo = getKeycloakUserInfo() || {}
+        const roles = this.getRoles()
+        const roleList = Array.isArray(roles) ? roles : []
+        const normalizedRoles = roleList
+            .map((role) => String(role).trim().toLowerCase())
+            .filter(Boolean)
+
+        const businessRoles = normalizedRoles.filter(
+            (role) =>
+                !role.startsWith('default-roles-') &&
+                role !== 'offline_access' &&
+                role !== 'uma_authorization',
+        )
+
+        const rolePriority = [
+            'maker-brins-role',
+            'checker-brins-role',
+            'approver-tugure-role',
+            'checker-tugure-role',
+        ]
+
+        const prioritizedRole =
+            rolePriority.find((role) => businessRoles.includes(role)) ||
+            businessRoles[0] ||
+            normalizedRoles[0] ||
+            'USER'
+
+        return {
+            user_email: tokenInfo.email || tokenInfo.preferred_username || tokenInfo.sub || 'unknown',
+            user_role: prioritizedRole,
+            user_roles: roleList,
+            user_id: tokenInfo.sub || null,
+            user_name: tokenInfo.name || null,
+        }
+    }
+
     /**
      * Check if user has any of the provided roles
      */

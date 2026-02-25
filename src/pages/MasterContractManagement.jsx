@@ -54,8 +54,22 @@ const defaultFilter = {
     endDate: "",
 };
 
+const normalizeRole = (role = "") => String(role).trim().toLowerCase();
+const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
+const BRINS_UPLOAD_ROLES = ["maker-brins-role", "checker-brins-role"];
+const hasTugureActionRole = (roles = []) =>
+    (Array.isArray(roles) ? roles : [])
+        .map(normalizeRole)
+        .some((role) => TUGURE_ACTION_ROLES.includes(role));
+const hasBrinsUploadRole = (roles = []) =>
+    (Array.isArray(roles) ? roles : [])
+        .map(normalizeRole)
+        .some((role) => BRINS_UPLOAD_ROLES.includes(role));
+
 export default function MasterContractManagement() {
     const [user, setUser] = useState(null);
+    const [tokenRoles, setTokenRoles] = useState([]);
+    const [auditActor, setAuditActor] = useState(null);
     const [contracts, setContracts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -76,8 +90,8 @@ export default function MasterContractManagement() {
     const [approvalRemarks, setApprovalRemarks] = useState("");
     const [uploadFile, setUploadFile] = useState(null);
     const [showDetailDialog, setShowDetailDialog] = useState(false);
-
-    const isTugure = user?.role === "TUGURE" || user?.role === "admin";
+    const canManageContractActions = hasTugureActionRole(tokenRoles);
+    const canManageUploadTemplate = hasBrinsUploadRole(tokenRoles);
     // Single-approval workflow: approvals happen only from Tugure side
 
     useEffect(() => {
@@ -91,10 +105,14 @@ export default function MasterContractManagement() {
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
-                let role = 'USER';
-                if (roles.includes('admin') || roles.includes('ADMIN')) role = 'admin';
-                else if (roles.includes('BRINS')) role = 'BRINS';
-                else if (roles.includes('TUGURE')) role = 'TUGURE';
+                const actor = keycloakService.getAuditActor();
+                setAuditActor(actor);
+                setTokenRoles(Array.isArray(roles) ? roles : []);
+                const role =
+                    actor?.user_role ||
+                    (Array.isArray(roles) && roles.length > 0
+                        ? normalizeRole(roles[0])
+                        : "user");
                 setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
             }
         } catch (error) {
@@ -568,8 +586,8 @@ export default function MasterContractManagement() {
                     new_value: JSON.stringify({
                         status: updates.contract_status,
                     }),
-                    user_email: user?.email,
-                    user_role: user?.role,
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
                     reason: approvalRemarks,
                 });
             } catch (auditError) {
@@ -705,7 +723,8 @@ export default function MasterContractManagement() {
             cell: (row) => {
                 const status = (row.contract_status || "").toString();
                 const showButtons =
-                    isTugure && (status === "Draft" || status === "Active");
+                    canManageContractActions &&
+                    (status === "Draft" || status === "Active");
 
                 return (
                     <div className="flex items-center gap-2">
@@ -771,20 +790,24 @@ export default function MasterContractManagement() {
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Refresh
                         </Button>
-                        <Button
-                            variant="outline"
-                            onClick={handleDownloadTemplate}
-                        >
-                            <Download className="w-4 h-4 mr-2" />
-                            Download Template
-                        </Button>
-                        <Button
-                            onClick={() => setShowUploadDialog(true)}
-                            variant="outline"
-                        >
-                            <Upload className="w-4 h-4 mr-2" />
-                            Upload Excel
-                        </Button>
+                        {canManageUploadTemplate && (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    onClick={handleDownloadTemplate}
+                                >
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Download Template
+                                </Button>
+                                <Button
+                                    onClick={() => setShowUploadDialog(true)}
+                                    variant="outline"
+                                >
+                                    <Upload className="w-4 h-4 mr-2" />
+                                    Upload Excel
+                                </Button>
+                            </>
+                        )}
                     </div>
                 }
             />
@@ -1014,8 +1037,8 @@ export default function MasterContractManagement() {
                                             new_value: JSON.stringify({
                                                 status: newStatus,
                                             }),
-                                            user_email: user?.email,
-                                            user_role: user?.role,
+                                            user_email: auditActor?.user_email || user?.email,
+                                            user_role: auditActor?.user_role || user?.role,
                                             reason: approvalRemarks,
                                         });
                                     } catch (auditError) {

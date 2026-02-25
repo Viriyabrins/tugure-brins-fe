@@ -11,9 +11,48 @@ import {
 } from "lucide-react";
 import { useKeycloakAuth } from './lib/KeycloakContext';
 export default function Layout({ children, currentPageName }) {
-  const { user, logout } = useKeycloakAuth();
+  const { user, logout, tokenParsed } = useKeycloakAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  const normalizeAccess = (value = '') => String(value).trim().toLowerCase();
+
+  const extractTokenAccesses = () => {
+    const rawAccess = tokenParsed?.access;
+
+    if (!rawAccess) return [];
+    if (Array.isArray(rawAccess)) {
+      return rawAccess.map(normalizeAccess).filter(Boolean);
+    }
+
+    return [normalizeAccess(rawAccess)].filter(Boolean);
+  };
+
+  const tokenAccesses = extractTokenAccesses();
+
+  // Extract ONLY application roles for this app client from Keycloak token:
+  // prefer resource_access['brins-tugure'].roles, fallback to resource_access[azp].roles
+  const extractTokenRoles = () => {
+    const resourceAccess = tokenParsed?.resource_access;
+    const azpClientId = tokenParsed?.azp;
+
+    if (!resourceAccess || typeof resourceAccess !== 'object') {
+      return [];
+    }
+
+    if (Array.isArray(resourceAccess?.['brins-tugure']?.roles)) {
+      return resourceAccess['brins-tugure'].roles.map((r) => String(r));
+    }
+
+    if (azpClientId && Array.isArray(resourceAccess?.[azpClientId]?.roles)) {
+      return resourceAccess[azpClientId].roles.map((r) => String(r));
+    }
+
+    return [];
+  };
+
+  const tokenRoles = extractTokenRoles();
+  const displayRole = tokenRoles.length > 0 ? tokenRoles.join(', ') : (user?.role?.toUpperCase() || 'USER');
 
   useEffect(() => {
     loadNotificationCount();
@@ -37,15 +76,15 @@ export default function Layout({ children, currentPageName }) {
       { name: 'Dashboard Analytics', icon: LayoutDashboard, path: 'Dashboard', roles: [] } // all users
     ],
     operations: [
-      { name: 'Debtor Submit', icon: Upload, path: 'SubmitDebtor', roles: ['BRINS'] },
+      { name: 'Debtor Submit', icon: Upload, path: 'SubmitDebtor', accesses: ['brins operation'] },
       // { name: 'Batch Processing', icon: FileText, path: 'BatchProcessing', roles: ['TUGURE'] },
       // { name: 'Document Eligibility', icon: FileCheck, path: 'DocumentEligibilityBatch', roles: ['BRINS'] },
-      { name: 'Debtor Review', icon: FileCheck, path: 'DebtorReview', roles: ['TUGURE'] },
-      { name: 'Nota Management', icon: FileText, path: 'NotaManagement', roles: ['TUGURE'] },
-      { name: 'Payment Intent', icon: DollarSign, path: 'PaymentIntent', roles: ['BRINS'] },
-      { name: 'Claim Submit', icon: FileText, path: 'ClaimSubmit', roles: ['BRINS'] },
+      { name: 'Debtor Review', icon: FileCheck, path: 'DebtorReview', accesses: ['tugure review'] },
+      { name: 'Nota Management', icon: FileText, path: 'NotaManagement', accesses: ['tugure review'] },
+      { name: 'Payment Intent', icon: DollarSign, path: 'PaymentIntent', accesses: ['brins operation'] },
+      { name: 'Claim Submit', icon: FileText, path: 'ClaimSubmit', accesses: ['brins operation'] },
       // { name: 'Document Claim', icon: FileCheck, path: 'DocumentClaim', roles: ['BRINS'] },
-      { name: 'Claim Review', icon: FileText, path: 'ClaimReview', roles: ['TUGURE'] }
+      { name: 'Claim Review', icon: FileText, path: 'ClaimReview', accesses: ['tugure review'] }
     ],
     shared: [
       { name: 'Master Contract', icon: FileText, path: 'MasterContractManagement', roles: [] },
@@ -60,9 +99,10 @@ export default function Layout({ children, currentPageName }) {
   // Filter menu items based on user role
   const filterMenuItems = (items) => {
     return items.filter(item => {
-      if (!item.roles || item.roles.length === 0) return true; // accessible to all
-      if (user?.role === 'admin') return true; // admin can access everything
-      return item.roles.includes(user?.role?.toUpperCase());
+      if (!item.accesses || item.accesses.length === 0) return true;
+
+      const allowedAccesses = item.accesses.map(normalizeAccess);
+      return tokenAccesses.some((access) => allowedAccesses.includes(access));
     });
   };
 
@@ -140,7 +180,7 @@ export default function Layout({ children, currentPageName }) {
               <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
                 <div className="text-right">
                   <p className="text-sm font-medium text-gray-900">{user?.full_name || user?.email}</p>
-                  <p className="text-xs text-gray-500">{user?.role?.toUpperCase() || 'USER'}</p>
+                  <p className="text-xs text-gray-500">{displayRole}</p>
                 </div>
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
                   <User className="w-5 h-5 text-white" />

@@ -151,9 +151,9 @@ jobs:
             fi
             HOST_IP=${HOST_IP:-127.0.0.1}
 
-            # Publish host port 443 -> container 10010. Pass PORT so app listens on 10010 inside container.
+            # Publish host port 10010 -> container 10010. Pass PORT so app listens on 10010 inside container.
             podman run -d --name brins-fe-staging --restart=always \
-              -p 443:10010 ${MOUNT_ARG} \
+              -p 10010:10010 ${MOUNT_ARG} \
               -e PORT=10010 \
               -e BACKEND_URL="http://${HOST_IP}:10011" ${SSL_ENV_ARGS} "${IMAGE}"
 

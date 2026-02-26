@@ -428,6 +428,71 @@ export const backend = {
     }
   },
 
+  /**
+   * Get the current user's notification settings by Keycloak user ID.
+   * GET /api/notification-settings/me?keycloak_user_id=<sub>
+   * Returns the settings object or null if none saved yet.
+   */
+  async getMyNotificationSettings(keycloakUserId) {
+    const qs = new URLSearchParams({ keycloak_user_id: keycloakUserId }).toString();
+    const url = `/api/notification-settings/me?${qs}`;
+    const res = await fetch(url, authFetchOptions());
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        if (e instanceof SyntaxError) throw new Error(error || res.statusText);
+        throw e;
+      }
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success === true) return parsed.data || null;
+      if ('data' in parsed) return parsed.data;
+      return parsed;
+    } catch (e) {
+      console.error('Failed to parse response:', e);
+      return null;
+    }
+  },
+
+  /**
+   * Upsert the current user's notification settings.
+   * PUT /api/notification-settings/me
+   * Body must include keycloak_user_id.
+   */
+  async upsertMyNotificationSettings(payload) {
+    const url = '/api/notification-settings/me';
+    const res = await fetch(url, authFetchOptions({
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }));
+    if (!res.ok) {
+      const error = await res.text();
+      try {
+        const parsed = JSON.parse(error);
+        throw new Error(parsed.message || 'Request failed');
+      } catch (e) {
+        if (e instanceof SyntaxError) throw new Error(error || res.statusText);
+        throw e;
+      }
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success === true) return parsed.data || null;
+      if ('data' in parsed) return parsed.data;
+      return parsed;
+    } catch (e) {
+      console.error('Failed to parse response:', e);
+      return null;
+    }
+  },
+
   async logUserInApp(pageName) {
     const url = `/api/app-logs/${encodeURIComponent(appId)}/log-user-in-app/${encodeURIComponent(pageName)}`;
     const res = await fetch(url, authFetchOptions({ method: 'POST' }));

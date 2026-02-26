@@ -90,14 +90,27 @@ export default function MasterContractManagement() {
     const [approvalRemarks, setApprovalRemarks] = useState("");
     const [uploadFile, setUploadFile] = useState(null);
     const [showDetailDialog, setShowDetailDialog] = useState(false);
+    const [page, setPage] = useState(1);
+    const [total, setTotal] = useState(0);
+    const [statsContracts, setStatsContracts] = useState([]); // full list for stat cards only
+    const pageSize = 10;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const canManageContractActions = hasTugureActionRole(tokenRoles);
     const canManageUploadTemplate = hasBrinsUploadRole(tokenRoles);
     // Single-approval workflow: approvals happen only from Tugure side
 
     useEffect(() => {
         loadUser();
-        loadData();
+        loadStats();
     }, []);
+
+    useEffect(() => {
+        loadData(page);
+    }, [page]);
+
+    useEffect(() => {
+        if (page > totalPages) setPage(totalPages);
+    }, [totalPages]);
 
     const loadUser = async () => {
         try {
@@ -120,16 +133,34 @@ export default function MasterContractManagement() {
         }
     };
 
-    const loadData = async () => {
+    const loadData = async (pageToLoad = page) => {
         setLoading(true);
         try {
-            const data = await backend.list("MasterContract");
-            setContracts(Array.isArray(data) ? data : []);
+            const query = { page: pageToLoad, limit: pageSize };
+            const result = await backend.listPaginated("MasterContract", query);
+            setContracts(Array.isArray(result.data) ? result.data : []);
+            setTotal(Number(result.pagination?.total) || 0);
+            console.log("Master Contracts", result)
         } catch (error) {
             console.error("Failed to load contracts:", error);
             setContracts([]);
+            setTotal(0);
         }
         setLoading(false);
+    };
+
+    /** Load full list once for stat cards only (Total / Active / Pending / Draft). */
+    const loadStats = async () => {
+        try {
+            const result = await backend.listPaginated("MasterContract", {
+                page: 1,
+                limit: 0,
+            });
+            setStatsContracts(Array.isArray(result.data) ? result.data : []);
+        } catch (error) {
+            console.error("Failed to load stats:", error);
+            setStatsContracts([]);
+        }
     };
 
     const handleDownloadTemplate = () => {
@@ -543,7 +574,8 @@ export default function MasterContractManagement() {
             setUploadFile(null);
             setUploadMode("new");
             setSelectedContractForRevision("");
-            loadData();
+            loadData(page);
+            loadStats();
         } catch (error) {
             console.error("Upload error:", error);
             setErrorMessage(`Upload failed: ${error.message}`);
@@ -623,7 +655,8 @@ export default function MasterContractManagement() {
             setSelectedContract(null);
             setApprovalAction("");
             setApprovalRemarks("");
-            loadData();
+            loadData(page);
+            loadStats();
         } catch (error) {
             console.error("Approval error:", error);
             setErrorMessage(`Failed to process approval: ${error.message}`);
@@ -641,20 +674,23 @@ export default function MasterContractManagement() {
             .sort((a, b) => (b.version || 1) - (a.version || 1));
     };
 
-    const activeContracts = contracts.filter(
+    const activeContracts = statsContracts.filter(
         (c) => c.effective_status === "Active",
     );
     const uniqueContractIds = [...new Set(contracts.map((c) => c.contract_id))];
 
     const stats = {
-        total: contracts.length,
+        total: statsContracts.length,
         active: activeContracts.length,
         // Single-approval workflow: contracts needing action are Draft/Revision
-        pending: contracts.filter((c) =>
+        pending: statsContracts.filter((c) =>
             ["Draft", "Revision"].includes(c.effective_status),
         ).length,
-        draft: contracts.filter((c) => c.effective_status === "Draft").length,
+        draft: statsContracts.filter((c) => c.effective_status === "Draft").length,
     };
+
+    const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+    const to = Math.min(total, page * pageSize);
 
     const filteredContracts = Array.isArray(contracts)
         ? contracts.filter((c) => {
@@ -786,7 +822,13 @@ export default function MasterContractManagement() {
                 ]}
                 actions={
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={loadData}>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                loadData(page);
+                                loadStats();
+                            }}
+                        >
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Refresh
                         </Button>
@@ -946,6 +988,9 @@ export default function MasterContractManagement() {
                 columns={columns}
                 data={filteredContracts}
                 isLoading={loading}
+                onRowClick={undefined}
+                pagination={{ from, to, total, page, totalPages }}
+                onPageChange={(newPage) => setPage(newPage)}
                 emptyMessage="No master contracts found"
             />
 
@@ -1053,7 +1098,8 @@ export default function MasterContractManagement() {
                                     );
                                     setShowActionDialog(false);
                                     setApprovalRemarks("");
-                                    loadData();
+                                    loadData(page);
+                                    loadStats();
                                 } catch (error) {
                                     console.error("Action error:", error);
                                     setErrorMessage(

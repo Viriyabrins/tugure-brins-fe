@@ -61,9 +61,24 @@ export default function Layout({ children, currentPageName }) {
   const loadNotificationCount = async () => {
     try {
       const { backend } = await import('@/api/backendClient');
-      const notifs = await backend.list('Notification');
-      const unread = (notifs || []).filter(n => !n.is_read).length;
-      setUnreadNotifications(unread);
+      
+      let targetRoles = ["ALL"];
+      if (tokenRoles && tokenRoles.length > 0) {
+        const normalizedRoles = tokenRoles.map((r) => String(r || "").trim().toLowerCase());
+        const knownRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role", "admin", "admin-brins-role"];
+        const matchedRoles = normalizedRoles.filter(r => knownRoles.includes(r));
+        if (matchedRoles.length > 0) {
+          targetRoles = [...targetRoles, ...matchedRoles];
+        }
+      }
+
+      const result = await backend.listNotifications({
+        unread: 'true',
+        limit: 1,
+        target_role: targetRoles.join(',')
+      });
+      
+      setUnreadNotifications(Number(result.pagination?.total) || 0);
     } catch (error) {
       console.error('Failed to load notifications:', error);
       setUnreadNotifications(0);

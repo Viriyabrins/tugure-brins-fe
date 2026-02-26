@@ -18,6 +18,8 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import { format } from 'date-fns';
 import { backend } from '@/api/backendClient';
 import FilterTab from '@/components/common/FilterTab';
+import keycloakService from '@/services/keycloakService';
+import NotificationList from '@/components/common/NotificationList';
 
 const defaultTemplateFilter = {
   object_type: "all"
@@ -31,6 +33,8 @@ const defaultSlaFilter = {
 
 export default function SystemConfiguration() {
   const [user, setUser] = useState(null);
+  const [userRoles, setUserRoles] = useState([]);
+  const [keycloakUserId, setKeycloakUserId] = useState(null);
   const [configs, setConfigs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [totalNotifications, setTotalNotifications] = useState(0);
@@ -61,6 +65,7 @@ export default function SystemConfiguration() {
   const [successMessage, setSuccessMessage] = useState('');
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
+  const [isUserLoaded, setIsUserLoaded] = useState(false);
   
   // Notifications Pagination (server-side)
   const [notifPage, setNotifPage] = useState(1);
@@ -126,7 +131,14 @@ export default function SystemConfiguration() {
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
-    loadData();
+    loadUser();
+    backend.list('SystemConfig').then(configData => {
+      setSystemConfigs(configData || []);
+      setLoading(false);
+    }).catch(e => {
+      console.error(e);
+      setLoading(false);
+    });
   }, []);
 
   // Keep page within bounds
@@ -146,32 +158,96 @@ export default function SystemConfiguration() {
     if (slaPage > slaTotalPages && slaTotalPages > 0) setSlaPage(slaTotalPages);
   }, [slaTotalPages, slaPage]);
 
-  // Reset to page 1 when filters change, then reload
+  // Reset to page 1 when filters change
   useEffect(() => {
-    setTemplatePage(1);
-    loadTemplates(1);
+    if (templatePage !== 1) setTemplatePage(1);
   }, [templateFilters.object_type]);
 
   useEffect(() => {
-    setSlaPage(1);
-    loadSlaRules(1);
+    if (slaPage !== 1) setSlaPage(1);
   }, [SlaFilters.ruleName, SlaFilters.triggerCondition, SlaFilters.status]);
 
-  // Reload when page changes
-  useEffect(() => { loadNotifications(notifPage); }, [notifPage]);
-  useEffect(() => { loadTemplates(templatePage); }, [templatePage]);
+  // Reload when page or filters change
+  useEffect(() => {
+    if (isUserLoaded) {
+      loadNotifications(notifPage, userRoles);
+    }
+  }, [notifPage, userRoles, isUserLoaded]);
+  useEffect(() => { loadTemplates(templatePage); }, [templatePage, templateFilters.object_type]);
   useEffect(() => { loadSettings(settingsPage); }, [settingsPage]);
-  useEffect(() => { loadSlaRules(slaPage); }, [slaPage]);
+  useEffect(() => { loadSlaRules(slaPage); }, [slaPage, SlaFilters.ruleName, SlaFilters.triggerCondition, SlaFilters.status]);
+
+  // Load User and their notification settings
+  const loadUser = async () => {
+    try {
+      const { default: keycloakService } = await import('@/services/keycloakService');
+      const userInfo = keycloakService.getCurrentUserInfo();
+      if (userInfo) {
+        const roles = keycloakService.getRoles();
+        const roleList = Array.isArray(roles) ? roles : [];
+        setUserRoles(roleList);
+        setKeycloakUserId(userInfo.id);
+
+        // Fetch existing notification settings for this user
+        try {
+          const existingSettings = await backend.getMyNotificationSettings(userInfo.id);
+          if (existingSettings) {
+            setCurrentSetting(existingSettings);
+          } else {
+            // Pre-fill from Keycloak token if no saved settings
+            const actor = keycloakService.getAuditActor();
+            setCurrentSetting(prev => ({
+              ...prev,
+              full_name: userInfo.name || '',
+              notification_email: userInfo.email || '',
+              user_email: userInfo.email || '',
+              user_role: actor.user_role || '',
+            }));
+          }
+        } catch (settingsError) {
+          console.error('Failed to load user notification settings:', settingsError);
+          // Still pre-fill from Keycloak on error
+          const actor = keycloakService.getAuditActor();
+          setCurrentSetting(prev => ({
+            ...prev,
+            full_name: userInfo.name || '',
+            notification_email: userInfo.email || '',
+            user_email: userInfo.email || '',
+            user_role: actor.user_role || '',
+          }));
+        }
+
+        setIsUserLoaded(true);
+        return roleList;
+      }
+    } catch (error) {
+      console.error("Failed to load user:", error);
+    }
+    setIsUserLoaded(true);
+    return [];
+  };
 
   // --- Dedicated paginated load functions ---
 
-  const loadNotifications = async (pageToLoad = notifPage) => {
+  const loadNotifications = async (pageToLoad = notifPage, roles = userRoles) => {
     try {
+      let targetRoles = ["ALL"];
+      if (roles && roles.length > 0) {
+        const normalizedRoles = roles.map((r) => String(r || "").trim().toLowerCase());
+        const knownRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role", "admin", "admin-brins-role"];
+        const matchedRoles = normalizedRoles.filter(r => knownRoles.includes(r));
+        if (matchedRoles.length > 0) {
+          targetRoles = [...targetRoles, ...matchedRoles];
+        }
+      }
+
       const result = await backend.listNotifications({
         unread: 'true',
         page: pageToLoad,
         limit: notifPageSize,
+        target_role: targetRoles.join(',')
       });
+      console.log('Role', targetRoles);
       console.log('Notification', result);
       setNotifications(Array.isArray(result.data) ? result.data : []);
       setTotalNotifications(Number(result.pagination?.total) || 0);
@@ -237,10 +313,10 @@ export default function SystemConfiguration() {
       setSystemConfigs(configData || []);
 
       await Promise.all([
-        loadNotifications(1),
-        loadTemplates(1),
-        loadSettings(1),
-        loadSlaRules(1),
+        loadNotifications(notifPage, userRoles),
+        loadTemplates(templatePage),
+        loadSettings(settingsPage),
+        loadSlaRules(slaPage),
       ]);
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -249,9 +325,22 @@ export default function SystemConfiguration() {
   };
 
   const handleSaveUserSettings = async () => {
+    if (!keycloakUserId) {
+      console.error('No Keycloak user ID available');
+      return;
+    }
     setProcessing(true);
     try {
-      await backend.create('NotificationSetting', currentSetting);
+      const payload = {
+        ...currentSetting,
+        keycloak_user_id: keycloakUserId,
+        user_email: currentSetting.user_email || currentSetting.notification_email || '',
+        user_role: currentSetting.user_role || '',
+      };
+      // Remove the 'id' field so the upsert can work on keycloak_user_id
+      delete payload.id;
+      const result = await backend.upsertMyNotificationSettings(payload);
+      if (result) setCurrentSetting(result);
       setSuccessMessage('Settings saved successfully');
       loadSettings(settingsPage);
     } catch (error) {
@@ -735,104 +824,7 @@ export default function SystemConfiguration() {
 
         {/* Notifications Tab */}
         <TabsContent value="notifications" className="mt-4">
-          <div className="space-y-3">
-            {!pageNotifications || pageNotifications.length === 0 ? (
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <Bell className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                  <p className="text-gray-500">No notifications</p>
-                </CardContent>
-              </Card>
-            ) : (
-              pageNotifications.map((notif) => (
-                <Card key={notif.id} className={notif.is_read ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200'}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-4">
-                      <div className={`p-3 rounded-lg ${notif.is_read ? 'bg-gray-100' : 'bg-blue-100'}`}>
-                        <Bell className={`w-5 h-5 ${notif.is_read ? 'text-gray-600' : 'text-blue-600'}`} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center gap-3">
-                            <h4 className="font-semibold text-gray-900">{notif.title}</h4>
-                            <Badge variant="outline">{notif.type.replace(/_/g, ' ')}</Badge>
-                            {notif.module && <Badge variant="outline">{notif.module}</Badge>}
-                            {notif.is_read && <Badge className="bg-gray-300 text-gray-700">Read</Badge>}
-                          </div>
-                          {notif.created_at && (
-                            <span className="text-xs text-gray-500">
-                              {format(new Date(notif.created_at), 'MMM d, HH:mm')}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-gray-600 text-sm mb-3">{notif.message}</p>
-                        {!notif.is_read && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleMarkAsRead(notif.id)}
-                          >
-                            <CheckCircle2 className="w-4 h-4 mr-1" />
-                            Mark as Read
-                          </Button>
-                        )} 
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-
-          {/* Notification Pagination */}
-          {pageNotifications.length > 0 && notifTotalPages > 1 && (
-            <div className="flex items-center justify-between py-3">
-              <p className="text-sm text-gray-500">
-                Showing {notifFrom} to {notifTo} of {notifTotal} results
-              </p>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={notifPage === 1}
-                  onClick={() => setNotifPage(1)}
-                >
-                  <ChevronsLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={notifPage === 1}
-                  onClick={() => setNotifPage(notifPage - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="px-3 text-sm text-gray-600">
-                  Page {notifPage} of {notifTotalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={notifPage === notifTotalPages}
-                  onClick={() => setNotifPage(notifPage + 1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={notifPage === notifTotalPages}
-                  onClick={() => setNotifPage(notifTotalPages)}
-                >
-                  <ChevronsRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
+          <NotificationList/>
         </TabsContent>
 
         {/* Email Templates Tab */}

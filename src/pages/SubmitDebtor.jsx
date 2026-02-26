@@ -39,7 +39,8 @@ import {
     Users,
     Pen,
     AlertTriangle,
-    Clock,
+    Check,
+    ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -447,6 +448,155 @@ export default function SubmitDebtor() {
             normalizedRole === "checker-brins-role"
         );
     });
+
+    const isCheckerBrins = userRoles.some(
+        (role) => String(role || "").trim().toLowerCase() === "checker-brins-role",
+    );
+    const isApproverBrins = userRoles.some(
+        (role) => String(role || "").trim().toLowerCase() === "approver-brins-role",
+    );
+
+    // === CHECKER BRINS: SUBMITTED → CHECKED_BRINS ===
+    const handleCheckerBrinsCheck = async () => {
+        if (selectedDebtors.length === 0) {
+            toast.error("Please select debtors to check");
+            return;
+        }
+        setUploading(true);
+        setErrorMessage("");
+        setSuccessMessage("");
+        try {
+            let processedCount = 0;
+            for (const debtorId of selectedDebtors) {
+                const debtor = debtors.find((d) => d.id === debtorId);
+                if (!debtor || debtor.status !== "SUBMITTED") continue;
+
+                await backend.update("Debtor", debtor.id, {
+                    status: "CHECKED_BRINS",
+                });
+                processedCount++;
+
+                try {
+                    await backend.create("AuditLog", {
+                        action: "DEBTOR_CHECKED_BRINS",
+                        module: "DEBTOR",
+                        entity_type: "Debtor",
+                        entity_id: debtor.id,
+                        old_value: JSON.stringify({ status: "SUBMITTED" }),
+                        new_value: JSON.stringify({ status: "CHECKED_BRINS" }),
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
+                        reason: `Checker BRINS checked debtor ${debtor.nama_peserta}`,
+                    });
+                } catch (auditError) {
+                    console.warn("Failed to create audit log:", auditError);
+                }
+            }
+
+            if (processedCount === 0) {
+                toast.warning("No debtors with SUBMITTED status were found in your selection.");
+                setSelectedDebtors([]);
+                setUploading(false);
+                return;
+            }
+
+            // Create notifications for all BRINS roles
+            const brinsRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role"];
+            for (const role of brinsRoles) {
+                try {
+                    await backend.create("Notification", {
+                        title: "Debtors Checked by BRINS Checker",
+                        message: `${auditActor?.user_role || user?.role} checked ${processedCount} debtor(s). Awaiting BRINS Approver approval.`,
+                        type: "INFO",
+                        module: "DEBTOR",
+                        target_role: role,
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
+            }
+
+            setSuccessMessage(`${processedCount} debtor(s) checked successfully. Awaiting Approver BRINS approval.`);
+            toast.success(`${processedCount} debtor(s) checked.`);
+            setSelectedDebtors([]);
+            await loadDebtors();
+        } catch (error) {
+            console.error("Check failed:", error);
+            setErrorMessage(`Check failed: ${error.message}`);
+        }
+        setUploading(false);
+    };
+
+    // === APPROVER BRINS: CHECKED_BRINS → APPROVED_BRINS ===
+    const handleApproverBrinsApprove = async () => {
+        if (selectedDebtors.length === 0) {
+            toast.error("Please select debtors to approve");
+            return;
+        }
+        setUploading(true);
+        setErrorMessage("");
+        setSuccessMessage("");
+        try {
+            let processedCount = 0;
+            for (const debtorId of selectedDebtors) {
+                const debtor = debtors.find((d) => d.id === debtorId);
+                if (!debtor || debtor.status !== "CHECKED_BRINS") continue;
+
+                await backend.update("Debtor", debtor.id, {
+                    status: "APPROVED_BRINS",
+                });
+                processedCount++;
+
+                try {
+                    await backend.create("AuditLog", {
+                        action: "DEBTOR_APPROVED_BRINS",
+                        module: "DEBTOR",
+                        entity_type: "Debtor",
+                        entity_id: debtor.id,
+                        old_value: JSON.stringify({ status: "CHECKED_BRINS" }),
+                        new_value: JSON.stringify({ status: "APPROVED_BRINS" }),
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
+                        reason: `Approver BRINS approved debtor ${debtor.nama_peserta}`,
+                    });
+                } catch (auditError) {
+                    console.warn("Failed to create audit log:", auditError);
+                }
+            }
+
+            if (processedCount === 0) {
+                toast.warning("No debtors with CHECKED_BRINS status were found in your selection.");
+                setSelectedDebtors([]);
+                setUploading(false);
+                return;
+            }
+
+            // Create notifications for all BRINS + Tugure roles
+            const allRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role"];
+            for (const role of allRoles) {
+                try {
+                    await backend.create("Notification", {
+                        title: "Debtors Approved by BRINS",
+                        message: `${auditActor?.user_role || user?.role} approved ${processedCount} debtor(s). Now available for Tugure review.`,
+                        type: "INFO",
+                        module: "DEBTOR",
+                        target_role: role,
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
+            }
+
+            setSuccessMessage(`${processedCount} debtor(s) approved by BRINS. Now available on Debtor Review for Tugure.`);
+            toast.success(`${processedCount} debtor(s) approved by BRINS.`);
+            setSelectedDebtors([]);
+            await loadDebtors();
+        } catch (error) {
+            console.error("Approve failed:", error);
+            setErrorMessage(`Approve failed: ${error.message}`);
+        }
+        setUploading(false);
+    };
 
     const formatUploadError = (message) => {
         if (!message) {
@@ -1092,11 +1242,27 @@ export default function SubmitDebtor() {
             try {
                 await backend.create("Notification", {
                     title: "Batch Upload Completed",
-                    message: `Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
+                    message: `${auditActor?.user_role} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
                     type: "INFO",
                     module: "DEBTOR",
                     reference_id: batchId,
-                    target_role: "TUGURE",
+                    target_role: "maker-brins-role",
+                });
+                await backend.create("Notification", {
+                    title: "Batch Upload Completed",
+                    message: `${auditActor?.user_role} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
+                    type: "INFO",
+                    module: "DEBTOR",
+                    reference_id: batchId,
+                    target_role: "checker-brins-role",
+                });
+                await backend.create("Notification", {
+                    title: "Batch Upload Completed",
+                    message: `${auditActor?.user_role} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
+                    type: "INFO",
+                    module: "DEBTOR",
+                    reference_id: batchId,
+                    target_role: "approver-brins-role",
                 });
             } catch (notifError) {
                 console.warn("Failed to create notification:", notifError);
@@ -1245,6 +1411,8 @@ export default function SubmitDebtor() {
     const kpis = {
         total,
         submitted: pageData.filter((d) => d.status === "SUBMITTED").length,
+        checked_brins: pageData.filter((d) => d.status === "CHECKED_BRINS").length,
+        approved_brins: pageData.filter((d) => d.status === "APPROVED_BRINS").length,
         approved: pageData.filter((d) => d.status === "APPROVED").length,
         revision: pageData.filter((d) => d.status === "REVISION").length,
     };
@@ -1398,9 +1566,9 @@ export default function SubmitDebtor() {
             )}
 
             {/* Gradient Card */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 justify-center items-center">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 justify-center items-center">
                 <GradientStatCard
-                    title="Debtors"
+                    title="Total"
                     value={kpis.total}
                     subtitle="Total Debtors"
                     icon={Users}
@@ -1409,21 +1577,35 @@ export default function SubmitDebtor() {
                 <GradientStatCard
                     title="Submitted"
                     value={kpis.submitted}
-                    subtitle="Submitted Debtors"
+                    subtitle="Awaiting Check"
                     icon={FileText}
                     gradient="from-yellow-500 to-yellow-600"
                 />
                 <GradientStatCard
+                    title="Checked"
+                    value={kpis.checked_brins}
+                    subtitle="Checked by BRINS"
+                    icon={Check}
+                    gradient="from-cyan-500 to-cyan-600"
+                />
+                <GradientStatCard
+                    title="BRINS OK"
+                    value={kpis.approved_brins}
+                    subtitle="Approved by BRINS"
+                    icon={ShieldCheck}
+                    gradient="from-indigo-500 to-indigo-600"
+                />
+                <GradientStatCard
                     title="Approved"
                     value={kpis.approved}
-                    subtitle="Approved Debtors"
-                    icon={Clock}
+                    subtitle="Fully Approved"
+                    icon={CheckCircle2}
                     gradient="from-green-500 to-green-600"
                 />
                 <GradientStatCard
                     title="Revision"
                     value={kpis.revision}
-                    subtitle="Debtors in Revision"
+                    subtitle="Needs Revision"
                     icon={AlertTriangle}
                     gradient="from-orange-500 to-orange-600"
                 />
@@ -1459,7 +1641,9 @@ export default function SubmitDebtor() {
                         options: [
                             { value: "all", label: "All Statuses" },
                             { value: "SUBMITTED", label: "Submitted" },
-                            { value: "APPROVED", label: "Approved" },
+                            { value: "CHECKED_BRINS", label: "Checked (BRINS)" },
+                            { value: "APPROVED_BRINS", label: "Approved (BRINS)" },
+                            { value: "APPROVED", label: "Approved (Final)" },
                             { value: "REVISION", label: "Revision" },
                         ],
                     },
@@ -1474,30 +1658,33 @@ export default function SubmitDebtor() {
 
             {/* Actions */}
             <div className="flex flex-wrap gap-2">
-                {selectedDebtors.length >= 0 && (
-                    <>
-                        {/* <Button
-                            variant="outline"
-                            onClick={() => setRevisionDialogOpen(true)}
-                        >
-                            <Pen className="w-4 h-4 mr-2" />
-                            Revision{" "}
-                            {selectedDebtors.length > 0
-                                ? `(${selectedDebtors.length})`
-                                : ""}
-                        </Button> */}
-                        {/* <Button>
-                            variant="outline"
-                            onClick={}
-                        </Button> */}
-
-                        {/* <Button
-                            variant="outline"
-                            onClick={() => setSelectedDebtors([])}
-                        >
-                            Clear Selection
-                        </Button> */}
-                    </>
+                {isCheckerBrins && selectedDebtors.length > 0 && (
+                    <Button
+                        variant="outline"
+                        onClick={handleCheckerBrinsCheck}
+                        disabled={uploading}
+                    >
+                        {uploading ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                            <Check className="w-4 h-4 mr-2" />
+                        )}
+                        Check ({selectedDebtors.length})
+                    </Button>
+                )}
+                {isApproverBrins && selectedDebtors.length > 0 && (
+                    <Button
+                        variant="outline"
+                        onClick={handleApproverBrinsApprove}
+                        disabled={uploading}
+                    >
+                        {uploading ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                            <ShieldCheck className="w-4 h-4 mr-2" />
+                        )}
+                        Approve ({selectedDebtors.length})
+                    </Button>
                 )}
             </div>
 

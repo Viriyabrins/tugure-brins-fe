@@ -10,6 +10,9 @@ const statusColors = {
   REJECTED: 'bg-red-100 text-red-700 border-red-200',
   REVISION: 'bg-orange-100 text-orange-700 border-orange-200',
   CONDITIONAL: 'bg-orange-100 text-orange-700 border-orange-200',
+  CHECKED_BRINS: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+  APPROVED_BRINS: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  CHECKED_TUGURE: 'bg-teal-100 text-teal-700 border-teal-200',
   TERMINATED: 'bg-gray-200 text-gray-600 border-gray-300',
   
   // Admin Status

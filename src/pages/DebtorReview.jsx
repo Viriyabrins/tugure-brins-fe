@@ -30,10 +30,11 @@ import {
     Loader2,
     DollarSign,
     Filter,
-    Clock,
     AlertCircle,
     Pen,
+    ShieldCheck,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { backend } from "@/api/backendClient";
 import PageHeader from "@/components/common/PageHeader";
@@ -62,11 +63,16 @@ const defaultFilter = {
 
 const normalizeRole = (role = "") => String(role).trim().toLowerCase();
 const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
-const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role"];
+const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role", "approver-brins-role"];
+const ALL_ROLES = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role"];
 const hasTugureActionRole = (roles = []) =>
     (Array.isArray(roles) ? roles : [])
         .map(normalizeRole)
         .some((role) => TUGURE_ACTION_ROLES.includes(role));
+const hasRole = (roles = [], targetRole) =>
+    (Array.isArray(roles) ? roles : [])
+        .map(normalizeRole)
+        .includes(targetRole);
 
 export default function DebtorReview() {
     const [user, setUser] = useState(null);
@@ -98,6 +104,8 @@ export default function DebtorReview() {
         loadData();
     }, []);
     const canManageDebtorActions = hasTugureActionRole(tokenRoles);
+    const isCheckerTugure = hasRole(tokenRoles, "checker-tugure-role");
+    const isApproverTugure = hasRole(tokenRoles, "approver-tugure-role");
 
     const loadUser = async () => {
         try {
@@ -153,8 +161,13 @@ export default function DebtorReview() {
         setLoading(true);
         try {
             const query = { page: pageToLoad, limit: pageSize };
+            // Always exclude pre-BRINS-approval statuses from DebtorReview
+            const reviewFilters = {
+                ...filters,
+                excludeStatuses: "SUBMITTED,CHECKED_BRINS,DRAFT",
+            };
             // include filters as JSON string in `q`
-            if (filters) query.q = JSON.stringify(filters);
+            query.q = JSON.stringify(reviewFilters);
 
             const useReviseLog =
                 filters?.submitStatus === "REVISION" ||
@@ -177,10 +190,10 @@ export default function DebtorReview() {
     const loadStatusCounts = async () => {
         try {
             const statuses = [
-                "SUBMITTED",
+                "APPROVED_BRINS",
+                "CHECKED_TUGURE",
                 "APPROVED",
                 "REVISION",
-                "CONDITIONAL",
             ];
             const promises = statuses.map((s) =>
                 backend.listPaginated("Debtor", {
@@ -192,10 +205,11 @@ export default function DebtorReview() {
             const results = await Promise.all(promises);
             const counts = results.map((r) => Number(r.pagination?.total) || 0);
             // set local derived counters based on these counts
-            setPendingCountLocal(counts[0] || 0);
-            setApprovedCountLocal(counts[1] || 0);
-            setRevisionCountLocal(counts[2] || 0);
-            setConditionalCountLocal(counts[3] || 0);
+            // [0]=APPROVED_BRINS, [1]=CHECKED_TUGURE, [2]=APPROVED, [3]=REVISION
+            setPendingCountLocal(counts[0] || 0);       // APPROVED_BRINS (pending Tugure check)
+            setApprovedCountLocal(counts[2] || 0);       // APPROVED (final)
+            setRevisionCountLocal(counts[3] || 0);       // REVISION
+            setConditionalCountLocal(counts[1] || 0);    // CHECKED_TUGURE (pending Tugure approve)
             // sample approved debtors to estimate total plafon (limited to reasonable page)
             try {
                 const approvedSample = await backend.listPaginated("Debtor", {
@@ -235,8 +249,19 @@ export default function DebtorReview() {
             const action = isBulk
                 ? approvalAction.replace("bulk_", "")
                 : approvalAction;
-            // All non-approve actions map to REVISION
-            const newStatus = action === "approve" ? "APPROVED" : "REVISION";
+
+            // Determine the new status based on action and role
+            let newStatus;
+            if (action === "check") {
+                // Checker Tugure: APPROVED_BRINS → CHECKED_TUGURE
+                newStatus = "CHECKED_TUGURE";
+            } else if (action === "approve") {
+                // Approver Tugure: CHECKED_TUGURE → APPROVED
+                newStatus = "APPROVED";
+            } else {
+                // Revision
+                newStatus = "REVISION";
+            }
 
             // Get debtors to process
             const debtorsToProcess = isBulk
@@ -251,8 +276,13 @@ export default function DebtorReview() {
                 return;
             }
 
+            let processedCount = 0;
             for (const debtor of debtorsToProcess) {
                 if (!debtor || !debtor.id) continue;
+
+                // Validate the correct source status for the transition
+                if (action === "check" && debtor.status !== "APPROVED_BRINS") continue;
+                if (action === "approve" && debtor.status !== "CHECKED_TUGURE") continue;
 
                 try {
                     // Update debtor using backend client
@@ -263,6 +293,7 @@ export default function DebtorReview() {
                         validation_remarks:
                             action === "revision" ? approvalRemarks : null,
                     });
+                    processedCount++;
 
                     if (action === "approve") {
                         // Create record using backend client
@@ -274,15 +305,19 @@ export default function DebtorReview() {
                             premium_amount: parseFloat(debtor.net_premi) || 0,
                             revision_count: 0,
                             accepted_by: user?.email,
-                            // use full ISO-8601 datetime so Prisma DateTime accepts it
                             accepted_date: new Date().toISOString(),
                         });
                     }
 
                     // Create audit log using backend client
                     try {
+                        const actionLabel = action === "check"
+                            ? "DEBTOR_CHECKED_TUGURE"
+                            : action === "approve"
+                                ? "DEBTOR_APPROVED"
+                                : "DEBTOR_REVISION";
                         await backend.create("AuditLog", {
-                            action: `DEBTOR_${newStatus}`,
+                            action: actionLabel,
                             module: "DEBTOR",
                             entity_type: "Debtor",
                             entity_id: debtor.id,
@@ -308,32 +343,53 @@ export default function DebtorReview() {
                 }
             }
 
-            // Create final notification
-            try {
-                await backend.create("Notification", {
-                    title: `Debtor ${newStatus}`,
-                    message: isBulk
-                        ? `${debtorsToProcess.length} debtors ${newStatus.toLowerCase()}`
-                        : `${selectedDebtor?.nama_peserta || selectedDebtor?.debtor_name} ${newStatus.toLowerCase()}`,
-                    type: newStatus === "APPROVED" ? "INFO" : "WARNING",
-                    module: "DEBTOR",
-                    reference_id: isBulk
-                        ? debtorsToProcess[0]?.batch_id
-                        : selectedDebtor?.id,
-                    target_role: BRINS_ACTION_ROLES[0],
-                });
-            } catch (notifError) {
-                console.warn("Failed to create notification:", notifError);
+            if (processedCount === 0) {
+                toast.warning("No debtors with the correct status were found in your selection.");
+                setShowApprovalDialog(false);
+                setProcessing(false);
+                return;
+            }
+
+            // Create notifications for ALL roles
+            const notifTitle = action === "check"
+                ? "Debtors Checked by Tugure"
+                : action === "approve"
+                    ? "Debtors Approved (Final)"
+                    : "Debtors Marked for Revision";
+            const notifMessage = isBulk
+                ? `${auditActor?.user_email || user?.email} ${action === "check" ? "checked" : action === "approve" ? "approved" : "marked for revision"} ${processedCount} debtor(s).`
+                : `${auditActor?.user_email || user?.email} ${action === "check" ? "checked" : action === "approve" ? "approved" : "marked for revision"} debtor ${selectedDebtor?.nama_peserta || selectedDebtor?.debtor_name}.`;
+            const notifType = action === "revision" ? "WARNING" : "INFO";
+
+            for (const role of ALL_ROLES) {
+                try {
+                    await backend.create("Notification", {
+                        title: notifTitle,
+                        message: notifMessage,
+                        type: notifType,
+                        module: "DEBTOR",
+                        reference_id: isBulk
+                            ? debtorsToProcess[0]?.batch_id
+                            : selectedDebtor?.id,
+                        target_role: role,
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
             }
 
             const actionDisplay =
-                action === "approve"
+                action === "check"
                     ? isBulk
-                        ? `${debtorsToProcess.length} approved`
-                        : "approved"
-                    : isBulk
-                      ? `${debtorsToProcess.length} marked for revision`
-                      : "marked for revision";
+                        ? `${processedCount} checked by Tugure`
+                        : "checked by Tugure"
+                    : action === "approve"
+                        ? isBulk
+                            ? `${processedCount} approved (final)`
+                            : "approved (final)"
+                        : isBulk
+                            ? `${processedCount} marked for revision`
+                            : "marked for revision";
             setSuccessMessage(
                 isBulk
                     ? `${actionDisplay}. Batch reconciliation handled by backend.`
@@ -344,7 +400,7 @@ export default function DebtorReview() {
             setSelectedDebtors([]);
             setApprovalRemarks("");
 
-            // Reload data setelah berhasil
+            // Reload data after success
             setTimeout(() => {
                 loadData();
             }, 1000);
@@ -397,16 +453,16 @@ export default function DebtorReview() {
 
     const pendingCount =
         pendingCountLocal ||
-        debtors.filter((d) => d.status === "SUBMITTED").length;
+        debtors.filter((d) => d.status === "APPROVED_BRINS").length;
     const approvedCount =
         approvedCountLocal ||
         debtors.filter((d) => d.status === "APPROVED").length;
     const revisionCount =
         revisionCountLocal ||
         debtors.filter((d) => d.status === "REVISION").length;
-    const conditionalCount =
+    const checkedTugureCount =
         conditionalCountLocal ||
-        debtors.filter((d) => d.status === "CONDITIONAL").length;
+        debtors.filter((d) => d.status === "CHECKED_TUGURE").length;
     const totalPlafond =
         totalPlafondLocal ||
         debtors
@@ -546,16 +602,23 @@ export default function DebtorReview() {
             {/* Gradient Stat Card */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <GradientStatCard
-                    title="Pending Review"
+                    title="Pending Check"
                     value={pendingCount}
-                    subtitle="Awaiting approval"
+                    subtitle="BRINS approved, awaiting Tugure check"
                     icon={FileText}
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
+                    title="Checked"
+                    value={checkedTugureCount}
+                    subtitle="Checked by Tugure, awaiting approval"
+                    icon={ShieldCheck}
+                    gradient="from-teal-500 to-teal-600"
+                />
+                <GradientStatCard
                     title="Approved"
                     value={approvedCount}
-                    subtitle="Ready for nota"
+                    subtitle="Fully approved"
                     icon={CheckCircle2}
                     gradient="from-green-500 to-green-600"
                 />
@@ -565,13 +628,6 @@ export default function DebtorReview() {
                     subtitle="Requires revision"
                     icon={AlertCircle}
                     gradient="from-red-500 to-red-600"
-                />
-                <GradientStatCard
-                    title="Conditional"
-                    value={conditionalCount}
-                    subtitle="Additional docs needed"
-                    icon={Clock}
-                    gradient="from-yellow-500 to-yellow-600"
                 />
                 <GradientStatCard
                     title="Total Plafon"
@@ -621,8 +677,9 @@ export default function DebtorReview() {
                         label: "Underwriting Status",
                         options: [
                             { value: "all", label: "All Statuses" },
-                            { value: "SUBMITTED", label: "Submitted" },
-                            { value: "APPROVED", label: "Approved" },
+                            { value: "APPROVED_BRINS", label: "Approved (BRINS)" },
+                            { value: "CHECKED_TUGURE", label: "Checked (Tugure)" },
+                            { value: "APPROVED", label: "Approved (Final)" },
                             { value: "REVISION", label: "Revision" },
                         ],
                     },
@@ -641,9 +698,21 @@ export default function DebtorReview() {
             />
 
             {/* Bulk Actions */}
-            {canManageDebtorActions && selectedDebtors.length >= 0 && (
+            {canManageDebtorActions && selectedDebtors.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                    <>
+                    {isCheckerTugure && (
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setApprovalAction("bulk_check");
+                                setShowApprovalDialog(true);
+                            }}
+                        >
+                            <Check className="w-4 h-4 mr-2" />
+                            Check ({selectedDebtors.length})
+                        </Button>
+                    )}
+                    {isApproverTugure && (
                         <Button
                             variant="outline"
                             onClick={() => {
@@ -651,12 +720,11 @@ export default function DebtorReview() {
                                 setShowApprovalDialog(true);
                             }}
                         >
-                            <Check className="w-4 h-4 mr-2" />
-                            Approve{" "}
-                            {selectedDebtors.length > 0
-                                ? `(${selectedDebtors.length})`
-                                : ""}
+                            <ShieldCheck className="w-4 h-4 mr-2" />
+                            Approve ({selectedDebtors.length})
                         </Button>
+                    )}
+                    {canManageDebtorActions && (
                         <Button
                             variant="outline"
                             onClick={() => {
@@ -665,12 +733,9 @@ export default function DebtorReview() {
                             }}
                         >
                             <Pen className="w-4 h-4 mr-2" />
-                            Revision{" "}
-                            {selectedDebtors.length > 0
-                                ? `(${selectedDebtors.length})`
-                                : ""}
+                            Revision ({selectedDebtors.length})
                         </Button>
-                    </>
+                    )}
                 </div>
             )}
 

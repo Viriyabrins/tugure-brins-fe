@@ -144,7 +144,18 @@ jobs:
             fi
 
             podman rm -f brins-fe-staging >/dev/null 2>&1 || true
-            podman run -d --name brins-fe-staging --restart=always --network host ${MOUNT_ARG} -e BACKEND_URL="http://127.0.0.1:10011" ${SSL_ENV_ARGS} "${IMAGE}"
+            # Determine a reachable host IP for containers to access services on the host
+            HOST_IP=$(ip route get 1 2>/dev/null | awk '/src/ {for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}') || true
+            if [ -z "${HOST_IP}" ]; then
+              HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || true
+            fi
+            HOST_IP=${HOST_IP:-127.0.0.1}
+
+            # Publish host port 443 -> container 10010. Pass PORT so app listens on 10010 inside container.
+            podman run -d --name brins-fe-staging --restart=always \
+              -p 443:10010 ${MOUNT_ARG} \
+              -e PORT=10010 \
+              -e BACKEND_URL="http://${HOST_IP}:10011" ${SSL_ENV_ARGS} "${IMAGE}"
 
             sleep 2
             podman ps -a --filter name=^brins-fe-staging$

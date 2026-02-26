@@ -65,6 +65,7 @@ const hasBrinsUploadRole = (roles = []) =>
     (Array.isArray(roles) ? roles : [])
         .map(normalizeRole)
         .some((role) => BRINS_UPLOAD_ROLES.includes(role));
+const normalizeStatus = (status = "") => String(status).trim().toUpperCase();
 
 export default function MasterContractManagement() {
     const [user, setUser] = useState(null);
@@ -351,6 +352,29 @@ export default function MasterContractManagement() {
         return `MC-${stamp}-${String(index).padStart(3, "0")}`;
     };
 
+    const readableError = (error, fallback = "Terjadi kesalahan saat memproses data") => {
+        const msg = String(error?.message || "").trim();
+        if (!msg) return fallback;
+
+        if (msg.includes("Unique constraint failed")) {
+            return "Data duplikat terdeteksi. Pastikan contract_id belum pernah digunakan.";
+        }
+
+        if (msg.includes("contract_id")) {
+            return msg;
+        }
+
+        if (msg.includes("Upload dibatalkan")) {
+            return msg;
+        }
+
+        if (msg.includes("baris ke-") || msg.includes("Baris ke-")) {
+            return msg;
+        }
+
+        return msg;
+    };
+
     const handleUploadExcel = async () => {
         if (!uploadFile) return;
 
@@ -363,212 +387,140 @@ export default function MasterContractManagement() {
         setErrorMessage("");
         setSuccessMessage("");
 
-        let uploaded = 0;
-        const errors = [];
-
         try {
             const rows = await parseUploadFile(uploadFile);
             if (!rows || rows.length === 0) {
-                setErrorMessage("File is empty or invalid format");
+                setErrorMessage("File kosong atau format tidak valid.");
                 setProcessing(false);
                 return;
             }
 
-            const allContracts = await backend.list("MasterContract");
-            const existingById = new Map();
-            for (const c of allContracts) {
-                if (!c?.contract_id) continue;
-                const arr = existingById.get(c.contract_id) || [];
-                arr.push(c);
-                existingById.set(c.contract_id, arr);
-            }
+            const contractsPayload = rows.map((row, i) => {
+                const derivedId = buildContractId(row, i + 1);
+                const contractId =
+                    uploadMode === "revise"
+                        ? null
+                        : derivedId;
 
-            let reviseBaseVersion = 0;
-            let reviseParentId = null;
+                return {
+                    contract_id: contractId,
 
-            if (uploadMode === "revise") {
-                const existing =
-                    existingById.get(selectedContractForRevision) || [];
-                if (existing.length > 0) {
-                    reviseBaseVersion = Math.max(
-                        ...existing.map((c) => c.version || 1),
-                    );
-                    const latest = existing.find(
-                        (c) => (c.version || 1) === reviseBaseVersion,
-                    );
-                    reviseParentId = latest?.contract_id || null;
-                }
-            }
+                    underwriter_name: toNullableString(row.underwriter_name),
+                    input_date: toISODate(row.input_date),
+                    input_status: toNullableString(row.input_status),
+                    contract_status:
+                        toNullableString(row.contract_status) || "Draft",
 
-            for (let i = 0; i < rows.length; i++) {
-                try {
-                    const row = rows[i];
-                    const derivedId = buildContractId(row, i + 1);
-                    const contractId =
-                        uploadMode === "revise"
-                            ? selectedContractForRevision
-                            : derivedId;
+                    source_type: toNullableString(row.source_type),
+                    source_name: toNullableString(row.source_name),
+                    ceding_name: toNullableString(row.ceding_name),
+                    ceding_same_as_source: toBoolean(
+                        row.ceding_same_as_source,
+                        false,
+                    ),
+                    bank_obligee: toNullableString(row.bank_obligee),
 
-                    if (uploadMode === "new") {
-                        const exists = existingById.has(contractId);
-                        if (exists) {
-                            errors.push(
-                                `Row ${i + 2}: contract_id ${contractId} already exists`,
-                            );
-                            continue;
-                        }
-                    }
+                    endorsement_type: toNullableString(row.endorsement_type),
+                    endorsement_reason: toNullableString(row.endorsement_reason),
+                    endorsement_reason_detail: toNullableString(
+                        row.endorsement_reason_detail,
+                    ),
 
-                    const version =
-                        uploadMode === "revise"
-                            ? reviseBaseVersion + uploaded + 1
-                            : 1;
+                    kind_of_business: toNullableString(row.kind_of_business),
+                    offer_date: toISODate(row.offer_date),
+                    contract_no: toNullableString(row.contract_no),
+                    binder_no_tugure: toNullableString(row.binder_no_tugure),
+                    contract_no_from: toNullableString(row.contract_no_from),
+                    binder_no_from: toNullableString(row.binder_no_from),
+                    type_of_contract: toNullableString(row.type_of_contract),
 
-                    const payload = {
-                        contract_id: contractId,
+                    credit_type: toNullableString(row.credit_type),
+                    debtor_principal: toNullableString(row.debtor_principal),
+                    product_type: toNullableString(row.product_type),
+                    product_name: toNullableString(row.product_name),
 
-                        underwriter_name: toNullableString(
-                            row.underwriter_name,
-                        ),
-                        input_date: toISODate(row.input_date),
-                        input_status: toNullableString(row.input_status),
-                        contract_status:
-                            toNullableString(row.contract_status) || "Draft",
+                    contract_start_date: toISODate(row.contract_start_date),
+                    contract_end_date: toISODate(row.contract_end_date),
+                    effective_date: toISODate(row.effective_date),
+                    stnc_date: toISODate(row.stnc_date),
 
-                        source_type: toNullableString(row.source_type),
-                        source_name: toNullableString(row.source_name),
-                        ceding_name: toNullableString(row.ceding_name),
-                        ceding_same_as_source: toBoolean(
-                            row.ceding_same_as_source,
-                            false,
-                        ),
-                        bank_obligee: toNullableString(row.bank_obligee),
+                    outward_retrocession:
+                        toNullableString(row.outward_retrocession) || "Tidak",
+                    automatic_cession:
+                        toNullableString(row.automatic_cession) || "Tidak",
+                    retro_program: toNullableString(row.retro_program),
 
-                        endorsement_type: toNullableString(
-                            row.endorsement_type,
-                        ),
-                        endorsement_reason: toNullableString(
-                            row.endorsement_reason,
-                        ),
-                        endorsement_reason_detail: toNullableString(
-                            row.endorsement_reason_detail,
-                        ),
+                    reinsurance_commission_pct: toNumber(
+                        row.reinsurance_commission_pct,
+                    ),
+                    profit_commission_pct: toNumber(row.profit_commission_pct),
+                    brokerage_fee_pct: toNumber(row.brokerage_fee_pct),
 
-                        kind_of_business: toNullableString(
-                            row.kind_of_business,
-                        ),
-                        offer_date: toISODate(row.offer_date),
-                        contract_no: toNullableString(row.contract_no),
-                        binder_no_tugure: toNullableString(
-                            row.binder_no_tugure,
-                        ),
-                        contract_no_from: toNullableString(
-                            row.contract_no_from,
-                        ),
-                        binder_no_from: toNullableString(row.binder_no_from),
-                        type_of_contract: toNullableString(
-                            row.type_of_contract,
-                        ),
+                    reporting_participant_days: toInteger(
+                        row.reporting_participant_days,
+                    ),
+                    reporting_claim_days: toInteger(row.reporting_claim_days),
+                    claim_reporting_type: toNullableString(
+                        row.claim_reporting_type,
+                    ),
+                    payment_scenario: toNullableString(row.payment_scenario),
+                    installment_frequency: toNullableString(
+                        row.installment_frequency,
+                    ),
 
-                        credit_type: toNullableString(row.credit_type),
-                        debtor_principal: toNullableString(
-                            row.debtor_principal,
-                        ),
-                        product_type: toNullableString(row.product_type),
-                        product_name: toNullableString(row.product_name),
+                    stop_loss_value: toNumber(row.stop_loss_value),
+                    stop_loss_basis: toNullableString(row.stop_loss_basis),
+                    cut_loss_value: toNumber(row.cut_loss_value),
+                    cut_loss_basis: toNullableString(row.cut_loss_basis),
+                    cut_off_value: toNumber(row.cut_off_value),
+                    cut_off_basis: toNullableString(row.cut_off_basis),
 
-                        contract_start_date: toISODate(row.contract_start_date),
-                        contract_end_date: toISODate(row.contract_end_date),
-                        effective_date: toISODate(row.effective_date),
-                        stnc_date: toISODate(row.stnc_date),
+                    loss_ratio_value: toNumber(row.loss_ratio_value),
+                    loss_ratio_basis: toNullableString(row.loss_ratio_basis),
 
-                        outward_retrocession:
-                            toNullableString(row.outward_retrocession) ||
-                            "Tidak",
-                        automatic_cession:
-                            toNullableString(row.automatic_cession) || "Tidak",
-                        retro_program: toNullableString(row.retro_program),
+                    evaluation_period_value: toInteger(
+                        row.evaluation_period_value,
+                    ),
+                    evaluation_period_unit: toNullableString(
+                        row.evaluation_period_unit,
+                    ),
 
-                        reinsurance_commission_pct: toNumber(
-                            row.reinsurance_commission_pct,
-                        ),
-                        profit_commission_pct: toNumber(
-                            row.profit_commission_pct,
-                        ),
-                        brokerage_fee_pct: toNumber(row.brokerage_fee_pct),
+                    max_tenor_value: toInteger(row.max_tenor_value),
+                    max_tenor_unit: toNullableString(row.max_tenor_unit),
+                    max_sum_insured: toNumber(row.max_sum_insured),
 
-                        reporting_participant_days: toInteger(
-                            row.reporting_participant_days,
-                        ),
-                        reporting_claim_days: toInteger(
-                            row.reporting_claim_days,
-                        ),
-                        claim_reporting_type: toNullableString(
-                            row.claim_reporting_type,
-                        ),
-                        payment_scenario: toNullableString(
-                            row.payment_scenario,
-                        ),
-                        installment_frequency: toNullableString(
-                            row.installment_frequency,
-                        ),
+                    perils_covers: toNullableString(row.perils_covers),
+                    limit_coverage_type: toNullableString(
+                        row.limit_coverage_type,
+                    ),
+                    kolektibilitas_max: toNullableString(
+                        row.kolektibilitas_max,
+                    ),
+                    kolektibilitas_limit_amount: toNumber(
+                        row.kolektibilitas_limit_amount,
+                    ),
 
-                        stop_loss_value: toNumber(row.stop_loss_value),
-                        stop_loss_basis: toNullableString(row.stop_loss_basis),
-                        cut_loss_value: toNumber(row.cut_loss_value),
-                        cut_loss_basis: toNullableString(row.cut_loss_basis),
-                        cut_off_value: toNumber(row.cut_off_value),
-                        cut_off_basis: toNullableString(row.cut_off_basis),
+                    currency: "IDR",
+                    version: uploadMode === "revise" ? null : 1,
+                    parent_contract_id: null,
+                };
+            });
 
-                        loss_ratio_value: toNumber(row.loss_ratio_value),
-                        loss_ratio_basis: toNullableString(
-                            row.loss_ratio_basis,
-                        ),
+            const result = await backend.uploadMasterContractsAtomic({
+                uploadMode,
+                selectedContractForRevision:
+                    uploadMode === "revise"
+                        ? selectedContractForRevision
+                        : null,
+                contracts: contractsPayload,
+            });
 
-                        evaluation_period_value: toInteger(
-                            row.evaluation_period_value,
-                        ),
-                        evaluation_period_unit: toNullableString(
-                            row.evaluation_period_unit,
-                        ),
-
-                        max_tenor_value: toInteger(row.max_tenor_value),
-                        max_tenor_unit: toNullableString(row.max_tenor_unit),
-                        max_sum_insured: toNumber(row.max_sum_insured),
-
-                        perils_covers: toNullableString(row.perils_covers),
-                        limit_coverage_type: toNullableString(
-                            row.limit_coverage_type,
-                        ),
-                        kolektibilitas_max: toNullableString(
-                            row.kolektibilitas_max,
-                        ),
-                        kolektibilitas_limit_amount: toNumber(
-                            row.kolektibilitas_limit_amount,
-                        ),
-
-                        currency: "IDR",
-                        version,
-                        parent_contract_id:
-                            uploadMode === "revise" ? reviseParentId : null,
-                    };
-
-                    await backend.create("MasterContract", payload);
-                    uploaded++;
-                } catch (rowError) {
-                    errors.push(`Row ${i + 2}: ${rowError.message}`);
-                }
-            }
-
-            if (errors.length > 0) {
-                setErrorMessage(
-                    `Uploaded ${uploaded} contracts. ${errors.length} errors:\n${errors.slice(0, 5).join("\n")}${errors.length > 5 ? "\n..." : ""}`,
-                );
-            } else {
-                setSuccessMessage(
-                    `Successfully uploaded ${uploaded} contract${uploaded > 1 ? "s" : ""}`,
-                );
-            }
+            const uploaded = Number(result?.createdCount || 0);
+            setSuccessMessage(
+                `Berhasil upload ${uploaded} contract${
+                    uploaded > 1 ? "s" : ""
+                }.`,
+            );
 
             setShowUploadDialog(false);
             setUploadFile(null);
@@ -578,7 +530,9 @@ export default function MasterContractManagement() {
             loadStats();
         } catch (error) {
             console.error("Upload error:", error);
-            setErrorMessage(`Upload failed: ${error.message}`);
+            setErrorMessage(
+                readableError(error, "Upload gagal. Periksa data dan coba lagi."),
+            );
         }
 
         setProcessing(false);
@@ -589,61 +543,12 @@ export default function MasterContractManagement() {
 
         setProcessing(true);
         try {
-            const updates = {};
-
-            // Update contract_status instead of effective_status
-            if (approvalAction === "APPROVED") {
-                updates.contract_status = "APPROVED";
-                updates.first_approved_by = user?.email;
-                updates.first_approved_date = new Date().toISOString();
-                if (approvalRemarks) updates.remark = approvalRemarks;
-            } else if (approvalAction === "REVISION") {
-                updates.contract_status = "REVISION";
-                updates.revision_reason = approvalRemarks;
-            }
-
             const contractId =
                 selectedContract.contract_id || selectedContract.id;
-            await backend.update("MasterContract", contractId, updates);
-
-            try {
-                await backend.create("AuditLog", {
-                    action: `CONTRACT_${approvalAction}`,
-                    module: "CONFIG",
-                    entity_type: "MasterContract",
-                    entity_id: contractId,
-                    old_value: JSON.stringify({
-                        status: selectedContract.contract_status,
-                    }),
-                    new_value: JSON.stringify({
-                        status: updates.contract_status,
-                    }),
-                    user_email: auditActor?.user_email || user?.email,
-                    user_role: auditActor?.user_role || user?.role,
-                    reason: approvalRemarks,
-                });
-            } catch (auditError) {
-                console.warn("Failed to create audit log:", auditError);
-            }
-
-            try {
-                await backend.create("Notification", {
-                    title:
-                        approvalAction === "REVISION"
-                            ? "Contract Needs Revision"
-                            : "Contract Approved",
-                    message:
-                        approvalAction === "REVISION"
-                            ? `Master Contract ${contractId} sent for revision: ${approvalRemarks || "-"}`
-                            : `Master Contract ${contractId} marked as APPROVED`,
-                    type: approvalAction === "REVISION" ? "WARNING" : "INFO",
-                    module: "CONFIG",
-                    reference_id: contractId,
-                    target_role: "ALL",
-                });
-            } catch (notifError) {
-                console.warn("Failed to create notification:", notifError);
-            }
+            await backend.processMasterContractApproval(contractId, {
+                action: approvalAction,
+                remarks: approvalRemarks,
+            });
 
             if (approvalAction === "REVISION") {
                 setSuccessMessage("Contract sent for revision successfully");
@@ -659,7 +564,12 @@ export default function MasterContractManagement() {
             loadStats();
         } catch (error) {
             console.error("Approval error:", error);
-            setErrorMessage(`Failed to process approval: ${error.message}`);
+            setErrorMessage(
+                readableError(
+                    error,
+                    "Gagal memproses approval contract. Silakan coba lagi.",
+                ),
+            );
         }
         setProcessing(false);
     };
@@ -677,7 +587,19 @@ export default function MasterContractManagement() {
     const activeContracts = statsContracts.filter(
         (c) => c.effective_status === "Active",
     );
-    const uniqueContractIds = [...new Set(contracts.map((c) => c.contract_id))];
+    const revisionContracts = Array.isArray(statsContracts)
+        ? statsContracts
+              .filter(
+                  (c) =>
+                      normalizeStatus(c.contract_status || c.effective_status) ===
+                      "REVISION",
+              )
+              .sort((a, b) => {
+                  const left = new Date(b.input_date || b.updated_at || 0).getTime();
+                  const right = new Date(a.input_date || a.updated_at || 0).getTime();
+                  return left - right;
+              })
+        : [];
 
     const stats = {
         total: statsContracts.length,
@@ -735,7 +657,7 @@ export default function MasterContractManagement() {
                 const status = (row.contract_status || "Unknown").toString();
                 const styles = {
                     APPROVED: "bg-emerald-400 text-white",
-                    REVISION: "bg-yellow-400 text-black",
+                    REVISION: "bg-yellow-400 text-orange-700",
                     Active: "bg-blue-100 text-blue-800",
                     Draft: "bg-gray-100 text-gray-800",
                     Unknown: "bg-gray-200 text-gray-700",
@@ -1168,28 +1090,24 @@ export default function MasterContractManagement() {
                                         <SelectValue placeholder="Select contract" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {uniqueContractIds.map((cid) => {
-                                            const latest = contracts
-                                                .filter(
-                                                    (c) =>
-                                                        c.contract_id === cid,
-                                                )
-                                                .sort(
-                                                    (a, b) =>
-                                                        (b.version || 1) -
-                                                        (a.version || 1),
-                                                )[0];
-                                            return (
-                                                <SelectItem
-                                                    key={cid}
-                                                    value={cid}
-                                                >
-                                                    {cid} - v
-                                                    {latest.version || 1} (
-                                                    {latest.effective_status})
-                                                </SelectItem>
-                                            );
-                                        })}
+                                        {revisionContracts.length === 0 ? (
+                                            <SelectItem value="__no_revision__" disabled>
+                                                Tidak ada kontrak berstatus REVISION
+                                            </SelectItem>
+                                        ) : (
+                                            revisionContracts.map((contract) => {
+                                                const contractId = contract.contract_id || "-";
+                                                const contractNo = contract.contract_no || "-";
+                                                return (
+                                                    <SelectItem
+                                                        key={contractId}
+                                                        value={contractId}
+                                                    >
+                                                        {contractNo} ({contractId})
+                                                    </SelectItem>
+                                                );
+                                            })
+                                        )}
                                     </SelectContent>
                                 </Select>
                                 {selectedContractForRevision && (

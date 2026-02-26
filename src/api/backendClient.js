@@ -15,6 +15,45 @@ function authFetchOptions(extra = {}) {
   return { ...extra, headers };
 }
 
+const prettifyErrorMessage = (message = '', fallback = 'Permintaan gagal diproses') => {
+  const text = String(message || '').trim();
+  if (!text) return fallback;
+
+  if (text.includes('Unique constraint failed')) {
+    return 'Data sudah terdaftar. Periksa nilai unik seperti contract_id.';
+  }
+
+  if (text.includes('Foreign key constraint failed')) {
+    return 'Data tidak valid karena relasi referensi tidak ditemukan.';
+  }
+
+  if (text.includes('Record to update not found') || text.includes('not found')) {
+    return 'Data tidak ditemukan atau sudah berubah.';
+  }
+
+  return text;
+};
+
+const readErrorMessage = async (res) => {
+  const text = await res.text();
+  if (!text) {
+    return prettifyErrorMessage('', `Permintaan gagal (${res.status})`);
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    const baseMessage = parsed?.message || parsed?.error || text;
+    return prettifyErrorMessage(baseMessage, `Permintaan gagal (${res.status})`);
+  } catch {
+    return prettifyErrorMessage(text, `Permintaan gagal (${res.status})`);
+  }
+};
+
+const throwBackendError = async (res) => {
+  const message = await readErrorMessage(res);
+  throw new Error(message);
+};
+
 /**
  * Extract a plain array from any backend response shape.
  * Handles:
@@ -97,13 +136,7 @@ export const backend = {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`;
     const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     return handleResponse(res);
   },
@@ -117,13 +150,7 @@ export const backend = {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`;
     const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     return handlePaginatedResponse(res);
   },
@@ -132,13 +159,7 @@ export const backend = {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
     const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -166,13 +187,7 @@ export const backend = {
       body: JSON.stringify(payload),
     }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -200,13 +215,7 @@ export const backend = {
       body: JSON.stringify(payload),
     }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -233,13 +242,7 @@ export const backend = {
       credentials: 'same-origin',
     });
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -256,15 +259,53 @@ export const backend = {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}?${qs}`;
     const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     return handleResponse(res);
+  },
+
+  async uploadMasterContractsAtomic(payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/upload`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }));
+
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+
+  async processMasterContractApproval(contractId, payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/${encodeURIComponent(contractId)}/approval`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }));
+
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch {
+      return null;
+    }
   },
 
   /**
@@ -277,13 +318,7 @@ export const backend = {
     const url = `/api/notifications${qs ? `?${qs}` : ''}`;
     const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     return handlePaginatedResponse(res);
   },
@@ -300,13 +335,7 @@ export const backend = {
       body: JSON.stringify(payload),
     }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -338,13 +367,7 @@ export const backend = {
       body: JSON.stringify(payload),
     }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -375,13 +398,7 @@ export const backend = {
       headers: { 'Content-Type': 'application/json' },
     }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -411,13 +428,7 @@ export const backend = {
       method: 'DELETE',
     }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -438,14 +449,7 @@ export const backend = {
     const url = `/api/notification-settings/me?${qs}`;
     const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        if (e instanceof SyntaxError) throw new Error(error || res.statusText);
-        throw e;
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -472,14 +476,7 @@ export const backend = {
       body: JSON.stringify(payload),
     }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        if (e instanceof SyntaxError) throw new Error(error || res.statusText);
-        throw e;
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {
@@ -497,13 +494,7 @@ export const backend = {
     const url = `/api/app-logs/${encodeURIComponent(appId)}/log-user-in-app/${encodeURIComponent(pageName)}`;
     const res = await fetch(url, authFetchOptions({ method: 'POST' }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     return true;
   },
@@ -516,13 +507,7 @@ export const backend = {
       body: JSON.stringify(payload),
     }));
     if (!res.ok) {
-      const error = await res.text();
-      try {
-        const parsed = JSON.parse(error);
-        throw new Error(parsed.message || 'Request failed');
-      } catch (e) {
-        throw new Error(error || res.statusText);
-      }
+      await throwBackendError(res);
     }
     const text = await res.text();
     try {

@@ -58,13 +58,6 @@ export default function AuditLog() {
     const [loading, setLoading] = useState(true);
     const [filters, setFilters] = useState(defaultFilter);
 
-    const parseDateField = (item) => {
-        const v = item?.created_date ?? item?.createdAt ?? item?.created_at;
-        if (!v) return null;
-        const d = new Date(v);
-        return Number.isNaN(d.getTime()) ? null : d;
-    };
-
     useEffect(() => {
         loadData();
     }, []);

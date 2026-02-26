@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -42,8 +42,8 @@ import FilterTab from "@/components/common/FilterTab";
 const defaultFilter = {
     contract: "all",
     batch: "",
-    branch: "",
-    region: "",
+    branch_desc: "",
+    region_desc: "",
     submitStatus: "all",
     reconStatus: "all",
     claimStatus: "all",
@@ -72,101 +72,188 @@ export default function BorderoManagement() {
     const [successMessage, setSuccessMessage] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
 
+    // Pagination state
+    const pageSize = 10;
+
+    // Debtor pagination
+    const [debtorPage, setDebtorPage] = useState(1);
+    const [totalDebtors, setTotalDebtors] = useState(0);
+    const isFirstDebtorPageEffect = useRef(true);
+
+    // Bordero pagination
+    const [borderoPage, setBorderoPage] = useState(1);
+    const [totalBorderos, setTotalBorderos] = useState(0);
+    const isFirstBorderoPageEffect = useRef(true);
+
+    // Claim pagination
+    const [claimPage, setClaimPage] = useState(1);
+    const [totalClaims, setTotalClaims] = useState(0);
+    const isFirstClaimPageEffect = useRef(true);
+
+    // Contract pagination
+    const [contractPage, setContractPage] = useState(1);
+    const [totalContracts, setTotalContracts] = useState(0);
+    const isFirstContractPageEffect = useRef(true);
+
     useEffect(() => {
-        loadData();
+        loadDebtors(1, filters);
+        loadBorderos(1, filters);
+        loadClaims(1, filters);
+        loadContracts(1);
+        loadSubrogations();
     }, []);
 
-    const loadData = async () => {
+    // --- Load functions with server-side pagination ---
+
+    const loadDebtors = async (pageToLoad = debtorPage, activeFilters = filters) => {
         setLoading(true);
         try {
-            // Ambil semua data dari backend
-            const [
-                debtorData,
-                borderoData,
-                contractData,
-                claimData,
-                subrogationData,
-            ] = await Promise.all([
-                backend.list("Debtor"),
-                backend.list("Bordero"),
-                backend.list("Contract"),
-                backend.list("Claim"),
-                backend.list("Subrogation"),
-            ]);
-
-            // Pastikan data adalah array
-            const safeDebtorData = Array.isArray(debtorData) ? debtorData : [];
-            const safeBorderoData = Array.isArray(borderoData)
-                ? borderoData
-                : [];
-            const safeContractData = Array.isArray(contractData)
-                ? contractData
-                : [];
-            const safeClaimData = Array.isArray(claimData) ? claimData : [];
-            const safeSubrogationData = Array.isArray(subrogationData)
-                ? subrogationData
-                : [];
-
-            // Hitung total untuk setiap bordero dari debtors
-            const borderoDataWithCalculatedTotals = safeBorderoData.map(
-                (bordero) => {
-                    // Filter debtors yang terkait dengan bordero ini (APPROVED only for verification)
-                    const approvedDebtors = safeDebtorData.filter(
-                        (debtor) =>
-                            debtor.contract_id === bordero.contract_id &&
-                            debtor.batch_id === bordero.batch_id &&
-                            debtor.status === "APPROVED"
-                    );
-
-                    // Hitung totals APPROVED (for monitoring progress)
-                    const approvedDebtorsCount = approvedDebtors.length;
-                    const approvedExposure = approvedDebtors.reduce(
-                        (sum, debtor) => sum + (parseFloat(debtor.plafon) || 0),
-                        0,
-                    );
-                    const approvedPremium = approvedDebtors.reduce(
-                        (sum, debtor) =>
-                            sum + (parseFloat(debtor.net_premi) || 0),
-                        0,
-                    );
-
-                    return {
-                        ...bordero,
-                        // Keep original totals from DB (calculated at upload)
-                        total_debtors: bordero.total_debtors || 0,
-                        total_exposure: bordero.total_exposure || 0,
-                        total_premium: bordero.total_premium || 0,
-                        // Add approved stats for UI usage if needed
-                        approved_debtors: approvedDebtorsCount,
-                        approved_exposure: approvedExposure,
-                        approved_premium: approvedPremium,
-                    };
-                },
-            );
-
-            setDebtors(safeDebtorData);
-            setBorderos(borderoDataWithCalculatedTotals);
-            setContracts(safeContractData);
-            setClaims(safeClaimData);
-            setSubrogations(safeSubrogationData);
-
-            console.log("Loaded data:", {
-                debtors: safeDebtorData.length,
-                borderos: borderoDataWithCalculatedTotals.length,
-                claims: safeClaimData.length,
-                subrogations: safeSubrogationData.length,
-            });
+            const query = { page: pageToLoad, limit: pageSize };
+            if (activeFilters) query.q = JSON.stringify(activeFilters);
+            const result = await backend.listPaginated("Debtor", query);
+            setDebtors(Array.isArray(result.data) ? result.data : []);
+            setTotalDebtors(Number(result.pagination?.total) || 0);
         } catch (error) {
-            console.error("Failed to load data:", error);
-            // Set default empty arrays
+            console.error("Error loading debtors:", error);
             setDebtors([]);
+            setTotalDebtors(0);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadBorderos = async (pageToLoad = borderoPage, activeFilters = filters) => {
+        try {
+            const query = { page: pageToLoad, limit: pageSize };
+            if (activeFilters?.period) query.q = JSON.stringify({ period: activeFilters.period });
+            const result = await backend.listPaginated("Bordero", query);
+            setBorderos(Array.isArray(result.data) ? result.data : []);
+            setTotalBorderos(Number(result.pagination?.total) || 0);
+        } catch (error) {
+            console.error("Error loading borderos:", error);
             setBorderos([]);
-            setContracts([]);
+            setTotalBorderos(0);
+        }
+    };
+
+    const loadClaims = async (pageToLoad = claimPage, activeFilters = filters) => {
+        try {
+            const query = { page: pageToLoad, limit: pageSize };
+            if (activeFilters) query.q = JSON.stringify({ claimStatus: activeFilters.claimStatus, startDate: activeFilters.startDate, endDate: activeFilters.endDate });
+            const result = await backend.listPaginated("Claim", query);
+            setClaims(Array.isArray(result.data) ? result.data : []);
+            setTotalClaims(Number(result.pagination?.total) || 0);
+        } catch (error) {
+            console.error("Error loading claims:", error);
             setClaims([]);
+            setTotalClaims(0);
+        }
+    };
+
+    const loadContracts = async (pageToLoad = contractPage) => {
+        try {
+            const query = { page: pageToLoad, limit: pageSize };
+            const result = await backend.listPaginated("Contract", query);
+            setContracts(Array.isArray(result.data) ? result.data : []);
+            setTotalContracts(Number(result.pagination?.total) || 0);
+        } catch (error) {
+            console.error("Error loading contracts:", error);
+            setContracts([]);
+            setTotalContracts(0);
+        }
+    };
+
+    const loadSubrogations = async () => {
+        try {
+            const data = await backend.list("Subrogation");
+            setSubrogations(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error("Error loading subrogations:", error);
             setSubrogations([]);
         }
-        setLoading(false);
     };
+
+    // --- Pagination computed values ---
+
+    // Debtor pagination
+    const debtorTotal = totalDebtors;
+    const debtorTotalPages = Math.max(1, Math.ceil(debtorTotal / pageSize));
+    const debtorFrom = debtorTotal === 0 ? 0 : (debtorPage - 1) * pageSize + 1;
+    const debtorTo = Math.min(debtorTotal, debtorPage * pageSize);
+
+    // Bordero pagination
+    const borderoTotal = totalBorderos;
+    const borderoTotalPages = Math.max(1, Math.ceil(borderoTotal / pageSize));
+    const borderoFrom = borderoTotal === 0 ? 0 : (borderoPage - 1) * pageSize + 1;
+    const borderoTo = Math.min(borderoTotal, borderoPage * pageSize);
+
+    // Claim pagination
+    const claimTotal = totalClaims;
+    const claimTotalPages = Math.max(1, Math.ceil(claimTotal / pageSize));
+    const claimFrom = claimTotal === 0 ? 0 : (claimPage - 1) * pageSize + 1;
+    const claimTo = Math.min(claimTotal, claimPage * pageSize);
+
+    // --- Filter change effects ---
+
+    // Debtor: reset page when filters change
+    useEffect(() => {
+        setSelectedItems([]);
+        if (debtorPage !== 1) {
+            setDebtorPage(1);
+            return;
+        }
+        loadDebtors(1, filters);
+    }, [
+        filters.contract, filters.batch, filters.branch_desc,
+        filters.region_desc, filters.submitStatus,
+        filters.startDate, filters.endDate,
+    ]);
+
+    useEffect(() => {
+        if (isFirstDebtorPageEffect.current) { isFirstDebtorPageEffect.current = false; return; }
+        setSelectedItems([]);
+        loadDebtors(debtorPage, filters);
+    }, [debtorPage]);
+
+    useEffect(() => {
+        if (debtorPage > debtorTotalPages) setDebtorPage(debtorTotalPages);
+    }, [debtorTotalPages]);
+
+    // Bordero: reset page when filters change
+    useEffect(() => {
+        if (borderoPage !== 1) { setBorderoPage(1); return; }
+        loadBorderos(1, filters);
+    }, [filters.period]);
+
+    useEffect(() => {
+        if (isFirstBorderoPageEffect.current) { isFirstBorderoPageEffect.current = false; return; }
+        loadBorderos(borderoPage, filters);
+    }, [borderoPage]);
+
+    useEffect(() => {
+        if (borderoPage > borderoTotalPages) setBorderoPage(borderoTotalPages);
+    }, [borderoTotalPages]);
+
+    // Claim: reset page when filters change
+    useEffect(() => {
+        if (claimPage !== 1) { setClaimPage(1); return; }
+        loadClaims(1, filters);
+    }, [filters.claimStatus, filters.startDate, filters.endDate]);
+
+    useEffect(() => {
+        if (isFirstClaimPageEffect.current) { isFirstClaimPageEffect.current = false; return; }
+        loadClaims(claimPage, filters);
+    }, [claimPage]);
+
+    useEffect(() => {
+        if (claimPage > claimTotalPages) setClaimPage(claimTotalPages);
+    }, [claimTotalPages]);
+
+    // Contract: page change
+    useEffect(() => {
+        if (isFirstContractPageEffect.current) { isFirstContractPageEffect.current = false; return; }
+        loadContracts(contractPage);
+    }, [contractPage]);
 
     const handleExportExcel = () => {
         let data = [];
@@ -304,76 +391,18 @@ export default function BorderoManagement() {
             setShowActionDialog(false);
             setSelectedItem(null);
 
-            // Reload data untuk update UI
-            loadData();
+            // Reload borderos to update UI
+            loadBorderos(borderoPage, filters);
         } catch (error) {
             console.error("Bordero action error:", error);
         }
         setProcessing(false);
     };
 
-    // Filter per tab based on workflow status
-    const getTabDebtors = () => {
-        let filtered = debtors.filter((d) => {
-            if (filters.contract !== "all" && d.contract_id !== filters.contract) return false;
-            if (filters.batch && !d.batch_id?.includes(filters.batch)) return false;
-            if (filters.branch && !d.branch_desc?.includes(filters.branch)) return false;
-            if (filters.region && !d.region_desc?.includes(filters.region)) return false;
-            // Filter global berdasarkan submitStatus jika ada
-            if (filters.submitStatus !== "all" && d.status !== filters.submitStatus) return false;
-            if (filters.startDate && d.created_date < filters.startDate) return false;
-            if (filters.endDate && d.created_date > filters.endDate) return false;
-            return true;
-        });
-
-        // Apply tab-specific filters
-        if (activeTab === "debtors") {
-            // Allow all statuses if filtered, otherwise default behavior (or just return filtered)
-            // The user requested "filtering based on submit status", so we return the filtered list directly.
-            return filtered;
-        } else if (activeTab === "exposure") {
-            // Exposure usually implies Approved, but if user filters, we should probably respect it?
-            // For now, let's keep Exposure strictly Approved as it implies risk calculation on valid policies.
-            // But if the user filters by "SUBMITTED", this tab might end up empty, which is correct.
-            return filtered.filter((d) => d.status === "APPROVED");
-        } else if (activeTab === "borderos") {
-            // Handled separately
-            return filtered;
-        }
-        return filtered;
-    };
-
-    const filteredDebtors = getTabDebtors();
-
-    // Use filteredDebtors for KPIs to ensure they match the table and filter selection
-    const kpiDebtors = filteredDebtors;
-
-    // Filter Bordero
-    const getTabBorderos = () => {
-        let filtered = borderos.filter((b) => {
-            if (filters.period && !b.period?.includes(filters.period)) return false;
-            return true;
-        });
-        if (activeTab === "debtors") return filtered;
-        else if (activeTab === "exposure") return filtered;
-        else if (activeTab === "borderos") return filtered;
-        return filtered;
-    };
-
-    // Filter Bordero
-    const filteredBorderos = getTabBorderos();
-
-    const filteredClaims = claims.filter((c) => {
-        if (
-            filters.claimStatus !== "all" &&
-            c.claim_status !== filters.claimStatus
-        )
-            return false;
-        if (filters.startDate && c.created_date < filters.startDate)
-            return false;
-        if (filters.endDate && c.created_date > filters.endDate) return false;
-        return true;
-    });
+    // All entities are now loaded via server-side pagination
+    const filteredDebtors = debtors;
+    const filteredBorderos = borderos;
+    const filteredClaims = claims;
 
     const filteredSubrogations = subrogations.filter((s) => {
         if (
@@ -496,7 +525,7 @@ export default function BorderoManagement() {
                 ]}
                 actions={
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={loadData}>
+                        <Button variant="outline" onClick={() => { loadDebtors(debtorPage, filters); loadBorderos(borderoPage, filters); loadClaims(claimPage, filters); loadContracts(contractPage); loadSubrogations(); }}>
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Refresh
                         </Button>
@@ -592,10 +621,8 @@ export default function BorderoManagement() {
                 {activeTab === "debtors" && (<>
                     <GradientStatCard
                         title="Total Debtors"
-                        value={kpiDebtors.length}
-                        subtitle={`${debtors.length} total • ${debtors.filter(
-                            (d) => d.status === "SUBMITTED",
-                        ).length} pending`}
+                        value={totalDebtors}
+                        subtitle={`Showing ${filteredDebtors.length} of ${totalDebtors}`}
                         icon={FileText}
                         gradient="from-blue-500 to-blue-600"
                     />
@@ -610,11 +637,11 @@ export default function BorderoManagement() {
                     />
                     <GradientStatCard
                         title="Total Premi"
-                        value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => {
+                        value={formatRupiahAdaptive(filteredDebtors.reduce((sum, debtor) => {
                             const netPremi = parseFloat(debtor.net_premi) || 0;
                             return sum + netPremi;
                         }, 0))}
-                        subtitle="IDR"
+                        subtitle="Current page"
                         icon={DollarSign}
                         gradient="from-green-500 to-green-600"
                     />
@@ -634,23 +661,23 @@ export default function BorderoManagement() {
                     />
                 </>)}
                 {activeTab === "borderos" && (<>
-                    <GradientStatCard title="Total Debtors" value={kpiDebtors.length} subtitle={`${debtors.length} total • ${debtors.filter((d) => d.status === "SUBMITTED",).length} pending`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
+                    <GradientStatCard title="Total Debtors" value={totalDebtors} subtitle={`Showing ${filteredDebtors.length} of ${totalDebtors}`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
                     <GradientStatCard title="Borderos" value={borderos.length} subtitle={`${borderos.filter( (b) => b.status === "FINAL",).length} finalized`} icon={FileText} gradient="from-purple-500 to-purple-600"/>
-                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="IDR" icon={DollarSign} gradient="from-green-500 to-green-600"/>
+                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(filteredDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="Current page" icon={DollarSign} gradient="from-green-500 to-green-600"/>
                     <GradientStatCard title="Total Claims" value={claims.length}subtitle="All statuses"icon={AlertCircle}gradient="from-orange-500 to-orange-600"/>
                     <GradientStatCard title="Subrogrations"value={subrogations.length}subtitle="Recovery cases"icon={RefreshCw}gradient="from-teal-500 to-teal-600"/>
                 </>)}
                 {activeTab === "claims" && (<>
-                    <GradientStatCard title="Total Debtors" value={kpiDebtors.length} subtitle={`${debtors.length} total • ${debtors.filter((d) => d.status === "SUBMITTED",).length} pending`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
+                    <GradientStatCard title="Total Debtors" value={totalDebtors} subtitle={`Showing ${filteredDebtors.length} of ${totalDebtors}`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
                     <GradientStatCard title="Borderos" value={borderos.length} subtitle={`${borderos.filter( (b) => b.status === "FINAL",).length} finalized`} icon={FileText} gradient="from-purple-500 to-purple-600"/>
-                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="IDR" icon={DollarSign} gradient="from-green-500 to-green-600"/>
+                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(filteredDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="Current page" icon={DollarSign} gradient="from-green-500 to-green-600"/>
                     <GradientStatCard title="Total Claims" value={claims.length}subtitle="All statuses"icon={AlertCircle}gradient="from-orange-500 to-orange-600"/>
                     <GradientStatCard title="Subrogrations"value={subrogations.length}subtitle="Recovery cases"icon={RefreshCw}gradient="from-teal-500 to-teal-600"/>
                 </>)}
                 {activeTab === "subrogation" && (<>
-                    <GradientStatCard title="Total Debtors" value={kpiDebtors.length} subtitle={`${debtors.length} total • ${debtors.filter((d) => d.status === "SUBMITTED",).length} pending`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
+                    <GradientStatCard title="Total Debtors" value={totalDebtors} subtitle={`Showing ${filteredDebtors.length} of ${totalDebtors}`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
                     <GradientStatCard title="Borderos" value={borderos.length} subtitle={`${borderos.filter( (b) => b.status === "FINAL",).length} finalized`} icon={FileText} gradient="from-purple-500 to-purple-600"/>
-                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(kpiDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="IDR" icon={DollarSign} gradient="from-green-500 to-green-600"/>
+                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(filteredDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="Current page" icon={DollarSign} gradient="from-green-500 to-green-600"/>
                     <GradientStatCard title="Total Claims" value={claims.length}subtitle="All statuses"icon={AlertCircle}gradient="from-orange-500 to-orange-600"/>
                     <GradientStatCard title="Subrogrations"value={subrogations.length}subtitle="Recovery cases"icon={RefreshCw}gradient="from-teal-500 to-teal-600"/>
                 </>)}
@@ -669,17 +696,17 @@ export default function BorderoManagement() {
                         type: "input",
                         inputType: "text"
                     },{
-                        key:"region",
-                        label:"Region",
-                        placeholder:"Search Region",
-                        type: "input",
-                        inputType: "text"
-                    },{
-                        key:"branch",
+                        key:"branch_desc",
                         label:"Branch",
                         placeholder:"Search Branch",
                         type: "input",
                         inputType: "text",
+                    },{
+                        key:"region_desc",
+                        label:"Region",
+                        placeholder:"Search Region",
+                        type: "input",
+                        inputType: "text"
                     }] : []),
                     ...(['borderos'].includes(activeTab) ? [{
                         key:"period",
@@ -694,10 +721,13 @@ export default function BorderoManagement() {
                         placeholder: "Submit Status",
                         options: [
                             { value: "all", label: "All"},
-                            { value: "DRAFT", label: "Draft"},
                             { value: "SUBMITTED", label: "Submitted"},
                             { value: "APPROVED", label: "Approved"},
-                            { value: "REJECTED", label: "Rejected"},
+                            { value: "CHECKED_BRINS", label: "Checked (Brins)"},
+                            { value: "APPROVED_BRINS", label: "Approved (Brins)"},
+                            { value: "CHECKED_TUGURE", label: "Checked (Tugure)"},
+                            { value: "ARCHIVED REVISION", label: "Archived Revision"},
+                            { value: "REVISION", label: "Revision"},
                         ]
                     },
                     {
@@ -718,15 +748,15 @@ export default function BorderoManagement() {
                 <TabsList className="grid grid-cols-4 w-full">
                     <TabsTrigger value="debtors">
                         <FileText className="w-4 h-4 mr-2" />
-                        Debtors ({filteredDebtors.length})
+                        Debtors ({totalDebtors})
                     </TabsTrigger>
                     <TabsTrigger value="borderos">
                         <FileText className="w-4 h-4 mr-2" />
-                        Borderos ({filteredBorderos.length})
+                        Borderos ({totalBorderos})
                     </TabsTrigger>
                     <TabsTrigger value="claims">
                         <FileText className="w-4 h-4 mr-2" />
-                        Claims ({filteredClaims.length})
+                        Claims ({totalClaims})
                     </TabsTrigger>
                     <TabsTrigger value="subrogation">
                         <FileText className="w-4 h-4 mr-2" />
@@ -739,6 +769,8 @@ export default function BorderoManagement() {
                         columns={debtorColumns}
                         data={filteredDebtors}
                         isLoading={loading}
+                        pagination={{ from: debtorFrom, to: debtorTo, total: debtorTotal, page: debtorPage, totalPages: debtorTotalPages }}
+                        onPageChange={(p) => setDebtorPage(p)}
                         emptyMessage="No debtors found"
                     />
                 </TabsContent>
@@ -758,6 +790,8 @@ export default function BorderoManagement() {
                         columns={borderoColumns}
                         data={filteredBorderos}
                         isLoading={loading}
+                        pagination={{ from: borderoFrom, to: borderoTo, total: borderoTotal, page: borderoPage, totalPages: borderoTotalPages }}
+                        onPageChange={(p) => setBorderoPage(p)}
                         emptyMessage="No borderos generated yet"
                     />
                 </TabsContent>
@@ -794,6 +828,8 @@ export default function BorderoManagement() {
                         ]}
                         data={filteredClaims}
                         isLoading={loading}
+                        pagination={{ from: claimFrom, to: claimTo, total: claimTotal, page: claimPage, totalPages: claimTotalPages }}
+                        onPageChange={(p) => setClaimPage(p)}
                         emptyMessage="No claims found"
                     />
                 </TabsContent>

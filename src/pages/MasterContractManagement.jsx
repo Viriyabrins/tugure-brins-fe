@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ import {
     Eye,
 } from "lucide-react";
 import { backend } from "@/api/backendClient";
+import { toast } from "sonner";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import PageHeader from "@/components/common/PageHeader";
@@ -55,6 +56,7 @@ const defaultFilter = {
 };
 
 const normalizeRole = (role = "") => String(role).trim().toLowerCase();
+const ALL_ROLE_NAMES = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role"];
 const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
 const BRINS_UPLOAD_ROLES = ["maker-brins-role", "checker-brins-role"];
 const hasTugureActionRole = (roles = []) =>
@@ -96,17 +98,44 @@ export default function MasterContractManagement() {
     const [statsContracts, setStatsContracts] = useState([]); // full list for stat cards only
     const pageSize = 10;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
-    const canManageContractActions = hasTugureActionRole(tokenRoles);
     const canManageUploadTemplate = hasBrinsUploadRole(tokenRoles);
-    // Single-approval workflow: approvals happen only from Tugure side
+
+    // Per-role booleans for multi-step approval
+    const normalizedRoles = (Array.isArray(tokenRoles) ? tokenRoles : []).map(normalizeRole);
+    const isCheckerBrins = normalizedRoles.includes("checker-brins-role");
+    const isApproverBrins = normalizedRoles.includes("approver-brins-role");
+    const isCheckerTugure = normalizedRoles.includes("checker-tugure-role");
+    const isApproverTugure = normalizedRoles.includes("approver-tugure-role");
+
+    const isFirstPageEffect = useRef(true);
 
     useEffect(() => {
         loadUser();
         loadStats();
+        loadData(1, filters);
     }, []);
 
+    // Reset page when filters change
     useEffect(() => {
-        loadData(page);
+        setSelectedContractIds([]);
+        if (page !== 1) {
+            setPage(1);
+            return;
+        }
+        loadData(1, filters);
+    }, [
+        filters.status, filters.contractId, filters.productType,
+        filters.creditType, filters.startDate, filters.endDate,
+    ]);
+
+    // Reload when page changes
+    useEffect(() => {
+        if (isFirstPageEffect.current) {
+            isFirstPageEffect.current = false;
+            return;
+        }
+        setSelectedContractIds([]);
+        loadData(page, filters);
     }, [page]);
 
     useEffect(() => {
@@ -134,14 +163,16 @@ export default function MasterContractManagement() {
         }
     };
 
-    const loadData = async (pageToLoad = page) => {
+    const loadData = async (pageToLoad = page, activeFilters = filters) => {
         setLoading(true);
         try {
             const query = { page: pageToLoad, limit: pageSize };
+            if (activeFilters) {
+                query.q = JSON.stringify(activeFilters);
+            }
             const result = await backend.listPaginated("MasterContract", query);
             setContracts(Array.isArray(result.data) ? result.data : []);
             setTotal(Number(result.pagination?.total) || 0);
-            console.log("Master Contracts", result)
         } catch (error) {
             console.error("Failed to load contracts:", error);
             setContracts([]);
@@ -526,7 +557,7 @@ export default function MasterContractManagement() {
             setUploadFile(null);
             setUploadMode("new");
             setSelectedContractForRevision("");
-            loadData(page);
+            loadData(page, filters);
             loadStats();
         } catch (error) {
             console.error("Upload error:", error);
@@ -538,38 +569,299 @@ export default function MasterContractManagement() {
         setProcessing(false);
     };
 
-    const handleApproval = async () => {
-        if (!selectedContract || !approvalAction) return;
-
+    // === CHECKER BRINS: Draft/Active → CHECKED_BRINS ===
+    const handleCheckerBrinsCheck = async () => {
+        if (selectedContractIds.length === 0) {
+            toast.error("Please select contracts to check");
+            return;
+        }
         setProcessing(true);
+        setErrorMessage("");
+        setSuccessMessage("");
         try {
-            const contractId =
-                selectedContract.contract_id || selectedContract.id;
-            await backend.processMasterContractApproval(contractId, {
-                action: approvalAction,
-                remarks: approvalRemarks,
-            });
+            let processedCount = 0;
+            for (const contractId of selectedContractIds) {
+                const contract = contracts.find((c) => (c.contract_id || c.id) === contractId);
+                if (!contract) continue;
+                const status = (contract.contract_status || "").toString();
+                if (status !== "Draft" && status !== "Active") continue;
 
-            if (approvalAction === "REVISION") {
-                setSuccessMessage("Contract sent for revision successfully");
-            } else {
-                setSuccessMessage("Contract status updated to APPROVED");
+                await backend.update("MasterContract", contract.contract_id || contract.id, {
+                    contract_status: "CHECKED_BRINS",
+                });
+                processedCount++;
+
+                try {
+                    await backend.create("AuditLog", {
+                        action: "CONTRACT_CHECKED_BRINS",
+                        module: "CONFIG",
+                        entity_type: "MasterContract",
+                        entity_id: contract.contract_id || contract.id,
+                        old_value: JSON.stringify({ status }),
+                        new_value: JSON.stringify({ status: "CHECKED_BRINS" }),
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
+                        reason: `Checker BRINS checked contract ${contract.contract_no || contract.contract_id}`,
+                    });
+                } catch (auditError) {
+                    console.warn("Failed to create audit log:", auditError);
+                }
             }
 
-            setShowApprovalDialog(false);
-            setSelectedContract(null);
-            setApprovalAction("");
-            setApprovalRemarks("");
-            loadData(page);
+            if (processedCount === 0) {
+                toast.warning("No contracts with Draft/Active status were found in your selection.");
+                setSelectedContractIds([]);
+                setProcessing(false);
+                return;
+            }
+
+            const brinsRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role"];
+            for (const role of brinsRoles) {
+                try {
+                    await backend.create("Notification", {
+                        title: "Contracts Checked by BRINS Checker",
+                        message: `${auditActor?.user_email || user?.email} checked ${processedCount} contract(s). Awaiting BRINS Approver approval.`,
+                        type: "INFO",
+                        module: "CONFIG",
+                        target_role: role,
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
+            }
+
+            setSuccessMessage(`${processedCount} contract(s) checked successfully.`);
+            toast.success(`${processedCount} contract(s) checked.`);
+            setSelectedContractIds([]);
+            loadData(page, filters);
             loadStats();
         } catch (error) {
-            console.error("Approval error:", error);
-            setErrorMessage(
-                readableError(
-                    error,
-                    "Gagal memproses approval contract. Silakan coba lagi.",
-                ),
-            );
+            console.error("Check failed:", error);
+            setErrorMessage(`Check failed: ${error.message}`);
+        }
+        setProcessing(false);
+    };
+
+    // === APPROVER BRINS: CHECKED_BRINS → APPROVED_BRINS ===
+    const handleApproverBrinsApprove = async () => {
+        if (selectedContractIds.length === 0) {
+            toast.error("Please select contracts to approve");
+            return;
+        }
+        setProcessing(true);
+        setErrorMessage("");
+        setSuccessMessage("");
+        try {
+            let processedCount = 0;
+            for (const contractId of selectedContractIds) {
+                const contract = contracts.find((c) => (c.contract_id || c.id) === contractId);
+                if (!contract || contract.contract_status !== "CHECKED_BRINS") continue;
+
+                await backend.update("MasterContract", contract.contract_id || contract.id, {
+                    contract_status: "APPROVED_BRINS",
+                });
+                processedCount++;
+
+                try {
+                    await backend.create("AuditLog", {
+                        action: "CONTRACT_APPROVED_BRINS",
+                        module: "CONFIG",
+                        entity_type: "MasterContract",
+                        entity_id: contract.contract_id || contract.id,
+                        old_value: JSON.stringify({ status: "CHECKED_BRINS" }),
+                        new_value: JSON.stringify({ status: "APPROVED_BRINS" }),
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
+                        reason: `Approver BRINS approved contract ${contract.contract_no || contract.contract_id}`,
+                    });
+                } catch (auditError) {
+                    console.warn("Failed to create audit log:", auditError);
+                }
+            }
+
+            if (processedCount === 0) {
+                toast.warning("No contracts with CHECKED_BRINS status were found in your selection.");
+                setSelectedContractIds([]);
+                setProcessing(false);
+                return;
+            }
+
+            const allRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role"];
+            for (const role of allRoles) {
+                try {
+                    await backend.create("Notification", {
+                        title: "Contracts Approved by BRINS",
+                        message: `${auditActor?.user_email || user?.email} approved ${processedCount} contract(s). Now available for Tugure review.`,
+                        type: "INFO",
+                        module: "CONFIG",
+                        target_role: role,
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
+            }
+
+            setSuccessMessage(`${processedCount} contract(s) approved by BRINS. Now available for Tugure review.`);
+            toast.success(`${processedCount} contract(s) approved by BRINS.`);
+            setSelectedContractIds([]);
+            loadData(page, filters);
+            loadStats();
+        } catch (error) {
+            console.error("Approve failed:", error);
+            setErrorMessage(`Approve failed: ${error.message}`);
+        }
+        setProcessing(false);
+    };
+
+    // === CHECKER TUGURE: APPROVED_BRINS → CHECKED_TUGURE ===
+    const handleCheckerTugureCheck = async () => {
+        if (selectedContractIds.length === 0) {
+            toast.error("Please select contracts to check");
+            return;
+        }
+        setProcessing(true);
+        setErrorMessage("");
+        setSuccessMessage("");
+        try {
+            let processedCount = 0;
+            for (const contractId of selectedContractIds) {
+                const contract = contracts.find((c) => (c.contract_id || c.id) === contractId);
+                if (!contract || contract.contract_status !== "APPROVED_BRINS") continue;
+
+                await backend.update("MasterContract", contract.contract_id || contract.id, {
+                    contract_status: "CHECKED_TUGURE",
+                });
+                processedCount++;
+
+                try {
+                    await backend.create("AuditLog", {
+                        action: "CONTRACT_CHECKED_TUGURE",
+                        module: "CONFIG",
+                        entity_type: "MasterContract",
+                        entity_id: contract.contract_id || contract.id,
+                        old_value: JSON.stringify({ status: "APPROVED_BRINS" }),
+                        new_value: JSON.stringify({ status: "CHECKED_TUGURE" }),
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
+                        reason: `Checker Tugure checked contract ${contract.contract_no || contract.contract_id}`,
+                    });
+                } catch (auditError) {
+                    console.warn("Failed to create audit log:", auditError);
+                }
+            }
+
+            if (processedCount === 0) {
+                toast.warning("No contracts with APPROVED_BRINS status were found in your selection.");
+                setSelectedContractIds([]);
+                setProcessing(false);
+                return;
+            }
+
+            for (const role of ALL_ROLE_NAMES) {
+                try {
+                    await backend.create("Notification", {
+                        title: "Contracts Checked by Tugure",
+                        message: `${auditActor?.user_email || user?.email} checked ${processedCount} contract(s). Awaiting Tugure Approver final decision.`,
+                        type: "INFO",
+                        module: "CONFIG",
+                        target_role: role,
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
+            }
+
+            setSuccessMessage(`${processedCount} contract(s) checked by Tugure. Awaiting final approval.`);
+            toast.success(`${processedCount} contract(s) checked by Tugure.`);
+            setSelectedContractIds([]);
+            loadData(page, filters);
+            loadStats();
+        } catch (error) {
+            console.error("Check failed:", error);
+            setErrorMessage(`Check failed: ${error.message}`);
+        }
+        setProcessing(false);
+    };
+
+    // === APPROVER TUGURE: CHECKED_TUGURE → APPROVED or REVISION ===
+    const handleApproverTugureAction = async () => {
+        if (selectedContractIds.length === 0) {
+            toast.error("Please select contracts");
+            return;
+        }
+        if (!approvalAction) return;
+
+        setProcessing(true);
+        setErrorMessage("");
+        setSuccessMessage("");
+        try {
+            const newStatus = approvalAction === "REVISION" ? "REVISION" : "APPROVED";
+            let processedCount = 0;
+            for (const contractId of selectedContractIds) {
+                const contract = contracts.find((c) => (c.contract_id || c.id) === contractId);
+                if (!contract || contract.contract_status !== "CHECKED_TUGURE") continue;
+
+                const updateData = { contract_status: newStatus };
+                if (newStatus === "APPROVED") {
+                    updateData.first_approved_by = auditActor?.user_email || user?.email;
+                    updateData.first_approved_date = new Date().toISOString();
+                }
+                if (newStatus === "REVISION" && approvalRemarks) {
+                    updateData.revision_reason = approvalRemarks;
+                }
+
+                await backend.update("MasterContract", contract.contract_id || contract.id, updateData);
+                processedCount++;
+
+                try {
+                    await backend.create("AuditLog", {
+                        action: `CONTRACT_${newStatus}`,
+                        module: "CONFIG",
+                        entity_type: "MasterContract",
+                        entity_id: contract.contract_id || contract.id,
+                        old_value: JSON.stringify({ status: "CHECKED_TUGURE" }),
+                        new_value: JSON.stringify({ status: newStatus, remarks: approvalRemarks }),
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
+                        reason: approvalRemarks || `Approver Tugure ${newStatus.toLowerCase()} contract`,
+                    });
+                } catch (auditError) {
+                    console.warn("Failed to create audit log:", auditError);
+                }
+            }
+
+            if (processedCount === 0) {
+                toast.warning("No contracts with CHECKED_TUGURE status were found in your selection.");
+                setSelectedContractIds([]);
+                setProcessing(false);
+                return;
+            }
+
+            for (const role of ALL_ROLE_NAMES) {
+                try {
+                    await backend.create("Notification", {
+                        title: newStatus === "APPROVED" ? "Contracts Approved (Final)" : "Contracts Marked for Revision",
+                        message: `${auditActor?.user_email || user?.email} ${newStatus === "APPROVED" ? "approved" : "marked for revision"} ${processedCount} contract(s).`,
+                        type: newStatus === "REVISION" ? "WARNING" : "INFO",
+                        module: "CONFIG",
+                        target_role: role,
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
+            }
+
+            setSuccessMessage(`${processedCount} contract(s) ${newStatus === "APPROVED" ? "approved" : "sent for revision"}.`);
+            toast.success(`${processedCount} contract(s) ${newStatus === "APPROVED" ? "approved" : "sent for revision"}.`);
+            setSelectedContractIds([]);
+            setShowApprovalDialog(false);
+            setApprovalAction("");
+            setApprovalRemarks("");
+            loadData(page, filters);
+            loadStats();
+        } catch (error) {
+            console.error("Action failed:", error);
+            setErrorMessage(`Action failed: ${error.message}`);
         }
         setProcessing(false);
     };
@@ -614,40 +906,38 @@ export default function MasterContractManagement() {
     const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
     const to = Math.min(total, page * pageSize);
 
-    const filteredContracts = Array.isArray(contracts)
-        ? contracts.filter((c) => {
-              if (
-                  filters.status !== "all" &&
-                  c.effective_status !== filters.status
-              )
-                  return false;
-              if (
-                  filters.contractId &&
-                  !c.contract_id.includes(filters.contractId)
-              )
-                  return false;
-              if (
-                  filters.productType !== "all" &&
-                  c.product_type !== filters.productType
-              )
-                  return false;
-              if (
-                  filters.creditType !== "all" &&
-                  c.credit_type !== filters.creditType
-              )
-                  return false;
-              if (
-                  filters.startDate &&
-                  c.contract_start_date < filters.startDate
-              )
-                  return false;
-              if (filters.endDate && c.contract_end_date > filters.endDate)
-                  return false;
-              return true;
-          })
-        : [];
+    // Contracts are loaded via server-side pagination with filters
+    const filteredContracts = contracts;
 
     const columns = [
+        {
+            header: (
+                <Checkbox
+                    checked={filteredContracts.length > 0 && selectedContractIds.length === filteredContracts.length}
+                    onCheckedChange={(checked) => {
+                        if (checked) {
+                            setSelectedContractIds(filteredContracts.map((c) => c.contract_id || c.id));
+                        } else {
+                            setSelectedContractIds([]);
+                        }
+                    }}
+                />
+            ),
+            cell: (row) => (
+                <Checkbox
+                    checked={selectedContractIds.includes(row.contract_id || row.id)}
+                    onCheckedChange={(checked) => {
+                        const cId = row.contract_id || row.id;
+                        if (checked) {
+                            setSelectedContractIds((prev) => [...prev, cId]);
+                        } else {
+                            setSelectedContractIds((prev) => prev.filter((id) => id !== cId));
+                        }
+                    }}
+                />
+            ),
+            width: "50px",
+        },
         { header: "contract_no", accessorKey: "contract_no" },
         { header: "underwriter_name", accessorKey: "underwriter_name" },
         {
@@ -657,6 +947,9 @@ export default function MasterContractManagement() {
                 const status = (row.contract_status || "Unknown").toString();
                 const styles = {
                     APPROVED: "bg-emerald-400 text-white",
+                    CHECKED_BRINS: "bg-sky-100 text-sky-800",
+                    APPROVED_BRINS: "bg-indigo-100 text-indigo-800",
+                    CHECKED_TUGURE: "bg-violet-100 text-violet-800",
                     REVISION: "bg-yellow-400 text-orange-700",
                     Active: "bg-blue-100 text-blue-800",
                     Draft: "bg-gray-100 text-gray-800",
@@ -678,58 +971,22 @@ export default function MasterContractManagement() {
         { header: "type_of_contract", accessorKey: "type_of_contract" },
         {
             header: "action",
-            cell: (row) => {
-                const status = (row.contract_status || "").toString();
-                const showButtons =
-                    canManageContractActions &&
-                    (status === "Draft" || status === "Active");
-
-                return (
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                                setSelectedContract(row);
-                                setShowDetailDialog(true);
-                            }}
-                            title="Lihat detail"
-                        >
-                            <Eye className="w-4 h-4" />
-                        </Button>
-
-                        {showButtons && (
-                            <>
-                                <Button
-                                    size="sm"
-                                    className="bg-emerald-400 hover:bg-emerald-500 text-white"
-                                    onClick={() => {
-                                        setSelectedContract(row);
-                                        setApprovalAction("APPROVED");
-                                        setShowApprovalDialog(true);
-                                    }}
-                                >
-                                    APPROVED
-                                </Button>
-
-                                <Button
-                                    size="sm"
-                                    className="bg-yellow-400 hover:bg-yellow-500 text-black"
-                                    onClick={() => {
-                                        setSelectedContract(row);
-                                        setApprovalAction("REVISION");
-                                        setShowApprovalDialog(true);
-                                    }}
-                                >
-                                    <XCircle className="w-4 h-4 mr-1" />
-                                    REVISION
-                                </Button>
-                            </>
-                        )}
-                    </div>
-                );
-            },
-            width: "260px",
+            cell: (row) => (
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                            setSelectedContract(row);
+                            setShowDetailDialog(true);
+                        }}
+                        title="View detail"
+                    >
+                        <Eye className="w-4 h-4" />
+                    </Button>
+                </div>
+            ),
+            width: "80px",
         },
     ];
 
@@ -747,7 +1004,7 @@ export default function MasterContractManagement() {
                         <Button
                             variant="outline"
                             onClick={() => {
-                                loadData(page);
+                                loadData(page, filters);
                                 loadStats();
                             }}
                         >
@@ -888,21 +1145,64 @@ export default function MasterContractManagement() {
                 ]}
             />
 
-            {/* Bulk Actions */}
+            {/* Role-based Bulk Actions */}
             <div className="flex flex-wrap gap-2">
-                {/* <>
-            <Button
-                // className="bg-green-500 hover:bg-green-600"
-                variant = "outline"
-                onClick={() => {
-                    setApprovalAction("bulk_approve");
-                    setShowApprovalDialog(true);
-                }}
-            >
-                <Check className="w-4 h-4 mr-2" />
-                Approve {selectedContract.length > 0 ? `(${selectedContract.length})` : ""}
-            </Button>
-          </> */}
+                {isCheckerBrins && (
+                    <Button
+                        onClick={handleCheckerBrinsCheck}
+                        disabled={processing || selectedContractIds.length === 0}
+                        className="bg-sky-500 hover:bg-sky-600 text-white"
+                    >
+                        <Check className="w-4 h-4 mr-2" />
+                        Check (BRINS) {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                    </Button>
+                )}
+                {isApproverBrins && (
+                    <Button
+                        onClick={handleApproverBrinsApprove}
+                        disabled={processing || selectedContractIds.length === 0}
+                        className="bg-indigo-500 hover:bg-indigo-600 text-white"
+                    >
+                        <Check className="w-4 h-4 mr-2" />
+                        Approve (BRINS) {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                    </Button>
+                )}
+                {isCheckerTugure && (
+                    <Button
+                        onClick={handleCheckerTugureCheck}
+                        disabled={processing || selectedContractIds.length === 0}
+                        className="bg-violet-500 hover:bg-violet-600 text-white"
+                    >
+                        <Check className="w-4 h-4 mr-2" />
+                        Check (Tugure) {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                    </Button>
+                )}
+                {isApproverTugure && (
+                    <>
+                        <Button
+                            onClick={() => {
+                                setApprovalAction("APPROVED");
+                                setShowApprovalDialog(true);
+                            }}
+                            disabled={processing || selectedContractIds.length === 0}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white"
+                        >
+                            <Check className="w-4 h-4 mr-2" />
+                            Approve (Final) {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                setApprovalAction("REVISION");
+                                setShowApprovalDialog(true);
+                            }}
+                            disabled={processing || selectedContractIds.length === 0}
+                            className="bg-yellow-500 hover:bg-yellow-600 text-black"
+                        >
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Revision {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                        </Button>
+                    </>
+                )}
             </div>
 
             {/* Main Table with Version Column */}
@@ -1020,7 +1320,7 @@ export default function MasterContractManagement() {
                                     );
                                     setShowActionDialog(false);
                                     setApprovalRemarks("");
-                                    loadData(page);
+                                    loadData(page, filters);
                                     loadStats();
                                 } catch (error) {
                                     console.error("Action error:", error);
@@ -1166,7 +1466,7 @@ export default function MasterContractManagement() {
                 </DialogContent>
             </Dialog>
 
-            {/* Approval Dialog */}
+            {/* Approval Dialog (Approver Tugure: Approve/Revision) */}
             <Dialog
                 open={showApprovalDialog}
                 onOpenChange={setShowApprovalDialog}
@@ -1176,9 +1476,14 @@ export default function MasterContractManagement() {
                         <DialogTitle>
                             {approvalAction === "REVISION"
                                 ? "Send for Revision"
-                                : "Approve"}{" "}
-                            Contract
+                                : "Approve (Final)"}{" "}
+                            — {selectedContractIds.length} contract(s)
                         </DialogTitle>
+                        <DialogDescription>
+                            {approvalAction === "REVISION"
+                                ? "Selected contracts will be sent back for revision."
+                                : "Selected contracts will be approved (final)."}
+                        </DialogDescription>
                     </DialogHeader>
                     <div className="py-4">
                         <label className="text-sm font-medium">Remarks</label>
@@ -1191,12 +1496,19 @@ export default function MasterContractManagement() {
                     <DialogFooter>
                         <Button
                             variant="outline"
-                            onClick={() => setShowApprovalDialog(false)}
+                            onClick={() => {
+                                setShowApprovalDialog(false);
+                                setApprovalAction("");
+                                setApprovalRemarks("");
+                            }}
                         >
                             Cancel
                         </Button>
-                        <Button onClick={handleApproval} disabled={processing}>
-                            Confirm
+                        <Button
+                            onClick={handleApproverTugureAction}
+                            disabled={processing || (approvalAction === "REVISION" && !approvalRemarks)}
+                        >
+                            {processing ? "Processing..." : "Confirm"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

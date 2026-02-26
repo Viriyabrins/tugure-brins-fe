@@ -466,6 +466,7 @@ export default function SubmitDebtor() {
         setErrorMessage("");
         setSuccessMessage("");
         try {
+            let processedCount = 0;
             for (const debtorId of selectedDebtors) {
                 const debtor = debtors.find((d) => d.id === debtorId);
                 if (!debtor || debtor.status !== "SUBMITTED") continue;
@@ -473,6 +474,7 @@ export default function SubmitDebtor() {
                 await backend.update("Debtor", debtor.id, {
                     status: "CHECKED_BRINS",
                 });
+                processedCount++;
 
                 try {
                     await backend.create("AuditLog", {
@@ -491,13 +493,20 @@ export default function SubmitDebtor() {
                 }
             }
 
+            if (processedCount === 0) {
+                toast.warning("No debtors with SUBMITTED status were found in your selection.");
+                setSelectedDebtors([]);
+                setUploading(false);
+                return;
+            }
+
             // Create notifications for all BRINS roles
             const brinsRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role"];
             for (const role of brinsRoles) {
                 try {
                     await backend.create("Notification", {
                         title: "Debtors Checked by BRINS Checker",
-                        message: `${auditActor?.user_email || user?.email} checked ${selectedDebtors.length} debtor(s). Awaiting BRINS Approver approval.`,
+                        message: `${auditActor?.user_role || user?.role} checked ${processedCount} debtor(s). Awaiting BRINS Approver approval.`,
                         type: "INFO",
                         module: "DEBTOR",
                         target_role: role,
@@ -507,8 +516,8 @@ export default function SubmitDebtor() {
                 }
             }
 
-            setSuccessMessage(`${selectedDebtors.length} debtor(s) checked successfully. Awaiting Approver BRINS approval.`);
-            toast.success(`${selectedDebtors.length} debtor(s) checked.`);
+            setSuccessMessage(`${processedCount} debtor(s) checked successfully. Awaiting Approver BRINS approval.`);
+            toast.success(`${processedCount} debtor(s) checked.`);
             setSelectedDebtors([]);
             await loadDebtors();
         } catch (error) {
@@ -528,6 +537,7 @@ export default function SubmitDebtor() {
         setErrorMessage("");
         setSuccessMessage("");
         try {
+            let processedCount = 0;
             for (const debtorId of selectedDebtors) {
                 const debtor = debtors.find((d) => d.id === debtorId);
                 if (!debtor || debtor.status !== "CHECKED_BRINS") continue;
@@ -535,6 +545,7 @@ export default function SubmitDebtor() {
                 await backend.update("Debtor", debtor.id, {
                     status: "APPROVED_BRINS",
                 });
+                processedCount++;
 
                 try {
                     await backend.create("AuditLog", {
@@ -553,13 +564,20 @@ export default function SubmitDebtor() {
                 }
             }
 
+            if (processedCount === 0) {
+                toast.warning("No debtors with CHECKED_BRINS status were found in your selection.");
+                setSelectedDebtors([]);
+                setUploading(false);
+                return;
+            }
+
             // Create notifications for all BRINS + Tugure roles
             const allRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role"];
             for (const role of allRoles) {
                 try {
                     await backend.create("Notification", {
                         title: "Debtors Approved by BRINS",
-                        message: `${auditActor?.user_email || user?.email} approved ${selectedDebtors.length} debtor(s). Now available for Tugure review.`,
+                        message: `${auditActor?.user_role || user?.role} approved ${processedCount} debtor(s). Now available for Tugure review.`,
                         type: "INFO",
                         module: "DEBTOR",
                         target_role: role,
@@ -569,8 +587,8 @@ export default function SubmitDebtor() {
                 }
             }
 
-            setSuccessMessage(`${selectedDebtors.length} debtor(s) approved by BRINS. Now available on Debtor Review for Tugure.`);
-            toast.success(`${selectedDebtors.length} debtor(s) approved by BRINS.`);
+            setSuccessMessage(`${processedCount} debtor(s) approved by BRINS. Now available on Debtor Review for Tugure.`);
+            toast.success(`${processedCount} debtor(s) approved by BRINS.`);
             setSelectedDebtors([]);
             await loadDebtors();
         } catch (error) {
@@ -1224,7 +1242,7 @@ export default function SubmitDebtor() {
             try {
                 await backend.create("Notification", {
                     title: "Batch Upload Completed",
-                    message: `${auditActor?.user_email} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
+                    message: `${auditActor?.user_role} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
                     type: "INFO",
                     module: "DEBTOR",
                     reference_id: batchId,
@@ -1232,7 +1250,7 @@ export default function SubmitDebtor() {
                 });
                 await backend.create("Notification", {
                     title: "Batch Upload Completed",
-                    message: `${auditActor?.user_email} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
+                    message: `${auditActor?.user_role} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
                     type: "INFO",
                     module: "DEBTOR",
                     reference_id: batchId,
@@ -1240,7 +1258,7 @@ export default function SubmitDebtor() {
                 });
                 await backend.create("Notification", {
                     title: "Batch Upload Completed",
-                    message: `${auditActor?.user_email} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
+                    message: `${auditActor?.user_role} Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
                     type: "INFO",
                     module: "DEBTOR",
                     reference_id: batchId,

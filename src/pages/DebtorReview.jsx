@@ -34,6 +34,7 @@ import {
     Pen,
     ShieldCheck,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { backend } from "@/api/backendClient";
 import PageHeader from "@/components/common/PageHeader";
@@ -275,6 +276,7 @@ export default function DebtorReview() {
                 return;
             }
 
+            let processedCount = 0;
             for (const debtor of debtorsToProcess) {
                 if (!debtor || !debtor.id) continue;
 
@@ -291,6 +293,7 @@ export default function DebtorReview() {
                         validation_remarks:
                             action === "revision" ? approvalRemarks : null,
                     });
+                    processedCount++;
 
                     if (action === "approve") {
                         // Create record using backend client
@@ -340,6 +343,13 @@ export default function DebtorReview() {
                 }
             }
 
+            if (processedCount === 0) {
+                toast.warning("No debtors with the correct status were found in your selection.");
+                setShowApprovalDialog(false);
+                setProcessing(false);
+                return;
+            }
+
             // Create notifications for ALL roles
             const notifTitle = action === "check"
                 ? "Debtors Checked by Tugure"
@@ -347,7 +357,7 @@ export default function DebtorReview() {
                     ? "Debtors Approved (Final)"
                     : "Debtors Marked for Revision";
             const notifMessage = isBulk
-                ? `${auditActor?.user_email || user?.email} ${action === "check" ? "checked" : action === "approve" ? "approved" : "marked for revision"} ${debtorsToProcess.length} debtor(s).`
+                ? `${auditActor?.user_email || user?.email} ${action === "check" ? "checked" : action === "approve" ? "approved" : "marked for revision"} ${processedCount} debtor(s).`
                 : `${auditActor?.user_email || user?.email} ${action === "check" ? "checked" : action === "approve" ? "approved" : "marked for revision"} debtor ${selectedDebtor?.nama_peserta || selectedDebtor?.debtor_name}.`;
             const notifType = action === "revision" ? "WARNING" : "INFO";
 
@@ -371,14 +381,14 @@ export default function DebtorReview() {
             const actionDisplay =
                 action === "check"
                     ? isBulk
-                        ? `${debtorsToProcess.length} checked by Tugure`
+                        ? `${processedCount} checked by Tugure`
                         : "checked by Tugure"
                     : action === "approve"
                         ? isBulk
-                            ? `${debtorsToProcess.length} approved (final)`
+                            ? `${processedCount} approved (final)`
                             : "approved (final)"
                         : isBulk
-                            ? `${debtorsToProcess.length} marked for revision`
+                            ? `${processedCount} marked for revision`
                             : "marked for revision";
             setSuccessMessage(
                 isBulk

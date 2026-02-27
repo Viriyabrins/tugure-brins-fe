@@ -170,7 +170,12 @@ export default function MasterContractManagement() {
             if (activeFilters) {
                 query.q = JSON.stringify(activeFilters);
             }
-            const result = await backend.listPaginated("MasterContract", query);
+            const isRevisionFilter =
+                normalizeStatus(activeFilters?.status || "") === "REVISION";
+            const entityName = isRevisionFilter
+                ? "ContractRevise"
+                : "MasterContract";
+            const result = await backend.listPaginated(entityName, query);
             setContracts(Array.isArray(result.data) ? result.data : []);
             setTotal(Number(result.pagination?.total) || 0);
         } catch (error) {
@@ -946,11 +951,10 @@ export default function MasterContractManagement() {
             cell: (row) => {
                 const status = (row.contract_status || "Unknown").toString();
                 const styles = {
-                    APPROVED: "bg-emerald-400 text-white",
-                    CHECKED_BRINS: "bg-sky-100 text-sky-800",
-                    APPROVED_BRINS: "bg-indigo-100 text-indigo-800",
+                    CHECKED_BRINS: "bg-yellow-200 text-orange-500",
+                    APPROVED_BRINS: "bg-emerald-400 text-white",
                     CHECKED_TUGURE: "bg-violet-100 text-violet-800",
-                    REVISION: "bg-yellow-400 text-orange-700",
+                    REVISION: "bg-red-500 text-white",
                     Active: "bg-blue-100 text-blue-800",
                     Draft: "bg-gray-100 text-gray-800",
                     Unknown: "bg-gray-200 text-gray-700",
@@ -1120,14 +1124,15 @@ export default function MasterContractManagement() {
                     },
                     {
                         key: "status",
-                        label: "All Status",
+                        label: "Filter By Status",
                         options: [
                             { value: "all", label: "All Status" },
-                            { value: "Draft", label: "Draft" },
-                            { value: "Revision", label: "Revision" },
+                            { value: "REVISION", label: "Revision" },
                             { value: "Active", label: "Active" },
                             { value: "Inactive", label: "Inactive" },
                             { value: "Archived", label: "Archived" },
+                            { value: "APPROVED_BRINS", label: "Approved by BRINS" },
+                            { value: "CHECKED_BRINS", label: "Checked by BRINS" },
                         ],
                     },
                     {

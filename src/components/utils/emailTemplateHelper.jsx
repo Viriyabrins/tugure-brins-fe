@@ -136,13 +136,13 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
 }
 
 /**
- * Send notification email to all users with the specified roles.
- * Resolves recipient emails from Keycloak via backend, then sends using EmailTemplate
+ * Send notification email to all users in a Keycloak group.
+ * Resolves recipient emails from Keycloak group via backend, then sends using EmailTemplate
  * from DB (with fallback subject/body if no template exists).
  *
  * @param {object} options
- * @param {string[]} options.targetRoles - Keycloak role names to resolve recipients from
- * @param {string[]} [options.to] - Optional explicit email addresses (in addition to role resolution)
+ * @param {string} options.targetGroup - Keycloak group name to resolve recipients from (e.g., 'email')
+ * @param {string[]} [options.to] - Optional explicit email addresses (in addition to group resolution)
  * @param {string} options.objectType - Object type for template lookup (Batch, Record, Nota, Claim, Subrogation)
  * @param {string} options.statusTo - Target status for template lookup
  * @param {string} [options.recipientRole='ALL'] - Recipient role for template lookup (BRINS, TUGURE, ALL)
@@ -152,7 +152,7 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
  * @returns {Promise<void>}
  */
 export async function sendNotificationEmail({
-  targetRoles = [],
+  targetGroup = '',
   to = [],
   objectType,
   statusTo,
@@ -161,30 +161,27 @@ export async function sendNotificationEmail({
   fallbackSubject = '',
   fallbackBody = '',
 }) {
-  // 1. Resolve recipient emails from Keycloak roles
+  // 1. Resolve recipient emails from Keycloak group
   const emailSet = new Set(Array.isArray(to) ? to : (to ? [to] : []));
 
-  if (targetRoles.length > 0) {
-    const roleResults = await Promise.allSettled(
-      targetRoles.map(role => backend.getUsersByRole(role))
-    );
-
-    roleResults.forEach((result, i) => {
-      if (result.status === 'fulfilled' && Array.isArray(result.value)) {
-        result.value.forEach(user => {
+  if (targetGroup) {
+    try {
+      const groupUsers = await backend.getUsersByGroup(targetGroup);
+      if (Array.isArray(groupUsers)) {
+        groupUsers.forEach(user => {
           if (user.email) emailSet.add(user.email);
         });
-        console.log(`[sendNotificationEmail] Role "${targetRoles[i]}": found ${result.value.length} user(s)`);
-      } else if (result.status === 'rejected') {
-        console.warn(`[sendNotificationEmail] Failed to get users for role "${targetRoles[i]}":`, result.reason);
+        console.log(`[sendNotificationEmail] Group "${targetGroup}": found ${groupUsers.length} user(s)`);
       }
-    });
+    } catch (err) {
+      console.warn(`[sendNotificationEmail] Failed to get users for group "${targetGroup}":`, err);
+    }
   }
 
   const recipients = [...emailSet].filter(Boolean);
 
   if (recipients.length === 0) {
-    console.warn('[sendNotificationEmail] No recipients resolved from roles or explicit list. Skipping.');
+    console.warn('[sendNotificationEmail] No recipients resolved from group or explicit list. Skipping.');
     return;
   }
 

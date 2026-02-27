@@ -500,12 +500,12 @@ export const backend = {
   },
 
   /**
-   * Get all users who have a specific role from Keycloak.
-   * GET /api/users-by-role/:roleName
+   * Get all users in a Keycloak group by group name.
+   * GET /api/users-by-group/:groupName
    * Returns [{ email, name }]
    */
-  async getUsersByRole(roleName) {
-    const url = `/api/users-by-role/${encodeURIComponent(roleName)}`;
+  async getUsersByGroup(groupName) {
+    const url = `/api/users-by-group/${encodeURIComponent(groupName)}`;
     const res = await fetch(url, authFetchOptions());
     if (!res.ok) {
       await throwBackendError(res);
@@ -518,7 +518,7 @@ export const backend = {
       if (parsed?.data && Array.isArray(parsed.data)) return parsed.data;
       return [];
     } catch (e) {
-      console.error('Failed to parse getUsersByRole response:', e);
+      console.error('Failed to parse getUsersByGroup response:', e);
       return [];
     }
   },

@@ -519,7 +519,7 @@ export default function SubmitDebtor() {
             // Send notification email for status transition
             try {
                 await sendNotificationEmail({
-                    targetRoles: ['maker-brins-role', 'checker-brins-role', 'approver-brins-role'],
+                    targetGroup: 'email',
                     objectType: 'Record',
                     statusTo: 'CHECKED_BRINS',
                     recipientRole: 'BRINS',
@@ -610,7 +610,7 @@ export default function SubmitDebtor() {
             // Send notification email for status transition
             try {
                 await sendNotificationEmail({
-                    targetRoles: ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'],
+                    targetGroup: 'email',
                     objectType: 'Record',
                     statusTo: 'APPROVED_BRINS',
                     recipientRole: 'ALL',
@@ -1311,7 +1311,7 @@ export default function SubmitDebtor() {
             // Send notification email for upload
             try {
                 await sendNotificationEmail({
-                    targetRoles: ['maker-brins-role', 'checker-brins-role', 'approver-brins-role'],
+                    targetGroup: 'email',
                     objectType: 'Record',
                     statusTo: 'SUBMITTED',
                     recipientRole: 'BRINS',
@@ -1456,7 +1456,7 @@ export default function SubmitDebtor() {
             // Send notification email for revision request
             try {
                 await sendNotificationEmail({
-                    targetRoles: ['maker-brins-role', 'checker-brins-role', 'approver-brins-role'],
+                    targetGroup: 'email',
                     objectType: 'Record',
                     statusTo: 'CONDITIONAL',
                     recipientRole: 'BRINS',

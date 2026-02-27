@@ -45,7 +45,7 @@ import {
 import { toast } from "sonner";
 import {
     createAuditLog,
-    sendTemplatedEmail,
+    sendNotificationEmail,
 } from "@/components/utils/emailTemplateHelper";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
@@ -516,6 +516,26 @@ export default function SubmitDebtor() {
                 }
             }
 
+            // Send notification email for status transition
+            try {
+                await sendNotificationEmail({
+                    targetRoles: ['maker-brins-role', 'checker-brins-role', 'approver-brins-role'],
+                    objectType: 'Record',
+                    statusTo: 'CHECKED_BRINS',
+                    recipientRole: 'BRINS',
+                    variables: {
+                        batch_id: debtors.find(d => selectedDebtors.includes(d.id))?.batch_id || '',
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(processedCount),
+                    },
+                    fallbackSubject: 'Debtors Checked – Batch {batch_id}',
+                    fallbackBody: '<p>{user_name} has checked {count} debtor(s) in batch {batch_id} on {date}. Awaiting Approver BRINS approval.</p>',
+                });
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
+            }
+
             setSuccessMessage(`${processedCount} debtor(s) checked successfully. Awaiting Approver BRINS approval.`);
             toast.success(`${processedCount} debtor(s) checked.`);
             setSelectedDebtors([]);
@@ -585,6 +605,26 @@ export default function SubmitDebtor() {
                 } catch (notifError) {
                     console.warn("Failed to create notification:", notifError);
                 }
+            }
+
+            // Send notification email for status transition
+            try {
+                await sendNotificationEmail({
+                    targetRoles: ['maker-brins-role', 'checker-brins-role', 'approver-brins-role', 'checker-tugure-role', 'approver-tugure-role'],
+                    objectType: 'Record',
+                    statusTo: 'APPROVED_BRINS',
+                    recipientRole: 'ALL',
+                    variables: {
+                        batch_id: debtors.find(d => selectedDebtors.includes(d.id))?.batch_id || '',
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(processedCount),
+                    },
+                    fallbackSubject: 'Debtors Approved by BRINS – Batch {batch_id}',
+                    fallbackBody: '<p>{user_name} has approved {count} debtor(s) in batch {batch_id} on {date}. Now available for Tugure review.</p>',
+                });
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
             }
 
             setSuccessMessage(`${processedCount} debtor(s) approved by BRINS. Now available on Debtor Review for Tugure.`);
@@ -1268,6 +1308,26 @@ export default function SubmitDebtor() {
                 console.warn("Failed to create notification:", notifError);
             }
 
+            // Send notification email for upload
+            try {
+                await sendNotificationEmail({
+                    targetRoles: ['maker-brins-role', 'checker-brins-role', 'approver-brins-role'],
+                    objectType: 'Record',
+                    statusTo: 'SUBMITTED',
+                    recipientRole: 'BRINS',
+                    variables: {
+                        batch_id: batchId || '',
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(uploaded),
+                    },
+                    fallbackSubject: 'Debtor Upload Completed – Batch {batch_id}',
+                    fallbackBody: '<p>{user_name} has uploaded {count} debtor(s) to batch {batch_id} on {date}. Awaiting review.</p>',
+                });
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
+            }
+
             if (batchMode === "revise") {
                 setSuccessMessage(
                     `Successfully uploaded ${uploaded} revised debtor(s) to batch ${batchId}. Old REVISION data has been moved to ReviseLog.`,
@@ -1391,6 +1451,27 @@ export default function SubmitDebtor() {
                 });
             } catch (notifError) {
                 console.warn("Failed to create notification:", notifError);
+            }
+
+            // Send notification email for revision request
+            try {
+                await sendNotificationEmail({
+                    targetRoles: ['maker-brins-role', 'checker-brins-role', 'approver-brins-role'],
+                    objectType: 'Record',
+                    statusTo: 'CONDITIONAL',
+                    recipientRole: 'BRINS',
+                    variables: {
+                        batch_id: debtors.find(d => selectedDebtors.includes(d.id))?.batch_id || '',
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(selectedDebtors.length),
+                        reason: revisionNote,
+                    },
+                    fallbackSubject: 'Revision Requested – Batch {batch_id}',
+                    fallbackBody: '<p>{user_name} has requested revision for {count} debtor(s) in batch {batch_id} on {date}.</p><p>Reason: {reason}</p>',
+                });
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
             }
 
             setSuccessMessage(
@@ -1566,7 +1647,7 @@ export default function SubmitDebtor() {
             )}
 
             {/* Gradient Card */}
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 justify-center items-center">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 justify-center items-center">
                 <GradientStatCard
                     title="Total"
                     value={kpis.total}

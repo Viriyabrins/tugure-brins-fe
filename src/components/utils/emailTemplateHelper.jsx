@@ -136,6 +136,107 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
 }
 
 /**
+ * Send notification email to all users with the specified roles.
+ * Resolves recipient emails from Keycloak via backend, then sends using EmailTemplate
+ * from DB (with fallback subject/body if no template exists).
+ *
+ * @param {object} options
+ * @param {string[]} options.targetRoles - Keycloak role names to resolve recipients from
+ * @param {string[]} [options.to] - Optional explicit email addresses (in addition to role resolution)
+ * @param {string} options.objectType - Object type for template lookup (Batch, Record, Nota, Claim, Subrogation)
+ * @param {string} options.statusTo - Target status for template lookup
+ * @param {string} [options.recipientRole='ALL'] - Recipient role for template lookup (BRINS, TUGURE, ALL)
+ * @param {object} [options.variables={}] - Variables for template replacement
+ * @param {string} [options.fallbackSubject=''] - Fallback subject if no template found
+ * @param {string} [options.fallbackBody=''] - Fallback body if no template found
+ * @returns {Promise<void>}
+ */
+export async function sendNotificationEmail({
+  targetRoles = [],
+  to = [],
+  objectType,
+  statusTo,
+  recipientRole = 'ALL',
+  variables = {},
+  fallbackSubject = '',
+  fallbackBody = '',
+}) {
+  // 1. Resolve recipient emails from Keycloak roles
+  const emailSet = new Set(Array.isArray(to) ? to : (to ? [to] : []));
+
+  if (targetRoles.length > 0) {
+    const roleResults = await Promise.allSettled(
+      targetRoles.map(role => backend.getUsersByRole(role))
+    );
+
+    roleResults.forEach((result, i) => {
+      if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+        result.value.forEach(user => {
+          if (user.email) emailSet.add(user.email);
+        });
+        console.log(`[sendNotificationEmail] Role "${targetRoles[i]}": found ${result.value.length} user(s)`);
+      } else if (result.status === 'rejected') {
+        console.warn(`[sendNotificationEmail] Failed to get users for role "${targetRoles[i]}":`, result.reason);
+      }
+    });
+  }
+
+  const recipients = [...emailSet].filter(Boolean);
+
+  if (recipients.length === 0) {
+    console.warn('[sendNotificationEmail] No recipients resolved from roles or explicit list. Skipping.');
+    return;
+  }
+
+  console.log(`[sendNotificationEmail] Sending to ${recipients.length} recipient(s): ${recipients.join(', ')}`);
+
+  // 2. Get subject/body from template or fallback
+  let subject = fallbackSubject;
+  let body = fallbackBody;
+
+  try {
+    const template = await getEmailTemplate(objectType, statusTo, recipientRole);
+    if (template) {
+      subject = replaceTemplateVariables(template.email_subject, variables);
+      body = replaceTemplateVariables(template.email_body, variables);
+      console.log(`[sendNotificationEmail] Using DB template for ${objectType} -> ${statusTo}`);
+    } else {
+      console.warn(`[sendNotificationEmail] No template for ${objectType} -> ${statusTo}, using fallback.`);
+      subject = replaceTemplateVariables(subject, variables);
+      body = replaceTemplateVariables(body, variables);
+    }
+  } catch (err) {
+    console.warn('[sendNotificationEmail] Template lookup failed, using fallback:', err.message);
+    subject = replaceTemplateVariables(subject, variables);
+    body = replaceTemplateVariables(body, variables);
+  }
+
+  if (!subject || !body) {
+    console.warn('[sendNotificationEmail] No subject or body available. Skipping.');
+    return;
+  }
+
+  // 3. Send to each recipient
+  const results = await Promise.allSettled(
+    recipients.map(email =>
+      backend.sendDirectEmail({ to: email, subject, body })
+    )
+  );
+
+  const sent = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
+  console.log(`[sendNotificationEmail] Sent: ${sent}, Failed: ${failed} for ${objectType} -> ${statusTo}`);
+
+  if (failed > 0) {
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.error(`[sendNotificationEmail] Failed to send to ${recipients[i]}:`, r.reason);
+      }
+    });
+  }
+}
+
+/**
  * Create notification in system
  * @param {string} title - Notification title
  * @param {string} message - Notification message

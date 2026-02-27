@@ -499,6 +499,54 @@ export const backend = {
     return true;
   },
 
+  /**
+   * Get all users who have a specific role from Keycloak.
+   * GET /api/users-by-role/:roleName
+   * Returns [{ email, name }]
+   */
+  async getUsersByRole(roleName) {
+    const url = `/api/users-by-role/${encodeURIComponent(roleName)}`;
+    const res = await fetch(url, authFetchOptions());
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success === true) return parsed.data || [];
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed?.data && Array.isArray(parsed.data)) return parsed.data;
+      return [];
+    } catch (e) {
+      console.error('Failed to parse getUsersByRole response:', e);
+      return [];
+    }
+  },
+
+  /**
+   * Send an email directly via the dedicated /api/send-email endpoint.
+   * POST /api/send-email
+   * Body: { to, subject, body, cc?, bcc? }
+   */
+  async sendDirectEmail(payload) {
+    const url = '/api/send-email';
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }));
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      return parsed?.data ?? parsed;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async sendEmail(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/integration-endpoints/Core/SendEmail`;
     const res = await fetch(url, authFetchOptions({

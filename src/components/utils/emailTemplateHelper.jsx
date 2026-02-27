@@ -213,23 +213,12 @@ export async function sendNotificationEmail({
     return;
   }
 
-  // 3. Send to each recipient
-  const results = await Promise.allSettled(
-    recipients.map(email =>
-      backend.sendDirectEmail({ to: email, subject, body })
-    )
-  );
-
-  const sent = results.filter(r => r.status === 'fulfilled').length;
-  const failed = results.filter(r => r.status === 'rejected').length;
-  console.log(`[sendNotificationEmail] Sent: ${sent}, Failed: ${failed} for ${objectType} -> ${statusTo}`);
-
-  if (failed > 0) {
-    results.forEach((r, i) => {
-      if (r.status === 'rejected') {
-        console.error(`[sendNotificationEmail] Failed to send to ${recipients[i]}:`, r.reason);
-      }
-    });
+  // 3. Send one email to all recipients
+  try {
+    await backend.sendDirectEmail({ to: recipients.join(', '), subject, body });
+    console.log(`[sendNotificationEmail] Sent email to ${recipients.length} recipient(s) for ${objectType} -> ${statusTo}`);
+  } catch (err) {
+    console.error(`[sendNotificationEmail] Failed to send email for ${objectType} -> ${statusTo}:`, err);
   }
 }
 

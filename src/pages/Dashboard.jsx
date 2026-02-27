@@ -81,6 +81,9 @@ export default function Dashboard() {
         issuedNotas: 0,
         paidNotas: 0,
         totalNotaPremium: 0,
+        totalContracts: 0,
+        submittedContracts: 0,
+        approvedContracts: 0
     });
 
     const [debtors, setDebtors] = useState([]);
@@ -117,7 +120,7 @@ export default function Dashboard() {
                 backend.list("Batch"),
                 backend.list("Subrogation"),
                 backend.list("Payment"),
-                backend.list("Contract"),
+                backend.list("MasterContract"),
             ]);
 
             // Ensure data is always an array
@@ -143,12 +146,17 @@ export default function Dashboard() {
             setPayments(nextPayments);
             setContracts(nextContracts);
 
-            // Calculate stats
+            // Calculate stats (Debtors)
             const approved = nextDebtors.filter(
                 (d) => d.status === "APPROVED",
             ).length;
             const submitted = nextDebtors.filter(
-                (d) => d.status === "SUBMITTED" || d.status === "DRAFT",
+                (d) => 
+                d.status === "SUBMITTED" || 
+                d.status === "DRAFT" || 
+                d.status === "APPROVED_BRINS" || 
+                d.status === "CHECKED_BRINS" || 
+                d.status === "CHECKED_TUGURE"
             ).length;
             const rejected = nextDebtors.filter(
                 (d) => d.status === "REJECTED",
@@ -170,7 +178,22 @@ export default function Dashboard() {
                     ),
                 0,
             );
+
+            // Calculate stats (Master Contracts)
+            const contractsApproved = nextContracts.filter(
+                (c) => c.contract_status === "APPROVED"
+            ).length
+
+            const contractsSubmitted = nextContracts.filter(
+                (c) =>
+                c.contract_status === "Active" || 
+                c.contract_status === "Draft" || 
+                c.contract_status === "APPROVED_BRINS" || 
+                c.contract_status === "CHECKED_BRINS" || 
+                c.contract_status === "CHECKED_TUGURE"
+            ).length;
             
+            // Calculate stats (Claims)
             const claimsPaid = nextClaims
                 .filter((c) => c.status === "Paid")
                 .reduce((sum, c) => sum + (parseFloat(c.nilai_klaim) || 0), 0);
@@ -221,6 +244,9 @@ export default function Dashboard() {
                 issuedNotas,
                 paidNotas,
                 totalNotaPremium,
+                totalContracts: nextContracts.length,
+                approvedContracts: contractsApproved,
+                submittedContracts: contractsSubmitted
             });
         } catch (error) {
             console.error("Failed to load dashboard data:", error);
@@ -242,6 +268,7 @@ export default function Dashboard() {
     const subrogationsArray = Array.isArray(subrogations) ? subrogations : [];
     const batchesArray = Array.isArray(batches) ? batches : [];
     const notasArray = Array.isArray(notas) ? notas : [];
+    const contractsArray = Array.isArray(contracts) ? contracts : [];
 
     const debtorStatusData = [
         {
@@ -254,17 +281,60 @@ export default function Dashboard() {
             value: debtorsArray.filter((d) => d.status === "APPROVED").length,
             color: "#10b981",
         },
-        // {
-        //     name: "Rejected",
-        //     value: debtorsArray.filter((d) => d.status === "REJECTED").length,
-        //     color: "#ef4444",
-        // },
         {
-            name: "Draft",
-            value: debtorsArray.filter((d) => d.status === "DRAFT").length,
-            color: "#f59e0b",
+            name: "Checked Tugure",
+            value: debtorsArray.filter((d) => d.status === "CHECKED_TUGURE").length,
+            color: "#0F766E",
+        },
+        {
+            name: "Checked Brins",
+            value: debtorsArray.filter((d) => d.status === "CHECKED_BRINS").length,
+            color: "#0E7490",
+        },
+        {
+            name: "Approved Brins",
+            value: debtorsArray.filter((d) => d.status === "APPROVED_BRINS").length,
+            color: "#4338CA",
+        },
+        {
+            name: "Revision",
+            value: debtorsArray.filter((d) => d.status === "REVISION").length,
+            color: "#C2410C",
         },
     ].filter((d) => d.value > 0);
+
+    const contractStatusData = [
+        {
+            name: "Submitted",
+            value: contractsArray.filter((c) => c.contract_status === "SUBMITTED" || c.contract_status === "Draft" || c.contract_status === "Active").length,
+            color: "#3b82f6",
+        },
+        {
+            name: "Approved",
+            value: contractsArray.filter((c) => c.contract_status === "APPROVED").length,
+            color: "#10b981",
+        },
+        {
+            name: "Checked Tugure",
+            value: contractsArray.filter((c) => c.contract_status === "CHECKED_TUGURE").length,
+            color: "#0F766E",
+        },
+        {
+            name: "Checked Brins",
+            value: contractsArray.filter((c) => c.contract_status === "CHECKED_BRINS").length,
+            color: "#0E7490",
+        },
+        {
+            name: "Approved Brins",
+            value: contractsArray.filter((c) => c.contract_status === "APPROVED_BRINS").length,
+            color: "#4338CA",
+        },
+        {
+            name: "Revision",
+            value: contractsArray.filter((c) => c.contract_status === "REVISION").length,
+            color: "#C2410C",
+        },
+    ].filter((c) => c.value > 0);
 
     const generateMonthlyTrendData = () => {
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
@@ -343,9 +413,8 @@ export default function Dashboard() {
             );
 
             if (status === "APPROVED") acc.approved += amount;
-            else if (status === "SUBMITTED") acc.submitted += amount;
-            else if (status === "REJECTED") acc.rejected += amount;
-            else acc.revision += amount;
+            else if (status === "SUBMITTED" || status === "CHECKED_TUGURE" || status === "CHECKED_BRINS" || status === "APPROVED_BRINS") acc.submitted += amount;
+            // else if (status === "APPROVED_BRINS") acc.approved_brins += amount;
 
             return acc;
         },
@@ -363,11 +432,21 @@ export default function Dashboard() {
             value: premiumByStatusBuckets.submitted,
             color: "#3b82f6",
         },
-        // {
-        //     name: "Rejected",
-        //     value: premiumByStatusBuckets.rejected,
-        //     color: "#EF4444",
-        // },
+        {
+            name: "Checked Tugure",
+            value: premiumByStatusBuckets.checked_tugure,
+            color: "#0F766E",
+        },
+        {
+            name: "Checked Brins",
+            value: premiumByStatusBuckets.checked_brins,
+            color: "#0E7490",
+        },
+        {
+            name: "Approved Brins",
+            value: premiumByStatusBuckets.approved_brins,
+            color: "#4338CA",
+        },
         {
             name: "Revision",
             value: premiumByStatusBuckets.revision,
@@ -661,7 +740,7 @@ export default function Dashboard() {
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
-                    title="submitted Approval"
+                    title="Debtor Submitted Approval"
                     value={stats.submittedDebtors}
                     subtitle="Awaiting review"
                     icon={Clock}
@@ -692,49 +771,51 @@ export default function Dashboard() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="h-64">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <RePieChart>
-                                    <Pie
-                                        data={debtorStatusData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={100}
-                                        paddingAngle={3}
-                                        dataKey="value"
-                                        label={({ name, value }) =>
-                                            `${name}: ${value}`
-                                        }
-                                    >
-                                        {debtorStatusData.map(
-                                            (entry, index) => (
+                        <div className="flex flex-row-reverse items-center justify-between gap-4">
+                            <div className="h-56 flex-1">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RePieChart>
+                                        <Pie
+                                            data={debtorStatusData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={60}
+                                            outerRadius={90}
+                                            paddingAngle={3}
+                                            dataKey="value"
+                                        >
+                                            {debtorStatusData.map((entry, index) => (
                                                 <Cell
                                                     key={`cell-${index}`}
                                                     fill={entry.color}
                                                 />
-                                            ),
-                                        )}
-                                    </Pie>
-                                    <Tooltip />
-                                </RePieChart>
-                            </ResponsiveContainer>
-                        </div>
-                        <div className="flex flex-wrap justify-center gap-4 mt-4">
-                            {debtorStatusData.map((entry, index) => (
-                                <div
-                                    key={index}
-                                    className="flex items-center gap-2"
-                                >
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                    </RePieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="flex flex-col gap-3 min-w-[140px] border-r pr-4">
+                                {debtorStatusData.map((entry, index) => (
                                     <div
-                                        className="w-3 h-3 rounded-full"
-                                        style={{ backgroundColor: entry.color }}
-                                    />
-                                    <span className="text-sm text-gray-600">
-                                        {entry.name}
-                                    </span>
-                                </div>
-                            ))}
+                                        key={index}
+                                        className="flex flex-col gap-0.5"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                                style={{ backgroundColor: entry.color }}
+                                            />
+                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-tight">
+                                                {entry.name}
+                                            </span>
+                                        </div>
+                                        <span className="text-sm text-gray-500 pl-4">
+                                            {entry.value} Debtors
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
@@ -764,7 +845,7 @@ export default function Dashboard() {
                                             cx="50%"
                                             cy="50%"
                                             innerRadius={60}
-                                            outerRadius={100}
+                                            outerRadius={90}
                                             paddingAngle={3}
                                             dataKey="value"
                                             label={({ value }) =>
@@ -804,6 +885,67 @@ export default function Dashboard() {
                                     </span>
                                 </div>
                             ))}
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+            
+            {/* Charts Row 2 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Debtor Status Pie Chart */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <PieChart className="w-5 h-5 text-gray-500" />
+                            Master Contract Status Distribution
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex flex-row-reverse items-center justify-between gap-4">
+                            <div className="h-56 flex-1">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RePieChart>
+                                        <Pie
+                                            data={contractStatusData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={60}
+                                            outerRadius={90}
+                                            paddingAngle={3}
+                                            dataKey="value"
+                                        >
+                                            {contractStatusData.map((entry, index) => (
+                                                <Cell
+                                                    key={`cell-${index}`}
+                                                    fill={entry.color}
+                                                />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                    </RePieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="flex flex-col gap-3 min-w-[140px] border-r pr-4">
+                                {contractStatusData.map((entry, index) => (
+                                    <div
+                                        key={index}
+                                        className="flex flex-col gap-0.5"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                                style={{ backgroundColor: entry.color }}
+                                            />
+                                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-tight">
+                                                {entry.name}
+                                            </span>
+                                        </div>
+                                        <span className="text-sm text-gray-500 pl-4">
+                                            {entry.value} Contracts
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </CardContent>
                 </Card>

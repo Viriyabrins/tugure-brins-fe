@@ -13,6 +13,7 @@ import PageHeader from "@/components/common/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { format } from 'date-fns';
 import { useKeycloakAuth } from '@/lib/KeycloakContext';
+import { getKeycloakToken } from '@/lib/keycloak';
 
 export default function Profile() {
   const { user, logout, tokenParsed } = useKeycloakAuth();
@@ -21,33 +22,76 @@ export default function Profile() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [changing, setChanging] = useState(false);
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setSuccessMessage('');
     setErrorMessage('');
+    setFieldErrors({});
 
-    if (newPassword !== confirmPassword) {
-      setErrorMessage('New passwords do not match');
-      return;
+    // Client-side validations
+    const errors = {};
+
+    if (!currentPassword) {
+      errors.currentPassword = 'Current password is required';
     }
 
-    if (newPassword.length < 6) {
-      setErrorMessage('Password must be at least 6 characters');
+    if (!newPassword) {
+      errors.newPassword = 'New password is required';
+    } else if (newPassword.length < 6) {
+      errors.newPassword = 'New password must be at least 6 characters';
+    }
+
+    if (!confirmPassword) {
+      errors.confirmPassword = 'Please confirm your new password';
+    } else if (newPassword && newPassword !== confirmPassword) {
+      errors.confirmPassword = 'New Password and Confirm New Password do not match';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
 
     setChanging(true);
-    
-    // Simulate password change
-    setTimeout(() => {
+
+    try {
+      const token = getKeycloakToken();
+      const response = await fetch('/api/auth/keycloak/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.success) {
+        const msg = data.message || 'Failed to change password';
+
+        // Map specific backend errors to field-level messages
+        if (msg.toLowerCase().includes('current password is incorrect')) {
+          setFieldErrors({ currentPassword: 'Current password is incorrect. Please check and try again.' });
+        } else {
+          setErrorMessage(msg);
+        }
+        return;
+      }
+
       setSuccessMessage('Password changed successfully');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+    } catch (err) {
+      setErrorMessage('An unexpected error occurred. Please try again later.');
+      console.error('Change password error:', err);
+    } finally {
       setChanging(false);
-    }, 1000);
+    }
   };
 
   // Role info keyed by normalized token role names (upper-case)
@@ -194,9 +238,19 @@ export default function Profile() {
                     id="current"
                     type="password"
                     value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    onChange={(e) => {
+                      setCurrentPassword(e.target.value);
+                      if (fieldErrors.currentPassword) setFieldErrors((prev) => ({ ...prev, currentPassword: '' }));
+                    }}
                     placeholder="Enter current password"
+                    className={fieldErrors.currentPassword ? 'border-red-500 focus-visible:ring-red-500' : ''}
                   />
+                  {fieldErrors.currentPassword && (
+                    <p className="text-sm text-red-600 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {fieldErrors.currentPassword}
+                    </p>
+                  )}
                 </div>
                 <Separator />
                 <div>
@@ -205,9 +259,19 @@ export default function Profile() {
                     id="new"
                     type="password"
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (fieldErrors.newPassword) setFieldErrors((prev) => ({ ...prev, newPassword: '' }));
+                    }}
                     placeholder="Enter new password"
+                    className={fieldErrors.newPassword ? 'border-red-500 focus-visible:ring-red-500' : ''}
                   />
+                  {fieldErrors.newPassword && (
+                    <p className="text-sm text-red-600 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {fieldErrors.newPassword}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="confirm">Confirm New Password</Label>
@@ -215,9 +279,19 @@ export default function Profile() {
                     id="confirm"
                     type="password"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (fieldErrors.confirmPassword) setFieldErrors((prev) => ({ ...prev, confirmPassword: '' }));
+                    }}
                     placeholder="Confirm new password"
+                    className={fieldErrors.confirmPassword ? 'border-red-500 focus-visible:ring-red-500' : ''}
                   />
+                  {fieldErrors.confirmPassword && (
+                    <p className="text-sm text-red-600 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {fieldErrors.confirmPassword}
+                    </p>
+                  )}
                 </div>
                 <Button 
                   type="submit" 

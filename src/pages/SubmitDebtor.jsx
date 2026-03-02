@@ -444,8 +444,7 @@ export default function SubmitDebtor() {
     const canShowActionButtons = userRoles.some((role) => {
         const normalizedRole = String(role || "").trim().toLowerCase();
         return (
-            normalizedRole === "maker-brins-role" ||
-            normalizedRole === "checker-brins-role"
+            normalizedRole === "maker-brins-role"
         );
     });
 
@@ -1632,7 +1631,13 @@ export default function SubmitDebtor() {
                                 Upload Debtors
                             </Button>
                         </div>
-                    ) : null
+                    ) : 
+                        <div className="flex gap-2">
+                            <Button variant="outline" onClick={handleRefresh}>
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Refresh
+                            </Button>
+                        </div>
                 }
             />
 

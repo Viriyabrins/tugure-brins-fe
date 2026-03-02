@@ -499,6 +499,54 @@ export const backend = {
     return true;
   },
 
+  /**
+   * Get all users in a Keycloak group by group name.
+   * GET /api/users-by-group/:groupName
+   * Returns [{ email, name }]
+   */
+  async getUsersByGroup(groupName) {
+    const url = `/api/users-by-group/${encodeURIComponent(groupName)}`;
+    const res = await fetch(url, authFetchOptions());
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success === true) return parsed.data || [];
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed?.data && Array.isArray(parsed.data)) return parsed.data;
+      return [];
+    } catch (e) {
+      console.error('Failed to parse getUsersByGroup response:', e);
+      return [];
+    }
+  },
+
+  /**
+   * Send an email directly via the dedicated /api/send-email endpoint.
+   * POST /api/send-email
+   * Body: { to, subject, body, cc?, bcc? }
+   */
+  async sendDirectEmail(payload) {
+    const url = '/api/send-email';
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }));
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      return parsed?.data ?? parsed;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async sendEmail(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/integration-endpoints/Core/SendEmail`;
     const res = await fetch(url, authFetchOptions({

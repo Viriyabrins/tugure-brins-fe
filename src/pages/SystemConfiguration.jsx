@@ -45,7 +45,7 @@ export default function SystemConfiguration() {
   const [slaRules, setSlaRules] = useState([]);
   const [totalSlaRules, setTotalSlaRules] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('notifications');
+  const [activeTab, setActiveTab] = useState('email-templates');
   const [emailTemplates, setEmailTemplates] = useState([]);
   const [totalTemplates, setTotalTemplates] = useState(0);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -803,11 +803,11 @@ export default function SystemConfiguration() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-fit grid-cols-4">
-          <TabsTrigger value="notifications">
+        <TabsList className="grid w-fit grid-cols-3">
+          {/* <TabsTrigger value="notifications">
             <Bell className="w-4 h-4 mr-2" />
             Notifications ({notifTotal})
-          </TabsTrigger>
+          </TabsTrigger> */}
           <TabsTrigger value="email-templates">
             <Mail className="w-4 h-4 mr-2" />
             Email Templates
@@ -823,9 +823,9 @@ export default function SystemConfiguration() {
         </TabsList>
 
         {/* Notifications Tab */}
-        <TabsContent value="notifications" className="mt-4">
+        {/* <TabsContent value="notifications" className="mt-4">
           <NotificationList/>
-        </TabsContent>
+        </TabsContent> */}
 
         {/* Email Templates Tab */}
         <TabsContent value="email-templates" className="mt-4 space-y-6">

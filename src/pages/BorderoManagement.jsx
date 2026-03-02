@@ -663,7 +663,7 @@ export default function BorderoManagement() {
                 {activeTab === "borderos" && (<>
                     <GradientStatCard title="Total Debtors" value={totalDebtors} subtitle={`Showing ${filteredDebtors.length} of ${totalDebtors}`} icon={FileText} gradient="from-blue-500 to-blue-600"/>
                     <GradientStatCard title="Borderos" value={borderos.length} subtitle={`${borderos.filter( (b) => b.status === "FINAL",).length} finalized`} icon={FileText} gradient="from-purple-500 to-purple-600"/>
-                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(filteredDebtors.reduce((sum, debtor) => { const netPremi = parseFloat(debtor.net_premi) || 0; return sum + netPremi;}, 0))} subtitle="Current page" icon={DollarSign} gradient="from-green-500 to-green-600"/>
+                    <GradientStatCard title="Total Premi" value={formatRupiahAdaptive(filteredBorderos.reduce((sum, bordero) => { const netPremi = parseFloat(bordero.total_premium) || 0; return sum + netPremi;}, 0))} subtitle="Current page" icon={DollarSign} gradient="from-green-500 to-green-600"/>
                     <GradientStatCard title="Total Claims" value={claims.length}subtitle="All statuses"icon={AlertCircle}gradient="from-orange-500 to-orange-600"/>
                     <GradientStatCard title="Subrogrations"value={subrogations.length}subtitle="Recovery cases"icon={RefreshCw}gradient="from-teal-500 to-teal-600"/>
                 </>)}

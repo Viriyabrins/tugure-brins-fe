@@ -44,6 +44,7 @@ import StatCard from "@/components/dashboard/StatCard";
 import ModernKPI from "@/components/dashboard/ModernKPI";
 import {
     sendTemplatedEmail,
+    sendNotificationEmail,
     createNotification,
     createAuditLog,
 } from "@/components/utils/emailTemplateHelper";
@@ -376,6 +377,56 @@ export default function DebtorReview() {
                 } catch (notifError) {
                     console.warn("Failed to create notification:", notifError);
                 }
+            }
+
+            // Send Email Notifications via Keycloak groups
+            try {
+                if (action === "check") {
+                    // Checker checks -> Notify tugure-approver group
+                    sendNotificationEmail({
+                        targetGroup: "tugure-approver",
+                        objectType: "Record",
+                        statusTo: "CHECKED_TUGURE",
+                        recipientRole: "TUGURE",
+                        variables: {
+                            debtor_count: String(processedCount),
+                            action_by: auditActor?.user_email || user?.email,
+                        },
+                        fallbackSubject: `Debtor Checked - Awaiting Approval`,
+                        fallbackBody: `${processedCount} debtor(s) have been checked by ${auditActor?.user_email || user?.email} and are awaiting your approval.`,
+                    }).catch(err => console.error("Background email failed:", err));
+                } else if (action === "approve") {
+                    // Approver approves -> Notify brins-maker group
+                    sendNotificationEmail({
+                        targetGroup: "brins-maker",
+                        objectType: "Record",
+                        statusTo: "APPROVED",
+                        recipientRole: "BRINS",
+                        variables: {
+                            debtor_count: String(processedCount),
+                            action_by: auditActor?.user_email || user?.email,
+                        },
+                        fallbackSubject: `Debtor Approved`,
+                        fallbackBody: `${processedCount} debtor(s) have been approved by ${auditActor?.user_email || user?.email}.`,
+                    }).catch(err => console.error("Background email failed:", err));
+                } else if (action === "revision") {
+                    // Revision -> Notify brins-maker group
+                    sendNotificationEmail({
+                        targetGroup: "brins-maker",
+                        objectType: "Record",
+                        statusTo: "REVISION",
+                        recipientRole: "BRINS",
+                        variables: {
+                            debtor_count: String(processedCount),
+                            action_by: auditActor?.user_email || user?.email,
+                            remarks: approvalRemarks,
+                        },
+                        fallbackSubject: `Debtor Revision Required`,
+                        fallbackBody: `${processedCount} debtor(s) have been marked for revision by ${auditActor?.user_email || user?.email}. Reason: ${approvalRemarks}`,
+                    }).catch(err => console.error("Background email failed:", err));
+                }
+            } catch (emailErr) {
+                console.warn("Failed to send notification email:", emailErr);
             }
 
             const actionDisplay =

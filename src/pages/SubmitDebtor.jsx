@@ -517,8 +517,8 @@ export default function SubmitDebtor() {
 
             // Send notification email for status transition
             try {
-                await sendNotificationEmail({
-                    targetGroup: 'email',
+                sendNotificationEmail({
+                    targetGroup: 'brins-approver',
                     objectType: 'Record',
                     statusTo: 'CHECKED_BRINS',
                     recipientRole: 'BRINS',
@@ -530,7 +530,7 @@ export default function SubmitDebtor() {
                     },
                     fallbackSubject: 'Debtors Checked – Batch {batch_id}',
                     fallbackBody: '<p>{user_name} has checked {count} debtor(s) in batch {batch_id} on {date}. Awaiting Approver BRINS approval.</p>',
-                });
+                }).catch(err => console.error("Background email failed:", err));
             } catch (emailError) {
                 console.warn('Failed to send notification email:', emailError);
             }
@@ -608,8 +608,8 @@ export default function SubmitDebtor() {
 
             // Send notification email for status transition
             try {
-                await sendNotificationEmail({
-                    targetGroup: 'email',
+                sendNotificationEmail({
+                    targetGroup: 'tugure-checker',
                     objectType: 'Record',
                     statusTo: 'APPROVED_BRINS',
                     recipientRole: 'ALL',
@@ -621,7 +621,7 @@ export default function SubmitDebtor() {
                     },
                     fallbackSubject: 'Debtors Approved by BRINS – Batch {batch_id}',
                     fallbackBody: '<p>{user_name} has approved {count} debtor(s) in batch {batch_id} on {date}. Now available for Tugure review.</p>',
-                });
+                }).catch(err => console.error("Background email failed:", err));
             } catch (emailError) {
                 console.warn('Failed to send notification email:', emailError);
             }
@@ -1309,8 +1309,8 @@ export default function SubmitDebtor() {
 
             // Send notification email for upload
             try {
-                await sendNotificationEmail({
-                    targetGroup: 'email',
+                sendNotificationEmail({
+                    targetGroup: 'brins-checker',
                     objectType: 'Record',
                     statusTo: 'SUBMITTED',
                     recipientRole: 'BRINS',
@@ -1322,7 +1322,7 @@ export default function SubmitDebtor() {
                     },
                     fallbackSubject: 'Debtor Upload Completed – Batch {batch_id}',
                     fallbackBody: '<p>{user_name} has uploaded {count} debtor(s) to batch {batch_id} on {date}. Awaiting review.</p>',
-                });
+                }).catch(err => console.error("Background email failed:", err));
             } catch (emailError) {
                 console.warn('Failed to send notification email:', emailError);
             }
@@ -1454,8 +1454,8 @@ export default function SubmitDebtor() {
 
             // Send notification email for revision request
             try {
-                await sendNotificationEmail({
-                    targetGroup: 'email',
+                sendNotificationEmail({
+                    targetGroup: 'brins-maker',
                     objectType: 'Record',
                     statusTo: 'CONDITIONAL',
                     recipientRole: 'BRINS',
@@ -1468,7 +1468,7 @@ export default function SubmitDebtor() {
                     },
                     fallbackSubject: 'Revision Requested – Batch {batch_id}',
                     fallbackBody: '<p>{user_name} has requested revision for {count} debtor(s) in batch {batch_id} on {date}.</p><p>Reason: {reason}</p>',
-                });
+                }).catch(err => console.error("Background email failed:", err));
             } catch (emailError) {
                 console.warn('Failed to send notification email:', emailError);
             }

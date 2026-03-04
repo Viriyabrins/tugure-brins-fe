@@ -43,6 +43,7 @@ import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import { formatRupiahAdaptive } from "@/utils/currency";
+import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
 import FilterTab from "@/components/common/FilterTab";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -558,6 +559,25 @@ export default function MasterContractManagement() {
                 }.`,
             );
 
+            // Send notification email for upload
+            try {
+                sendNotificationEmail({
+                    targetGroup: 'brins-checker',
+                    objectType: 'Contract',
+                    statusTo: 'Draft/Active',
+                    recipientRole: 'BRINS',
+                    variables: {
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(uploaded),
+                    },
+                    fallbackSubject: 'Contracts Uploaded',
+                    fallbackBody: '<p>{user_name} has uploaded {count} contract(s) on {date}. Awaiting review.</p>',
+                }).catch(err => console.error("Background email failed:", err));
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
+            }
+
             setShowUploadDialog(false);
             setUploadFile(null);
             setUploadMode("new");
@@ -635,6 +655,25 @@ export default function MasterContractManagement() {
                 }
             }
 
+            // Send notification email for status transition
+            try {
+                sendNotificationEmail({
+                    targetGroup: 'brins-approver',
+                    objectType: 'Contract',
+                    statusTo: 'CHECKED_BRINS',
+                    recipientRole: 'BRINS',
+                    variables: {
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(processedCount),
+                    },
+                    fallbackSubject: 'Contracts Checked',
+                    fallbackBody: '<p>{user_name} has checked {count} contract(s) on {date}. Awaiting Approver BRINS approval.</p>',
+                }).catch(err => console.error("Background email failed:", err));
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
+            }
+
             setSuccessMessage(`${processedCount} contract(s) checked successfully.`);
             toast.success(`${processedCount} contract(s) checked.`);
             setSelectedContractIds([]);
@@ -706,6 +745,25 @@ export default function MasterContractManagement() {
                 }
             }
 
+            // Send notification email for status transition
+            try {
+                sendNotificationEmail({
+                    targetGroup: 'tugure-checker',
+                    objectType: 'Contract',
+                    statusTo: 'APPROVED_BRINS',
+                    recipientRole: 'TUGURE',
+                    variables: {
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(processedCount),
+                    },
+                    fallbackSubject: 'Contracts Approved by BRINS',
+                    fallbackBody: '<p>{user_name} has approved {count} contract(s) on {date}. Now available for Tugure review.</p>',
+                }).catch(err => console.error("Background email failed:", err));
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
+            }
+
             setSuccessMessage(`${processedCount} contract(s) approved by BRINS. Now available for Tugure review.`);
             toast.success(`${processedCount} contract(s) approved by BRINS.`);
             setSelectedContractIds([]);
@@ -774,6 +832,25 @@ export default function MasterContractManagement() {
                 } catch (notifError) {
                     console.warn("Failed to create notification:", notifError);
                 }
+            }
+
+            // Send notification email for status transition
+            try {
+                sendNotificationEmail({
+                    targetGroup: 'tugure-approver',
+                    objectType: 'Contract',
+                    statusTo: 'CHECKED_TUGURE',
+                    recipientRole: 'TUGURE',
+                    variables: {
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(processedCount),
+                    },
+                    fallbackSubject: 'Contracts Checked by Tugure',
+                    fallbackBody: '<p>{user_name} has checked {count} contract(s) on {date}. Awaiting Tugure Approver final decision.</p>',
+                }).catch(err => console.error("Background email failed:", err));
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
             }
 
             setSuccessMessage(`${processedCount} contract(s) checked by Tugure. Awaiting final approval.`);
@@ -854,6 +931,26 @@ export default function MasterContractManagement() {
                 } catch (notifError) {
                     console.warn("Failed to create notification:", notifError);
                 }
+            }
+
+            // Send notification email for status transition
+            try {
+                sendNotificationEmail({
+                    targetGroup: newStatus === "REVISION" ? 'brins-maker' : 'tugure-approver', // If approved, maybe no-one needs it or we send to a generic group
+                    objectType: 'Contract',
+                    statusTo: newStatus,
+                    recipientRole: newStatus === "REVISION" ? 'BRINS' : 'ALL',
+                    variables: {
+                        user_name: auditActor?.user_email || user?.email || 'System',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        count: String(processedCount),
+                        reason: approvalRemarks || "No remarks",
+                    },
+                    fallbackSubject: newStatus === "APPROVED" ? 'Contracts Approved (Final)' : 'Contracts Marked for Revision',
+                    fallbackBody: `<p>{user_name} ${newStatus === "APPROVED" ? "approved" : "marked for revision"} {count} contract(s) on {date}.</p><p>Remarks: {reason}</p>`,
+                }).catch(err => console.error("Background email failed:", err));
+            } catch (emailError) {
+                console.warn('Failed to send notification email:', emailError);
             }
 
             setSuccessMessage(`${processedCount} contract(s) ${newStatus === "APPROVED" ? "approved" : "sent for revision"}.`);

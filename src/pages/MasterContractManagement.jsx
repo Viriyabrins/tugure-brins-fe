@@ -29,10 +29,10 @@ import {
     Download,
     History,
     AlertCircle,
-    XCircle,
     Pen,
     Check,
     Eye,
+    ShieldCheck,
 } from "lucide-react";
 import { backend } from "@/api/backendClient";
 import { toast } from "sonner";
@@ -1040,10 +1040,10 @@ export default function MasterContractManagement() {
             ),
             width: "50px",
         },
-        { header: "contract_no", accessorKey: "contract_no" },
-        { header: "underwriter_name", accessorKey: "underwriter_name" },
+        { header: "Contract No", accessorKey: "contract_no" },
+        { header: "Underwriter Name", accessorKey: "underwriter_name" },
         {
-            header: "contract_status",
+            header: "Contract Status",
             accessorKey: "contract_status",
             cell: (row) => {
                 const status = (row.contract_status || "Unknown").toString();
@@ -1067,9 +1067,9 @@ export default function MasterContractManagement() {
                 );
             },
         },
-        { header: "source_name", accessorKey: "source_name" },
-        { header: "ceding_name", accessorKey: "ceding_name" },
-        { header: "type_of_contract", accessorKey: "type_of_contract" },
+        { header: "Source Name", accessorKey: "source_name" },
+        { header: "Ceding Name", accessorKey: "ceding_name" },
+        { header: "Type of Contract", accessorKey: "type_of_contract" },
         {
             header: "action",
             cell: (row) => (
@@ -1251,56 +1251,56 @@ export default function MasterContractManagement() {
             <div className="flex flex-wrap gap-2">
                 {isCheckerBrins && (
                     <Button
+                        variant="outline"
                         onClick={handleCheckerBrinsCheck}
                         disabled={processing || selectedContractIds.length === 0}
-                        className="bg-sky-500 hover:bg-sky-600 text-white"
                     >
                         <Check className="w-4 h-4 mr-2" />
-                        Check (BRINS) {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                        Check {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
                     </Button>
                 )}
                 {isApproverBrins && (
                     <Button
+                        variant="outline"
                         onClick={handleApproverBrinsApprove}
                         disabled={processing || selectedContractIds.length === 0}
-                        className="bg-indigo-500 hover:bg-indigo-600 text-white"
                     >
-                        <Check className="w-4 h-4 mr-2" />
-                        Approve (BRINS) {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                        <ShieldCheck className="w-4 h-4 mr-2" />
+                        Approve {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
                     </Button>
                 )}
                 {isCheckerTugure && (
                     <Button
+                        variant="outline"
                         onClick={handleCheckerTugureCheck}
                         disabled={processing || selectedContractIds.length === 0}
-                        className="bg-violet-500 hover:bg-violet-600 text-white"
                     >
                         <Check className="w-4 h-4 mr-2" />
-                        Check (Tugure) {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                        Check {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
                     </Button>
                 )}
                 {isApproverTugure && (
                     <>
                         <Button
+                            variant="outline"
                             onClick={() => {
                                 setApprovalAction("APPROVED");
                                 setShowApprovalDialog(true);
                             }}
                             disabled={processing || selectedContractIds.length === 0}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white"
                         >
-                            <Check className="w-4 h-4 mr-2" />
-                            Approve (Final) {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                            <ShieldCheck className="w-4 h-4 mr-2" />
+                            Approve {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
                         </Button>
                         <Button
+                            variant="outline"
                             onClick={() => {
                                 setApprovalAction("REVISION");
                                 setShowApprovalDialog(true);
                             }}
                             disabled={processing || selectedContractIds.length === 0}
-                            className="bg-yellow-500 hover:bg-yellow-600 text-black"
                         >
-                            <XCircle className="w-4 h-4 mr-2" />
+                            <Pen className="w-4 h-4 mr-2" />
                             Revision {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
                         </Button>
                     </>

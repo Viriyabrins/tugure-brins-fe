@@ -819,7 +819,7 @@ export default function DebtorReview() {
                 <div className="flex flex-wrap gap-2">
                     {isCheckerTugure && (
                         <Button
-                            variant="outline"
+                            // variant="outline"
                             onClick={() => handleCheck(true)}
                             disabled={processing}
                         >

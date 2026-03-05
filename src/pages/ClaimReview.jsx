@@ -33,6 +33,8 @@ import {
     AlertCircle,
     DollarSign,
     Plus,
+    ShieldCheck,
+    Pen,
 } from "lucide-react";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -704,43 +706,45 @@ export default function ClaimReview() {
                     </TabsList>
 
                     {/* Bulk Actions */}
-                    {selectedClaims.length > 0 && (
-                        <div className="flex gap-2">
-                            {canCheck && claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {canCheck && (
                                 <Button
-                                    className="bg-blue-600"
+                                    variant="outline"
+                                    disabled={processing || claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length === 0}
                                     onClick={() => handleClaimAction("bulk_check")}
                                 >
                                     <Check className="w-4 h-4 mr-2" />
-                                    Check ({claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length})
+                                    {/* Check {selectedClaims.length > 0 ? `(${selectedClaims.length})` : ""} */}
+                                    Check {claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length > 0 ? `(${claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length})` : ""}
                                 </Button>
                             )}
-                            {canApprove && claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length > 0 && (
+                            {canApprove && (
                                 <>
                                     <Button
-                                        className="bg-green-600"
+                                        variant="outline"
+                                        disabled={processing || claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length === 0}
                                         onClick={() => {
                                             setActionType("bulk_approve");
                                             setShowActionDialog(true);
                                         }}
                                     >
-                                        <Check className="w-4 h-4 mr-2" />
-                                        Approve ({claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length})
+                                        <ShieldCheck className="w-4 h-4 mr-2" />
+                                        Approve {claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length ? `(${claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length})` : ""}
                                     </Button>
                                     <Button
-                                        variant="destructive"
+                                        variant="outline"
+                                        disabled={processing || claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length === 0}
                                         onClick={() => {
                                             setActionType("bulk_revise");
                                             setShowActionDialog(true);
                                         }}
                                     >
-                                        <XCircle className="w-4 h-4 mr-2" />
-                                        Revise ({claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length})
+                                        <Pen className="w-4 h-4 mr-2" />
+                                        Revise {claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length ? `(${claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length})` : ""}
                                     </Button>
                                 </>
                             )}
                         </div>
-                    )}
                 </div>
 
                 <TabsContent value="review">

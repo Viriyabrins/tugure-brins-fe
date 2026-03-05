@@ -44,6 +44,7 @@ import ModernKPI from "@/components/dashboard/ModernKPI";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 import * as XLSX from "xlsx";
+import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
 
 const defaultFilter = {
     contract: "all",
@@ -62,13 +63,18 @@ const HEADER_ALIAS_MAP = {
     tanggal_realisasi_kredit: "tanggal_realisasi_kredit",
     plafond: "plafond",
     max_coverage: "max_coverage",
+    kol: "kol_debitur",
     kol_debitur: "kol_debitur",
     dol: "dol",
+    claim_amount: "nilai_klaim",
     nilai_klaim: "nilai_klaim",
+    tahun_polis: "tahun_polis",
+    bordero_klaim: "bordero_klaim",
     claimno: "claim_no",
     claim_no: "claim_no",
     policyno: "policy_no",
     policy_no: "policy_no",
+    polyno: "policy_no",
     nomor_sertifikat: "nomor_sertifikat",
     share_tugure: "share_tugure",
     share_tugure_percentage: "share_tugure_percentage",
@@ -82,7 +88,7 @@ const normalizeHeader = (header = "") => {
     const normalized = String(header)
         .trim()
         .toLowerCase()
-        .replace(/[%().]/g, "")
+        .replace(/[%()\.\/]/g, "")
         .replace(/\s+/g, "_")
         .replace(/_+/g, "_")
         .replace(/^_|_$/g, "");
@@ -193,6 +199,9 @@ export default function ClaimSubmit() {
     const [uploadFile, setUploadFile] = useState(null);
     const [parsedClaims, setParsedClaims] = useState([]);
     const [filters, setFilters] = useState(defaultFilter);
+    const [claimPage, setClaimPage] = useState(1);
+    const [totalClaims, setTotalClaims] = useState(0);
+    const claimPageSize = 10;
     const canShowActionButtons = userRoles.some((role) => {
         const normalizedRole = String(role || "").trim().toLowerCase();
         return (
@@ -205,6 +214,10 @@ export default function ClaimSubmit() {
         loadUser();
         loadData();
     }, []);
+
+    useEffect(() => {
+        loadClaims(claimPage);
+    }, [claimPage]);
 
     const loadUser = async () => {
         try {
@@ -242,7 +255,7 @@ export default function ClaimSubmit() {
                 batchData,
                 contractData,
             ] = await Promise.all([
-                backend.list("Claim"),
+                backend.listPaginated("Claim", { page: 1, limit: claimPageSize }),
                 backend.list("Subrogation"),
                 backend.list("Debtor"),
                 backend.list("Batch"),
@@ -250,7 +263,10 @@ export default function ClaimSubmit() {
             ]);
 
             // Pastikan data adalah array
-            setClaims(Array.isArray(claimData) ? claimData : []);
+            const claimArr = claimData?.data || claimData;
+            setClaims(Array.isArray(claimArr) ? claimArr : []);
+            setTotalClaims(Number(claimData?.pagination?.total) || 0);
+            setClaimPage(1);
             setSubrogations(
                 Array.isArray(subrogationData) ? subrogationData : [],
             );
@@ -272,29 +288,42 @@ export default function ClaimSubmit() {
         }
     };
 
+    const loadClaims = async (pageToLoad = claimPage) => {
+        try {
+            const result = await backend.listPaginated("Claim", {
+                page: pageToLoad,
+                limit: claimPageSize,
+            });
+            setClaims(Array.isArray(result.data) ? result.data : []);
+            setTotalClaims(Number(result.pagination?.total) || 0);
+        } catch (error) {
+            console.error("Failed to load claims:", error);
+        }
+    };
+
     const downloadTemplate = () => {
-        const sampleData = [
+        const ll = [
             "CERT-001,PT Maju Jaya,1234567890001,FK-001,2025-01,2025-01-15,500000000,375000000,1,2025-06-15,250000000,75,187500000,true,P-001,POL-001",
             "CERT-002,CV Berkah Abadi,1234567890002,FK-002,2025-01,2025-01-16,300000000,225000000,1,2025-06-16,150000000,75,112500000,true,P-002,POL-001",
         ];
+        const sampleData = [
+            "Grace;;4;45831;131.194.944,00;811514102502483;1115141023000261;3;324623;0000K.01199.2025.11.00001.1.1;Dec-1;43,50%;57.069.800,64"
+        ];
 
         const headers = [
-            "nomor_sertifikat",
             "nama_tertanggung",
             "no_ktp_npwp",
-            "no_fasilitas_kredit",
-            "bdo_premi",
-            "tanggal_realisasi_kredit",
-            "plafond",
-            "max_coverage",
-            "kol_debitur",
+            "kol",
             "dol",
-            "nilai_klaim",
-            "share_tugure_percentage",
-            "share_tugure_amount",
-            "check_bdo_premi",
-            "nomor_peserta",
+            "claim_amount",
+            "claim_no",
             "policy_no",
+            "tahun_polis",
+            "nomor_sertifikat",
+            "nomor_peserta",
+            "bordero_klaim",
+            "share_tugure_percentage",
+            "share_tugure_amount"
         ];
 
         const csvContent = headers.join(",") + "\n" + sampleData.join("\n");
@@ -368,6 +397,8 @@ export default function ClaimSubmit() {
         const idxKolDebitur = getFirstIndex(["kol_debitur"]);
         const idxDol = getFirstIndex(["dol"]);
         const idxNilaiKlaim = getFirstIndex(["nilai_klaim"]);
+        const idxTahunPolis = getFirstIndex(["tahun_polis"]);
+        const idxBorderoKlaim = getFirstIndex(["bordero_klaim"]);
         const idxCheckBdoPremi = getFirstIndex(["check_bdo_premi"]);
         const idxSharePctDirect = getFirstIndex(["share_tugure_percentage"]);
         const idxShareAmtDirect = getFirstIndex(["share_tugure_amount"]);
@@ -430,6 +461,8 @@ export default function ClaimSubmit() {
                 kol_debitur: toNullableString(read(idxKolDebitur)),
                 dol: read(idxDol),
                 nilai_klaim: toNumber(read(idxNilaiKlaim)),
+                tahun_polis: toNullableString(read(idxTahunPolis)),
+                bordero_klaim: toNullableString(read(idxBorderoKlaim)),
                 share_tugure_percentage: toNumber(shareValues.percentage),
                 share_tugure_amount: toNumber(shareValues.amount),
                 check_bdo_premi: toBoolean(read(idxCheckBdoPremi)),
@@ -515,6 +548,8 @@ export default function ClaimSubmit() {
                     kol_debitur: row.kol_debitur,
                     dol: row.dol,
                     nilai_klaim: Number(row.nilai_klaim) || 0,
+                    tahun_polis: row.tahun_polis,
+                    bordero_klaim: row.bordero_klaim,
                     share_tugure_percentage: Number(row.share_tugure_percentage) || 0,
                     share_tugure_amount: Number(row.share_tugure_amount) || 0,
                     check_bdo_premi: !!row.check_bdo_premi,
@@ -612,15 +647,35 @@ export default function ClaimSubmit() {
             let uploaded = 0;
             let errors = [];
 
+            // Find next available sequence for this month
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, "0");
+            const prefix = `CLM-${year}-${month}-`;
+
+            let existingClaims = [];
+            try {
+                const claimResult = await backend.listPaginated("Claim", { limit: 9999 });
+                existingClaims = claimResult?.data || [];
+            } catch (_) {
+                existingClaims = [];
+            }
+            let maxSeq = 0;
+            for (const c of existingClaims) {
+                if (c.claim_no && c.claim_no.startsWith(prefix)) {
+                    const seqStr = c.claim_no.replace(prefix, "");
+                    const seq = parseInt(seqStr, 10);
+                    if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+                }
+            }
+
             for (const claim of parsedClaims) {
                 if (claim.validation_remarks) continue;
 
                 try {
-                    const now = new Date();
-                    const year = now.getFullYear();
-                    const month = String(now.getMonth() + 1).padStart(2, "0");
-                    const sequence = String(uploaded + 1).padStart(6, "0");
-                    const claimNo = `CLM-${year}-${month}-${sequence}`;
+                    maxSeq++;
+                    const sequence = String(maxSeq).padStart(6, "0");
+                    const claimNo = `${prefix}${sequence}`;
 
                     const tanggalRealisasiISO = formatDateToISO(
                         claim.tanggal_realisasi_kredit,
@@ -641,13 +696,14 @@ export default function ClaimSubmit() {
                         kol_debitur: claim.kol_debitur,
                         dol: dolISO,
                         nilai_klaim: claim.nilai_klaim,
+                        // tahun_polis: claim.tahun_polis,
                         share_tugure_percentage: claim.share_tugure_percentage,
                         share_tugure_amount: claim.share_tugure_amount,
                         check_bdo_premi: claim.check_bdo_premi,
                         debtor_id: claim.debtor_id || "",
                         contract_id: claim.contract_id || "",
                         batch_id: batch.batch_id,
-                        status: "Draft",
+                        status: "SUBMITTED",
                         version_no: 1,
                     });
 
@@ -685,6 +741,21 @@ export default function ClaimSubmit() {
                         reference_id: batch.batch_id,
                         target_role: "TUGURE",
                     });
+
+                    // Send Email to Tugure Approver
+                    sendNotificationEmail({
+                        targetGroup: "tugure-approver",
+                        objectType: "Record",
+                        statusTo: "SUBMITTED",
+                        recipientRole: "TUGURE",
+                        variables: {
+                            claim_count: String(uploaded),
+                            action_by: user?.email,
+                            batch_id: batch.batch_id,
+                        },
+                        fallbackSubject: "New Claims Submitted",
+                        fallbackBody: `${uploaded} claims have been submitted by ${user?.email} for batch ${batch.batch_id} and await checking.`,
+                    }).catch(e => console.error("Background email fail:", e));
                 } catch (notifError) {
                     console.error("Failed to create notification:", notifError);
                 }
@@ -820,8 +891,8 @@ export default function ClaimSubmit() {
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
-                    title="Draft Claims"
-                    value={claims.filter((c) => c.status === "Draft").length}
+                    title="Submitted Claims"
+                    value={claims.filter((c) => c.status === "SUBMITTED").length}
                     subtitle="Pending check"
                     icon={Clock}
                     gradient="from-orange-500 to-orange-600"
@@ -884,10 +955,10 @@ export default function ClaimSubmit() {
                         label: "Claim Status",
                         options: [
                             { value: "all", label: "    All Claim Status" },
-                            { value: "Draft", label: "Draft" },
-                            { value: "Checked", label: "Checked" },
-                            { value: "Doc Verified", label: "Doc Verified" },
-                            { value: "Invoiced", label: "Invoiced" },
+                            { value: "SUBMITTED", label: "Submitted" },
+                            { value: "CHECKED", label: "Checked" },
+                            { value: "APPROVED", label: "Approved" },
+                            { value: "REVISION", label: "Revision" },
                             { value: "Paid", label: "Paid" },
                         ],
                     },
@@ -936,26 +1007,17 @@ export default function ClaimSubmit() {
                                 ),
                             },
                         ]}
-                        data={claims.filter((c) => {
-                            if (
-                                filters.contract !== "all" &&
-                                c.contract_id !== filters.contract
-                            )
-                                return false;
-                            if (
-                                filters.batch &&
-                                !c.batch_id?.includes(filters.batch)
-                            )
-                                return false;
-                            if (
-                                filters.claimStatus !== "all" &&
-                                c.status !== filters.claimStatus
-                            )
-                                return false;
-                            return true;
-                        })}
+                        data={claims}
                         isLoading={loading}
                         emptyMessage="No claims submitted"
+                        pagination={{
+                            from: totalClaims === 0 ? 0 : (claimPage - 1) * claimPageSize + 1,
+                            to: Math.min(totalClaims, claimPage * claimPageSize),
+                            total: totalClaims,
+                            page: claimPage,
+                            totalPages: Math.max(1, Math.ceil(totalClaims / claimPageSize)),
+                        }}
+                        onPageChange={(p) => setClaimPage(p)}
                     />
                 </TabsContent>
 

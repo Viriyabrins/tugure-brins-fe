@@ -234,7 +234,97 @@ export default function DebtorReview() {
         }
     };
 
-    const handleApprovalAction = async () => {
+    const handleCheck = async (isBulk = false, debtorArg = null) => {
+        const targetDebtors = isBulk
+            ? debtors.filter((d) => selectedDebtors.includes(d.id))
+            : debtorArg ? [debtorArg] : selectedDebtor ? [selectedDebtor] : [];
+
+        if (targetDebtors.length === 0) {
+            toast.error("Please select debtors to check");
+            return;
+        }
+
+        setProcessing(true);
+        let processedCount = 0;
+
+        try {
+            for (const debtor of targetDebtors) {
+                if (!debtor || !debtor.id || debtor.status !== "APPROVED_BRINS") continue;
+
+                await backend.update("Debtor", debtor.id, {
+                    status: "CHECKED_TUGURE",
+                });
+                processedCount++;
+
+                // Create audit log using backend client
+                try {
+                    await backend.create("AuditLog", {
+                        action: "DEBTOR_CHECKED_TUGURE",
+                        module: "DEBTOR",
+                        entity_type: "Debtor",
+                        entity_id: debtor.id,
+                        old_value: JSON.stringify({ status: debtor.status }),
+                        new_value: JSON.stringify({ status: "CHECKED_TUGURE", remarks: "" }),
+                        user_email: auditActor?.user_email || user?.email,
+                        user_role: auditActor?.user_role || user?.role,
+                        reason: `Tugure Checker checked debtor ${debtor.nama_peserta || debtor.debtor_name}`,
+                    });
+                } catch (auditError) {
+                    console.warn("Failed to create audit log:", auditError);
+                }
+            }
+
+            if (processedCount === 0) {
+                toast.warning("No debtors with APPROVED_BRINS status found in selection.");
+                setProcessing(false);
+                return;
+            }
+
+            // Notifications
+            for (const role of ALL_ROLES) {
+                try {
+                    await backend.create("Notification", {
+                        title: "Debtors Checked by Tugure",
+                        message: `${auditActor?.user_email || user?.email} checked ${processedCount} debtor(s).`,
+                        type: "INFO",
+                        module: "DEBTOR",
+                        reference_id: targetDebtors[0]?.batch_id,
+                        target_role: role,
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
+            }
+
+            // Email Notification via Background Fire-and-Forget
+            sendNotificationEmail({
+                targetGroup: "tugure-approver",
+                objectType: "Record",
+                statusTo: "CHECKED_TUGURE",
+                recipientRole: "TUGURE",
+                variables: {
+                    debtor_count: String(processedCount),
+                    action_by: auditActor?.user_email || user?.email,
+                },
+                fallbackSubject: `Debtor Checked - Awaiting Approval`,
+                fallbackBody: `${processedCount} debtor(s) have been checked by ${auditActor?.user_email || user?.email} and are awaiting your approval.`,
+            }).catch(err => console.error("Background email failed:", err));
+
+            setSuccessMessage(`${processedCount} debtor(s) checked successfully.`);
+            toast.success(`${processedCount} debtor(s) checked.`);
+            setSelectedDebtor(null);
+            setSelectedDebtors([]);
+            
+            // Reload data
+            setTimeout(() => loadData(), 1000);
+        } catch (error) {
+            console.error("Check failed:", error);
+            toast.error("Check action failed.");
+        }
+        setProcessing(false);
+    };
+
+    const handleApproveRevise = async () => {
         if (
             (!selectedDebtor && selectedDebtors.length === 0) ||
             !approvalAction
@@ -251,18 +341,7 @@ export default function DebtorReview() {
                 ? approvalAction.replace("bulk_", "")
                 : approvalAction;
 
-            // Determine the new status based on action and role
-            let newStatus;
-            if (action === "check") {
-                // Checker Tugure: APPROVED_BRINS → CHECKED_TUGURE
-                newStatus = "CHECKED_TUGURE";
-            } else if (action === "approve") {
-                // Approver Tugure: CHECKED_TUGURE → APPROVED
-                newStatus = "APPROVED";
-            } else {
-                // Revision
-                newStatus = "REVISION";
-            }
+            const newStatus = action === "approve" ? "APPROVED" : "REVISION";
 
             // Get debtors to process
             const debtorsToProcess = isBulk
@@ -279,11 +358,7 @@ export default function DebtorReview() {
 
             let processedCount = 0;
             for (const debtor of debtorsToProcess) {
-                if (!debtor || !debtor.id) continue;
-
-                // Validate the correct source status for the transition
-                if (action === "check" && debtor.status !== "APPROVED_BRINS") continue;
-                if (action === "approve" && debtor.status !== "CHECKED_TUGURE") continue;
+                if (!debtor || !debtor.id || debtor.status !== "CHECKED_TUGURE") continue;
 
                 try {
                     // Update debtor using backend client
@@ -312,9 +387,7 @@ export default function DebtorReview() {
 
                     // Create audit log using backend client
                     try {
-                        const actionLabel = action === "check"
-                            ? "DEBTOR_CHECKED_TUGURE"
-                            : action === "approve"
+                        const actionLabel = action === "approve"
                                 ? "DEBTOR_APPROVED"
                                 : "DEBTOR_REVISION";
                         await backend.create("AuditLog", {
@@ -345,21 +418,19 @@ export default function DebtorReview() {
             }
 
             if (processedCount === 0) {
-                toast.warning("No debtors with the correct status were found in your selection.");
+                toast.warning("No debtors with CHECKED_TUGURE status found in selection.");
                 setShowApprovalDialog(false);
                 setProcessing(false);
                 return;
             }
 
             // Create notifications for ALL roles
-            const notifTitle = action === "check"
-                ? "Debtors Checked by Tugure"
-                : action === "approve"
+            const notifTitle = action === "approve"
                     ? "Debtors Approved (Final)"
                     : "Debtors Marked for Revision";
             const notifMessage = isBulk
-                ? `${auditActor?.user_email || user?.email} ${action === "check" ? "checked" : action === "approve" ? "approved" : "marked for revision"} ${processedCount} debtor(s).`
-                : `${auditActor?.user_email || user?.email} ${action === "check" ? "checked" : action === "approve" ? "approved" : "marked for revision"} debtor ${selectedDebtor?.nama_peserta || selectedDebtor?.debtor_name}.`;
+                ? `${auditActor?.user_email || user?.email} ${action === "approve" ? "approved" : "marked for revision"} ${processedCount} debtor(s).`
+                : `${auditActor?.user_email || user?.email} ${action === "approve" ? "approved" : "marked for revision"} debtor ${selectedDebtor?.nama_peserta || selectedDebtor?.debtor_name}.`;
             const notifType = action === "revision" ? "WARNING" : "INFO";
 
             for (const role of ALL_ROLES) {
@@ -381,21 +452,7 @@ export default function DebtorReview() {
 
             // Send Email Notifications via Keycloak groups
             try {
-                if (action === "check") {
-                    // Checker checks -> Notify tugure-approver group
-                    sendNotificationEmail({
-                        targetGroup: "tugure-approver",
-                        objectType: "Record",
-                        statusTo: "CHECKED_TUGURE",
-                        recipientRole: "TUGURE",
-                        variables: {
-                            debtor_count: String(processedCount),
-                            action_by: auditActor?.user_email || user?.email,
-                        },
-                        fallbackSubject: `Debtor Checked - Awaiting Approval`,
-                        fallbackBody: `${processedCount} debtor(s) have been checked by ${auditActor?.user_email || user?.email} and are awaiting your approval.`,
-                    }).catch(err => console.error("Background email failed:", err));
-                } else if (action === "approve") {
+                if (action === "approve") {
                     // Approver approves -> Notify brins-maker group
                     sendNotificationEmail({
                         targetGroup: "brins-maker",
@@ -430,11 +487,7 @@ export default function DebtorReview() {
             }
 
             const actionDisplay =
-                action === "check"
-                    ? isBulk
-                        ? `${processedCount} checked by Tugure`
-                        : "checked by Tugure"
-                    : action === "approve"
+                action === "approve"
                         ? isBulk
                             ? `${processedCount} approved (final)`
                             : "approved (final)"
@@ -598,7 +651,18 @@ export default function DebtorReview() {
                     </Button>
 
                     {/* actions dalam tabel */}
-                    {/* {isTugure && row.status === "SUBMITTED" && (
+                    {/* {row.status === "APPROVED_BRINS" && isCheckerTugure && (
+                        <Button
+                            size="sm"
+                            className="bg-teal-500 hover:bg-teal-600"
+                            onClick={() => handleCheck(false, row)}
+                            disabled={processing}
+                        >
+                            <Check className="w-4 h-4" />
+                        </Button>
+                    )}
+                    
+                    {row.status === "CHECKED_TUGURE" && isApproverTugure && (
                         <>
                             <Button
                                 size="sm"
@@ -608,8 +672,9 @@ export default function DebtorReview() {
                                     setApprovalAction("approve");
                                     setShowApprovalDialog(true);
                                 }}
+                                disabled={processing}
                             >
-                                <Check className="w-4 h-4" />
+                                <CheckCircle2 className="w-4 h-4" />
                             </Button>
                             <Button
                                 size="sm"
@@ -619,6 +684,7 @@ export default function DebtorReview() {
                                     setApprovalAction("revision");
                                     setShowApprovalDialog(true);
                                 }}
+                                disabled={processing}
                             >
                                 <Pen className="w-4 h-4" />
                             </Button>
@@ -754,10 +820,8 @@ export default function DebtorReview() {
                     {isCheckerTugure && (
                         <Button
                             variant="outline"
-                            onClick={() => {
-                                setApprovalAction("bulk_check");
-                                setShowApprovalDialog(true);
-                            }}
+                            onClick={() => handleCheck(true)}
+                            disabled={processing}
                         >
                             <Check className="w-4 h-4 mr-2" />
                             Check ({selectedDebtors.length})
@@ -775,7 +839,7 @@ export default function DebtorReview() {
                             Approve ({selectedDebtors.length})
                         </Button>
                     )}
-                    {canManageDebtorActions && (
+                    {isApproverTugure && (
                         <Button
                             variant="outline"
                             onClick={() => {
@@ -954,38 +1018,28 @@ export default function DebtorReview() {
                         <Button
                             variant="outline"
                             onClick={() => setShowApprovalDialog(false)}
+                            disabled={processing}
                         >
                             Cancel
                         </Button>
                         <Button
-                            onClick={handleApprovalAction}
-                            disabled={processing || !approvalRemarks}
                             className={
-                                approvalAction === "approve" ||
-                                approvalAction === "bulk_approve"
-                                    ? "bg-green-600 hover:bg-green-600"
-                                    : "bg-orange-600 hover:bg-orange-600"
+                                approvalAction?.includes("approve")
+                                    ? "bg-green-600 hover:bg-green-700 text-white"
+                                    : "bg-orange-600 hover:bg-orange-700 text-white"
+                            }
+                            onClick={handleApproveRevise}
+                            disabled={
+                                processing ||
+                                (approvalAction?.includes("revision") &&
+                                    !approvalRemarks.trim())
                             }
                         >
-                            {processing ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Processing...
-                                </>
-                            ) : (
-                                <>
-                                    {approvalAction === "approve" ||
-                                    approvalAction === "bulk_approve" ? (
-                                        <Check className="w-4 h-4 mr-2" />
-                                    ) : (
-                                        <X className="w-4 h-4 mr-2" />
-                                    )}
-                                    {approvalAction === "approve" ||
-                                    approvalAction === "bulk_approve"
-                                        ? "Approve"
-                                        : "Revision"}
-                                </>
-                            )}
+                            {processing
+                                ? "Processing..."
+                                : approvalAction?.includes("approve")
+                                  ? "Confirm Approval"
+                                  : "Submit Revision Request"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

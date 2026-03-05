@@ -41,8 +41,7 @@ import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import ModernKPI from "@/components/dashboard/ModernKPI";
 import {
-    sendTemplatedEmail,
-    createNotification,
+    sendNotificationEmail,
     createAuditLog,
 } from "@/components/utils/emailTemplateHelper";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
@@ -56,12 +55,18 @@ const defaultFilter = {
 }
 
 const normalizeRole = (role = "") => String(role).trim().toLowerCase();
-const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
-const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role"];
-const hasTugureActionRole = (roles = []) =>
+
+const TUGURE_CHECKER_ROLES = ["checker-tugure-role"];
+const TUGURE_APPROVER_ROLES = ["approver-tugure-role"];
+const BRINS_MAKER_ROLES = ["maker-brins-role"];
+const canCheckClaim = (roles = []) =>
     (Array.isArray(roles) ? roles : [])
         .map(normalizeRole)
-        .some((role) => TUGURE_ACTION_ROLES.includes(role));
+        .some((role) => TUGURE_CHECKER_ROLES.includes(role));
+const canApproveClaim = (roles = []) =>
+    (Array.isArray(roles) ? roles : [])
+        .map(normalizeRole)
+        .some((role) => TUGURE_APPROVER_ROLES.includes(role));
 
 export default function ClaimReview() {
     const [user, setUser] = useState(null);
@@ -85,12 +90,20 @@ export default function ClaimReview() {
     const [errorMessage, setErrorMessage] = useState("");
     const [remarks, setRemarks] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
-    const canManageClaimActions = hasTugureActionRole(tokenRoles);
+    const [claimPage, setClaimPage] = useState(1);
+    const [totalClaims, setTotalClaims] = useState(0);
+    const claimPageSize = 10;
+    const canCheck = canCheckClaim(tokenRoles);
+    const canApprove = canApproveClaim(tokenRoles);
 
     useEffect(() => {
         loadUser();
         loadData();
     }, []);
+
+    useEffect(() => {
+        loadClaims(claimPage);
+    }, [claimPage]);
 
     const loadUser = async () => {
         try {
@@ -124,14 +137,17 @@ export default function ClaimReview() {
                 debtorData,
                 batchData,
             ] = await Promise.all([
-                backend.list("Claim"),
+                backend.listPaginated("Claim", { page: 1, limit: claimPageSize }),
                 backend.list("Subrogation"),
                 backend.list("Nota"),
                 backend.list("Contract"),
                 backend.list("Debtor"),
                 backend.list("Batch"),
             ]);
-            setClaims(Array.isArray(claimData) ? claimData : []);
+            const claimArr = claimData?.data || claimData;
+            setClaims(Array.isArray(claimArr) ? claimArr : []);
+            setTotalClaims(Number(claimData?.pagination?.total) || 0);
+            setClaimPage(1);
             setSubrogations(
                 Array.isArray(subrogationData) ? subrogationData : [],
             );
@@ -151,11 +167,24 @@ export default function ClaimReview() {
         setLoading(false);
     };
 
+    const loadClaims = async (pageToLoad = claimPage) => {
+        try {
+            const result = await backend.listPaginated("Claim", {
+                page: pageToLoad,
+                limit: claimPageSize,
+            });
+            setClaims(Array.isArray(result.data) ? result.data : []);
+            setTotalClaims(Number(result.pagination?.total) || 0);
+        } catch (error) {
+            console.error("Failed to load claims:", error);
+        }
+    };
+
     const handleClaimAction = async () => {
         if (!selectedClaim || !actionType) return;
 
         // CRITICAL: Block claim approval if Nota payment not completed
-        if (actionType === "check" || actionType === "verify") {
+        if (actionType === "check" || actionType === "approve") {
             // Find related debtor via claim
             const relatedDebtor = selectedClaim.debtor_id
                 ? debtors.find((d) => d.id === selectedClaim.debtor_id)
@@ -215,22 +244,30 @@ export default function ClaimReview() {
 
             switch (actionType) {
                 case "check":
-                    newStatus = "Checked";
-                    updateData.status = "Checked";
+                    newStatus = "CHECKED";
+                    updateData.status = "CHECKED";
                     updateData.checked_by = user?.email;
                     updateData.checked_date = new Date().toISOString();
+                    
+                    // Email to Tugure Approver
+                    sendNotificationEmail({
+                        targetGroup: "tugure-approver",
+                        objectType: "Record",
+                        statusTo: "CHECKED",
+                        recipientRole: "TUGURE",
+                        variables: {
+                            claim_no: selectedClaim.claim_no,
+                            action_by: user?.email,
+                        },
+                        fallbackSubject: `Claim ${selectedClaim.claim_no} Checked`,
+                        fallbackBody: `Claim ${selectedClaim.claim_no} has been checked by ${user?.email} and awaits approval.`,
+                    }).catch(e => console.error("Background email fail:", e));
                     break;
-                case "verify":
-                    newStatus = "Doc Verified";
-                    updateData.status = "Doc Verified";
-                    updateData.doc_verified_by = user?.email;
-                    updateData.doc_verified_date = new Date().toISOString();
-                    break;
-                case "invoice":
-                    newStatus = "Invoiced";
-                    updateData.status = "Invoiced";
-                    updateData.invoiced_by = user?.email;
-                    updateData.invoiced_date = new Date().toISOString();
+                case "approve":
+                    newStatus = "APPROVED";
+                    updateData.status = "APPROVED";
+                    updateData.approved_by = user?.email;
+                    updateData.approved_date = new Date().toISOString();
 
                     // Create Claim Nota (IMMUTABLE AFTER ISSUED)
                     const notaNumber = `NOTA-CLM-${selectedClaim.claim_no}-${Date.now()}`;
@@ -250,6 +287,20 @@ export default function ClaimReview() {
                         reconciliation_status: "PENDING",
                     });
 
+                    // Email to Brins Maker
+                    sendNotificationEmail({
+                        targetGroup: "brins-maker",
+                        objectType: "Record",
+                        statusTo: "APPROVED",
+                        recipientRole: "BRINS",
+                        variables: {
+                            claim_no: selectedClaim.claim_no,
+                            action_by: user?.email,
+                        },
+                        fallbackSubject: `Claim ${selectedClaim.claim_no} Approved`,
+                        fallbackBody: `Claim ${selectedClaim.claim_no} has been approved by ${user?.email} and Nota ${notaNumber} has been generated.`,
+                    }).catch(e => console.error("Background email fail:", e));
+
                     // Create notification using backend client
                     try {
                         await backend.create("Notification", {
@@ -257,21 +308,32 @@ export default function ClaimReview() {
                             message: `Nota ${notaNumber} created for Claim ${selectedClaim.claim_no}. Amount: Rp ${(selectedClaim.share_tugure_amount || selectedClaim.nilai_klaim || 0).toLocaleString()}. Process in Nota Management.`,
                             type: "ACTION_REQUIRED",
                             module: "CLAIM",
-                            reference_id:
-                                selectedClaim.claim_no || selectedClaim.id,
-                            target_role: TUGURE_ACTION_ROLES[0],
+                            reference_id: selectedClaim.claim_no || selectedClaim.id,
+                            target_role: "TUGURE",
                         });
                     } catch (notifError) {
-                        console.warn(
-                            "Failed to create notification:",
-                            notifError,
-                        );
+                        console.warn("Failed to create notification:", notifError);
                     }
                     break;
-                case "reject":
-                    newStatus = "Draft";
-                    updateData.status = "Draft";
+                case "revise":
+                    newStatus = "REVISION";
+                    updateData.status = "REVISION";
                     updateData.revision_reason = remarks;
+
+                    // Email to Brins Maker
+                    sendNotificationEmail({
+                        targetGroup: "brins-maker",
+                        objectType: "Record",
+                        statusTo: "REVISION",
+                        recipientRole: "BRINS",
+                        variables: {
+                            claim_no: selectedClaim.claim_no,
+                            action_by: user?.email,
+                            remark: remarks || "Please review and revise the claim.",
+                        },
+                        fallbackSubject: `Claim ${selectedClaim.claim_no} Needs Revision`,
+                        fallbackBody: `Claim ${selectedClaim.claim_no} needs revision. Remarks: ${remarks}`,
+                    }).catch(e => console.error("Background email fail:", e));
                     break;
             }
 
@@ -288,7 +350,7 @@ export default function ClaimReview() {
                     type: "INFO",
                     module: "CLAIM",
                     reference_id: claimId,
-                    target_role: BRINS_ACTION_ROLES[0],
+                    target_role: "BRINS",
                 });
             } catch (notifError) {
                 console.warn("Failed to create notification:", notifError);
@@ -312,7 +374,7 @@ export default function ClaimReview() {
             }
 
             setSuccessMessage(
-                `Claim ${actionType}ed successfully${actionType === "invoice" ? " - Nota created" : ""}`,
+                `Claim ${actionType}ed successfully${actionType === "approve" ? " - Nota created" : ""}`,
             );
             setShowActionDialog(false);
             setSelectedClaim(null);
@@ -326,7 +388,7 @@ export default function ClaimReview() {
     };
 
     const pendingClaims = claims.filter(
-        (c) => c.status === "Draft" || c.status === "Checked",
+        (c) => c.status === "SUBMITTED" || c.status === "CHECKED",
     );
 
     const toggleClaimSelection = (claimId) => {
@@ -389,57 +451,44 @@ export default function ClaimReview() {
                     >
                         <Eye className="w-4 h-4" />
                     </Button>
-                    {canManageClaimActions && row.status === "Draft" && (
+                    {canCheck && row.status === "SUBMITTED" && (
+                        <Button
+                            size="sm"
+                            className="bg-blue-600"
+                            onClick={() => {
+                                setSelectedClaim(row);
+                                setActionType("check");
+                                setShowActionDialog(true);
+                            }}
+                        >
+                            Check
+                        </Button>
+                    )}
+                    {canApprove && row.status === "CHECKED" && (
                         <>
                             <Button
                                 size="sm"
-                                className="bg-blue-600"
+                                className="bg-green-600"
                                 onClick={() => {
                                     setSelectedClaim(row);
-                                    setActionType("check");
+                                    setActionType("approve");
                                     setShowActionDialog(true);
                                 }}
                             >
-                                Check
+                                Approve
                             </Button>
                             <Button
                                 size="sm"
                                 variant="destructive"
                                 onClick={() => {
                                     setSelectedClaim(row);
-                                    setActionType("reject");
+                                    setActionType("revise");
                                     setShowActionDialog(true);
                                 }}
                             >
-                                <X className="w-4 h-4" />
+                                <X className="w-4 h-4 mr-1" /> Revise
                             </Button>
                         </>
-                    )}
-                    {canManageClaimActions && row.status === "Checked" && (
-                        <Button
-                            size="sm"
-                            className="bg-green-600"
-                            onClick={() => {
-                                setSelectedClaim(row);
-                                setActionType("verify");
-                                setShowActionDialog(true);
-                            }}
-                        >
-                            Verify Docs
-                        </Button>
-                    )}
-                    {canManageClaimActions && row.status === "Doc Verified" && (
-                        <Button
-                            size="sm"
-                            className="bg-purple-600"
-                            onClick={() => {
-                                setSelectedClaim(row);
-                                setActionType("invoice");
-                                setShowActionDialog(true);
-                            }}
-                        >
-                            Issue Nota
-                        </Button>
                     )}
                 </div>
             ),
@@ -457,99 +506,106 @@ export default function ClaimReview() {
                 ]}
                 actions={
                     <div className="flex gap-2">
-                        {canManageClaimActions && selectedClaims.length > 0 && (
+                        {canCheck && selectedClaims.length > 0 && claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length > 0 && (
+                            <Button
+                                className="bg-blue-600"
+                                onClick={async () => {
+                                    setProcessing(true);
+                                    try {
+                                        const subClaims = claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED");
+                                        for (const claim of subClaims) {
+                                            const updateId = claim.claim_no || claim.id;
+                                            await backend.update("Claim", updateId, {
+                                                status: "CHECKED",
+                                                checked_by: user?.email,
+                                                checked_date: new Date().toISOString(),
+                                            });
+                                        }
+                                        setSuccessMessage(`${subClaims.length} claims checked`);
+                                        setSelectedClaims([]);
+                                        loadData();
+                                    } catch (error) {
+                                        console.error("Bulk check error:", error);
+                                        setErrorMessage("Failed to bulk check claims");
+                                    }
+                                    setProcessing(false);
+                                }}
+                                disabled={processing}
+                            >
+                                <Check className="w-4 h-4 mr-2" />
+                                Check ({claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length})
+                            </Button>
+                        )}
+                        {canApprove && selectedClaims.length > 0 && claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length > 0 && (
                             <>
-                                <Button
-                                    className="bg-green-600"
-                                    onClick={async () => {
-                                        setProcessing(true);
-                                        try {
-                                            for (const claimId of selectedClaims) {
-                                                const claim = claims.find(
-                                                    (c) => c.id === claimId,
-                                                );
-                                                if (claim?.status === "Draft") {
-                                                    // Update claim using backend client
-                                                    const updateId =
-                                                        claim.claim_no ||
-                                                        claim.id;
-                                                    await backend.update(
-                                                        "Claim",
-                                                        updateId,
-                                                        {
-                                                            status: "Checked",
-                                                            checked_by:
-                                                                user?.email,
-                                                            checked_date:
-                                                                new Date().toISOString(),
-                                                        },
-                                                    );
-                                                }
-                                            }
-                                            setSuccessMessage(
-                                                `${selectedClaims.length} claims checked`,
-                                            );
-                                            setSelectedClaims([]);
-                                            loadData();
-                                        } catch (error) {
-                                            console.error(
-                                                "Bulk check error:",
-                                                error,
-                                            );
-                                            setErrorMessage(
-                                                "Failed to bulk check claims",
-                                            );
+                            <Button
+                                className="bg-green-600"
+                                onClick={async () => {
+                                    setProcessing(true);
+                                    try {
+                                        const chkClaims = claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED");
+                                        for (const claim of chkClaims) {
+                                            const updateId = claim.claim_no || claim.id;
+                                            const notaNumber = `NOTA-CLM-${claim.claim_no}-${Date.now()}`;
+                                            await backend.create("Nota", {
+                                                nota_number: notaNumber,
+                                                nota_type: "Claim",
+                                                reference_id: claim.claim_no,
+                                                contract_id: claim.contract_id,
+                                                amount: claim.share_tugure_amount || claim.nilai_klaim || 0,
+                                                currency: "IDR",
+                                                status: "Draft",
+                                                is_immutable: false,
+                                                total_actual_paid: 0,
+                                                reconciliation_status: "PENDING",
+                                            });
+                                            await backend.update("Claim", updateId, {
+                                                status: "APPROVED",
+                                                approved_by: user?.email,
+                                                approved_date: new Date().toISOString(),
+                                            });
                                         }
-                                        setProcessing(false);
-                                    }}
-                                    disabled={processing}
-                                >
-                                    <Check className="w-4 h-4 mr-2" />
-                                    Check ({selectedClaims.length})
-                                </Button>
-                                <Button
-                                    variant="destructive"
-                                    onClick={async () => {
-                                        setProcessing(true);
-                                        try {
-                                            for (const claimId of selectedClaims) {
-                                                // Update claim using backend client
-                                                const claim = claims.find(
-                                                    (c) => c.id === claimId,
-                                                );
-                                                const updateId =
-                                                    claim.claim_no || claim.id;
-                                                await backend.update(
-                                                    "Claim",
-                                                    updateId,
-                                                    {
-                                                        status: "Draft",
-                                                        revision_reason:
-                                                            "Bulk rejection",
-                                                    },
-                                                );
-                                            }
-                                            setSuccessMessage(
-                                                `${selectedClaims.length} claims rejected`,
-                                            );
-                                            setSelectedClaims([]);
-                                            loadData();
-                                        } catch (error) {
-                                            console.error(
-                                                "Bulk reject error:",
-                                                error,
-                                            );
-                                            setErrorMessage(
-                                                "Failed to bulk reject claims",
-                                            );
+                                        setSuccessMessage(`${chkClaims.length} claims approved`);
+                                        setSelectedClaims([]);
+                                        loadData();
+                                    } catch (error) {
+                                        console.error("Bulk approve error:", error);
+                                        setErrorMessage("Failed to bulk approve claims");
+                                    }
+                                    setProcessing(false);
+                                }}
+                                disabled={processing}
+                            >
+                                <Check className="w-4 h-4 mr-2" />
+                                Approve ({claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length})
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                onClick={async () => {
+                                    setProcessing(true);
+                                    try {
+                                        const chkClaims = claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED");
+                                        for (const claim of chkClaims) {
+                                            const updateId = claim.claim_no || claim.id;
+                                            await backend.update("Claim", updateId, {
+                                                status: "REVISION",
+                                                revision_reason: "Bulk Revision Requested",
+                                            });
                                         }
-                                        setProcessing(false);
-                                    }}
-                                    disabled={processing}
-                                >
-                                    <X className="w-4 h-4 mr-2" />
-                                    Reject ({selectedClaims.length})
-                                </Button>
+                                        setSuccessMessage(`${chkClaims.length} claims sent for revision`);
+                                        setSelectedClaims([]);
+                                        loadData();
+                                    } catch (error) {
+                                        console.error("Bulk revise error:", error);
+                                        setErrorMessage("Failed to bulk revise claims");
+                                    }
+                                    setProcessing(false);
+                                }}
+                                disabled={processing}
+                            >
+                                <X className="w-4 h-4 mr-2" />
+                                Revise ({claims.filter(c => selectedClaims.includes(c.id) && c.status === "CHECKED").length})
+                            </Button>
                             </>
                         )}
                         <Button variant="outline" onClick={loadData}>
@@ -590,9 +646,9 @@ export default function ClaimReview() {
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
-                    title="Invoiced"
+                    title="Approved"
                     value={
-                        claims.filter((c) => c.claim_status === "Invoiced")
+                        claims.filter((c) => c.status === "APPROVED")
                             .length
                     }
                     subtitle="Nota created"
@@ -706,14 +762,10 @@ export default function ClaimReview() {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All</SelectItem>
-                                <SelectItem value="Draft">Draft</SelectItem>
-                                <SelectItem value="Checked">Checked</SelectItem>
-                                <SelectItem value="Doc Verified">
-                                    Doc Verified
-                                </SelectItem>
-                                <SelectItem value="Invoiced">
-                                    Invoiced
-                                </SelectItem>
+                                <SelectItem value="SUBMITTED">Submitted</SelectItem>
+                                <SelectItem value="CHECKED">Checked</SelectItem>
+                                <SelectItem value="APPROVED">Approved</SelectItem>
+                                <SelectItem value="REVISION">Revision</SelectItem>
                                 <SelectItem value="Paid">Paid</SelectItem>
                             </SelectContent>
                         </Select>
@@ -774,41 +826,33 @@ export default function ClaimReview() {
                 <TabsContent value="review">
                     <DataTable
                         columns={claimColumns}
-                        data={pendingClaims.filter((c) => {
-                            if (
-                                filters.contract !== "all" &&
-                                c.contract_id !== filters.contract
-                            )
-                                return false;
-                            if (
-                                filters.claimStatus !== "all" &&
-                                c.claim_status !== filters.claimStatus
-                            )
-                                return false;
-                            return true;
-                        })}
+                        data={claims.filter((c) => c.status === "SUBMITTED" || c.status === "CHECKED")}
                         isLoading={loading}
                         emptyMessage="No pending claims"
+                        pagination={{
+                            from: totalClaims === 0 ? 0 : (claimPage - 1) * claimPageSize + 1,
+                            to: Math.min(totalClaims, claimPage * claimPageSize),
+                            total: totalClaims,
+                            page: claimPage,
+                            totalPages: Math.max(1, Math.ceil(totalClaims / claimPageSize)),
+                        }}
+                        onPageChange={(p) => setClaimPage(p)}
                     />
                 </TabsContent>
                 <TabsContent value="all">
                     <DataTable
                         columns={claimColumns}
-                        data={claims.filter((c) => {
-                            if (
-                                filters.contract !== "all" &&
-                                c.contract_id !== filters.contract
-                            )
-                                return false;
-                            if (
-                                filters.claimStatus !== "all" &&
-                                c.claim_status !== filters.claimStatus
-                            )
-                                return false;
-                            return true;
-                        })}
+                        data={claims}
                         isLoading={loading}
                         emptyMessage="No claims"
+                        pagination={{
+                            from: totalClaims === 0 ? 0 : (claimPage - 1) * claimPageSize + 1,
+                            to: Math.min(totalClaims, claimPage * claimPageSize),
+                            total: totalClaims,
+                            page: claimPage,
+                            totalPages: Math.max(1, Math.ceil(totalClaims / claimPageSize)),
+                        }}
+                        onPageChange={(p) => setClaimPage(p)}
                     />
                 </TabsContent>
                 <TabsContent value="subrogation">
@@ -859,9 +903,8 @@ export default function ClaimReview() {
                     <DialogHeader>
                         <DialogTitle>
                             {actionType === "check" && "Check Claim"}
-                            {actionType === "verify" && "Verify Documents"}
-                            {actionType === "invoice" && "Issue Claim Nota"}
-                            {actionType === "reject" && "Reject Claim"}
+                            {actionType === "approve" && "Approve Claim and Issue Nota"}
+                            {actionType === "revise" && "Request Revision"}
                         </DialogTitle>
                         <DialogDescription>
                             {selectedClaim?.claim_no} -{" "}
@@ -869,7 +912,7 @@ export default function ClaimReview() {
                         </DialogDescription>
                     </DialogHeader>
                     <div className="py-4 space-y-4">
-                        {actionType === "invoice" && (
+                        {actionType === "approve" && (
                             <Alert className="bg-purple-50 border-purple-200">
                                 <Plus className="h-4 w-4 text-purple-600" />
                                 <AlertDescription className="text-purple-700">

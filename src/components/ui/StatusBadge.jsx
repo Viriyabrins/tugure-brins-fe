@@ -11,6 +11,7 @@ const statusColors = {
   REJECTED: 'bg-red-100 text-red-700 border-red-200',
   REVISION: 'bg-red-500 text-white',
   CONDITIONAL: 'bg-orange-100 text-orange-700 border-orange-200',
+  CHECKED: 'bg-yellow-100 text-yellow-700 border-yellow-200',
   CHECKED_BRINS: 'bg-yellow-200 text-orange-500',
   APPROVED_BRINS: 'bg-emerald-400 text-white',
   CHECKED_TUGURE: 'bg-violet-100 text-violet-800',

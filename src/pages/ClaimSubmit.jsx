@@ -20,17 +20,14 @@ import {
     DialogDescription,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
     FileText,
     Upload,
-    Send,
     CheckCircle2,
     AlertCircle,
     Download,
     RefreshCw,
     Loader2,
-    Eye,
     Plus,
     DollarSign,
     Clock,
@@ -40,7 +37,6 @@ import { formatRupiahAdaptive } from "@/utils/currency";
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
-import ModernKPI from "@/components/dashboard/ModernKPI";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 import * as XLSX from "xlsx";
@@ -539,6 +535,7 @@ export default function ClaimSubmit() {
                     policy_no: row.policy_no,
                     nomor_sertifikat: row.nomor_sertifikat,
                     nama_tertanggung: row.nama_tertanggung,
+                    nomor_peserta: row.nomor_peserta,
                     no_ktp_npwp: maskKtp(row.no_ktp_npwp_raw),
                     no_fasilitas_kredit: row.no_fasilitas_kredit,
                     bdo_premi: row.bdo_premi,
@@ -703,6 +700,7 @@ export default function ClaimSubmit() {
                         debtor_id: claim.debtor_id || "",
                         contract_id: claim.contract_id || "",
                         batch_id: batch.batch_id,
+                        nomor_peserta: claim.nomor_peserta,
                         status: "SUBMITTED",
                         version_no: 1,
                     });
@@ -739,12 +737,12 @@ export default function ClaimSubmit() {
                         type: "INFO",
                         module: "CLAIM",
                         reference_id: batch.batch_id,
-                        target_role: "TUGURE",
+                        target_role: "tugure-checker-role",
                     });
 
-                    // Send Email to Tugure Approver
+                    // Send Email to Tugure Checker
                     sendNotificationEmail({
-                        targetGroup: "tugure-approver",
+                        targetGroup: "tugure-checker",
                         objectType: "Record",
                         statusTo: "SUBMITTED",
                         recipientRole: "TUGURE",

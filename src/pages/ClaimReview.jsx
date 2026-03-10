@@ -54,7 +54,6 @@ const defaultFilter = {
     contract: "all",
     batch: "all",
     claimStatus: "all",
-    subrogationStatus: "all",
 }
 
 const normalizeRole = (role = "") => String(role).trim().toLowerCase();
@@ -104,9 +103,15 @@ export default function ClaimReview() {
         loadData();
     }, []);
 
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        if (claimPage !== 1) setClaimPage(1);
+    }, [filters.contract, filters.batch, filters.claimStatus]);
+
+    // Reload when page or filters change
     useEffect(() => {
         loadClaims(claimPage);
-    }, [claimPage]);
+    }, [claimPage, filters.contract, filters.batch, filters.claimStatus]);
 
     const loadUser = async () => {
         try {
@@ -140,7 +145,7 @@ export default function ClaimReview() {
                 debtorData,
                 batchData,
             ] = await Promise.all([
-                backend.listPaginated("Claim", { page: 1, limit: claimPageSize }),
+                backend.listPaginated("Claim", { page: 1, limit: claimPageSize, q: JSON.stringify(filters) }),
                 backend.list("Subrogation"),
                 backend.list("Nota"),
                 backend.list("Contract"),
@@ -175,6 +180,7 @@ export default function ClaimReview() {
             const result = await backend.listPaginated("Claim", {
                 page: pageToLoad,
                 limit: claimPageSize,
+                q: JSON.stringify(filters),
             });
             setClaims(Array.isArray(result.data) ? result.data : []);
             setTotalClaims(Number(result.pagination?.total) || 0);
@@ -444,7 +450,22 @@ export default function ClaimReview() {
             width: "50px",
         },
         { header: "Claim No", accessorKey: "claim_no" },
-        { header: "Debtor", accessorKey: "nama_tertanggung" },
+                {
+            header:"Batch ID",
+            accessorKey: "batch_id"
+        },
+        {
+            header: "Debtor",
+            accessorKey: "nama_tertanggung",
+            cell: (row) => (
+                <div>
+                    <div className="font-medium">{row.nama_tertanggung}</div>
+                    <div className="text-xs text-gray-500">
+                        {row.nomor_peserta}
+                    </div>
+                </div>
+            )
+        },
         {
             header: "Claim Amount",
             cell: (row) => formatRupiahAdaptive(Number(row.nilai_klaim) || 0),
@@ -579,23 +600,22 @@ export default function ClaimReview() {
                         label: "Claim Status",
                         options: [
                             { value: "all", label: "All Status"},
-                            { value: "Draft", label: "Draft"},
-                            { value: "Checked", label: "Checked"},
-                            { value: "Doc Verified", label: "Doc Verified"},
-                            { value: "Invoiced", label: "Invoiced"},
-                            { value: "Paid", label: "Paid"},
+                            { value: "SUBMITTED", label: "Submitted"},
+                            { value: "CHECKED", label: "Checked"},
+                            { value: "APPROVED", label: "Approved"},
+                            { value: "REVISION", label: "Revision"},
                         ],
                     },
-                    {
-                        key: "subrogationStatus",
-                        label: "Subrogation Status",
-                        options: [
-                            { value: "all", label: "All Status"},
-                            { value: "Draft", label: "Draft"},
-                            { value: "Invoiced", label: "Invoiced"},
-                            { value: "Paid / Closed", label: "Paid / Closed"},
-                        ],
-                    }
+                    // {
+                    //     key: "subrogationStatus",
+                    //     label: "Subrogation Status",
+                    //     options: [
+                    //         { value: "all", label: "All Status"},
+                    //         { value: "Draft", label: "Draft"},
+                    //         { value: "Invoiced", label: "Invoiced"},
+                    //         { value: "Paid / Closed", label: "Paid / Closed"},
+                    //     ],
+                    // }
                 ]}
             />
 

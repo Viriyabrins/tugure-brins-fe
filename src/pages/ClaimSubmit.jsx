@@ -211,9 +211,15 @@ export default function ClaimSubmit() {
         loadData();
     }, []);
 
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        if (claimPage !== 1) setClaimPage(1);
+    }, [filters.contract, filters.batch, filters.claimStatus, filters.subrogationStatus]);
+
+    // Reload when page or filters change
     useEffect(() => {
         loadClaims(claimPage);
-    }, [claimPage]);
+    }, [claimPage, filters.contract, filters.batch, filters.claimStatus, filters.subrogationStatus]);
 
     const loadUser = async () => {
         try {
@@ -251,7 +257,7 @@ export default function ClaimSubmit() {
                 batchData,
                 contractData,
             ] = await Promise.all([
-                backend.listPaginated("Claim", { page: 1, limit: claimPageSize }),
+                backend.listPaginated("Claim", { page: 1, limit: claimPageSize, q: JSON.stringify(filters) }),
                 backend.list("Subrogation"),
                 backend.list("Debtor"),
                 backend.list("Batch"),
@@ -289,6 +295,7 @@ export default function ClaimSubmit() {
             const result = await backend.listPaginated("Claim", {
                 page: pageToLoad,
                 limit: claimPageSize,
+                q: JSON.stringify(filters),
             });
             setClaims(Array.isArray(result.data) ? result.data : []);
             setTotalClaims(Number(result.pagination?.total) || 0);
@@ -782,6 +789,37 @@ export default function ClaimSubmit() {
         setProcessing(false);
     };
 
+    const columns = [
+        { header: "Claim No", accessorKey: "claim_no" },
+        {
+            header:"Batch ID",
+            accessorKey: "batch_id"
+        },
+        {
+            header: "Debtor",
+            accessorKey: "nama_tertanggung",
+            cell: (row) => (
+                <div>
+                    <div className="font-medium">{row.nama_tertanggung}</div>
+                    <div className="text-xs text-gray-500">
+                        {row.nomor_peserta}
+                    </div>
+                </div>
+            )
+        },
+        {
+            header: "Claim Amount",
+            cell: (row) =>
+                `Rp ${(parseFloat(row.nilai_klaim) || 0).toLocaleString("id-ID")}`,
+        },
+        {
+            header: "Status",
+            cell: (row) => (
+                <StatusBadge status={row.status} />
+            ),
+        },
+    ]
+
     return (
         <div className="space-y-6">
             <PageHeader
@@ -957,19 +995,18 @@ export default function ClaimSubmit() {
                             { value: "CHECKED", label: "Checked" },
                             { value: "APPROVED", label: "Approved" },
                             { value: "REVISION", label: "Revision" },
-                            { value: "Paid", label: "Paid" },
                         ],
                     },
-                    {
-                        key: "subrogationStatus",
-                        label: "Subrogation Status",
-                        options: [
-                            { value: "all", label: "All Subrogation" },
-                            { value: "Draft", label: "Draft" },
-                            { value: "Invoiced", label: "Invoiced" },
-                            { value: "Paid / Closed", label: "Paid / Closed" },
-                        ],
-                    },
+                    // {
+                    //     key: "subrogationStatus",
+                    //     label: "Subrogation Status",
+                    //     options: [
+                    //         { value: "all", label: "All Subrogation" },
+                    //         { value: "Draft", label: "Draft" },
+                    //         { value: "Invoiced", label: "Invoiced" },
+                    //         { value: "Paid / Closed", label: "Paid / Closed" },
+                    //     ],
+                    // },
                 ]}
             />
 
@@ -987,24 +1024,7 @@ export default function ClaimSubmit() {
 
                 <TabsContent value="claims" className="mt-4">
                     <DataTable
-                        columns={[
-                            { header: "Claim No", accessorKey: "claim_no" },
-                            {
-                                header: "Debtor",
-                                accessorKey: "nama_tertanggung",
-                            },
-                            {
-                                header: "Claim Amount",
-                                cell: (row) =>
-                                    `Rp ${(parseFloat(row.nilai_klaim) || 0).toLocaleString("id-ID")}`,
-                            },
-                            {
-                                header: "Status",
-                                cell: (row) => (
-                                    <StatusBadge status={row.status} />
-                                ),
-                            },
-                        ]}
+                        columns={columns}
                         data={claims}
                         isLoading={loading}
                         emptyMessage="No claims submitted"

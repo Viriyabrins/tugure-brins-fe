@@ -41,6 +41,8 @@ import {
     AlertTriangle,
     Check,
     ShieldCheck,
+    Eye,
+    ChevronLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -50,6 +52,7 @@ import {
 import { formatRupiahAdaptive } from "@/utils/currency";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
+
 
 const defaultFilter = {
     contract: "all",
@@ -409,6 +412,59 @@ const parseUploadRows = async (file) => {
     throw new Error("Unsupported file format. Please upload .csv, .xlsx, or .xls");
 };
 
+/**
+ * Build a normalized debtor payload from a parsed CSV row
+ * Used for both preview and actual database insert
+ */
+const buildDebtorPayload = (row, borderoId, batchId, contractId) => {
+    const nomorPeserta = toNullableString(row.nomor_peserta);
+    const namaPeserta = toNullableString(row.nama_peserta);
+
+    return {
+        cover_id: toNullableString(row.cover_id),
+        program_id: toNullableString(row.program_id),
+        bordero_id: borderoId,
+        nomor_rekening_pinjaman: toNullableString(row.nomor_rekening_pinjaman),
+        nomor_peserta: nomorPeserta,
+        loan_type: toNullableString(row.loan_type),
+        loan_type_desc: toNullableString(row.loan_type_desc),
+        cif_rekening_pinjaman: toNullableString(row.cif_rekening_pinjaman),
+        jenis_pengajuan_desc: toNullableString(row.jenis_pengajuan_desc),
+        jenis_covering_desc: toNullableString(row.jenis_covering_desc),
+        tanggal_mulai_covering: toIsoDate(row.tanggal_mulai_covering),
+        tanggal_akhir_covering: toIsoDate(row.tanggal_akhir_covering),
+        plafon: toNumber(row.plafon),
+        nominal_premi: toNumber(row.nominal_premi),
+        premi_percentage: toNumber(row.premi_percentage),
+        premium_amount: toNumber(row.premium_amount),
+        ric_percentage: toNumber(row.ric_percentage),
+        ric_amount: toNumber(row.ric_amount),
+        bf_percentage: toNumber(row.bf_percentage),
+        bf_amount: toNumber(row.bf_amount),
+        net_premi: toNumber(row.net_premi),
+        unit_code: toNullableString(row.unit_code),
+        unit_desc: toNullableString(row.unit_desc),
+        branch_desc: toNullableString(row.branch_desc),
+        region_desc: toNullableString(row.region_desc),
+        nama_peserta: namaPeserta,
+        alamat_usaha: toNullableString(row.alamat_usaha),
+        nomor_perjanjian_kredit: toNullableString(row.nomor_perjanjian_kredit),
+        tanggal_terima: toIsoDate(row.tanggal_terima),
+        tanggal_validasi: toIsoDate(row.tanggal_validasi),
+        teller_premium_date: toIsoDate(row.teller_premium_date),
+        status_aktif: toInteger(row.status_aktif),
+        remark_premi: toNullableString(row.remark_premi),
+        flag_restruk: toInteger(row.flag_restruk ?? row.flag_restruktur),
+        kolektabilitas: toInteger(row.kolektabilitas),
+        policy_no: toNullableString(row.policy_no),
+        contract_id: contractId,
+        batch_id: batchId,
+        version_no: 1,
+        status: "SUBMITTED",
+        is_locked: false,
+    };
+};
+
 export default function SubmitDebtor() {
     const [user, setUser] = useState(null);
     const [auditActor, setAuditActor] = useState(null);
@@ -425,6 +481,11 @@ export default function SubmitDebtor() {
     const [selectedBatch, setSelectedBatch] = useState("");
     const [uploadFile, setUploadFile] = useState(null);
     const [uploading, setUploading] = useState(false);
+
+    // Upload dialog two-tab state
+    const [uploadTabActive, setUploadTabActive] = useState(1); // 1 = upload, 2 = preview
+    const [uploadPreviewData, setUploadPreviewData] = useState([]); // normalized debtor objects ready for DB
+    const [uploadPreviewLoading, setUploadPreviewLoading] = useState(false);
 
     // Dialog state
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -454,6 +515,219 @@ export default function SubmitDebtor() {
     const isApproverBrins = userRoles.some(
         (role) => String(role || "").trim().toLowerCase() === "approver-brins-role",
     );
+
+    // === GENERATE PREVIEW DATA FOR TAB 2 ===
+    const handlePreviewData = async () => {
+        // Validate inputs
+        if (!selectedContract) {
+            setErrorMessage("Please select a contract");
+            toast.error("Please select a contract");
+            return;
+        }
+
+        if (batchMode === "revise" && !selectedBatch) {
+            setErrorMessage("Please select a batch to revise");
+            toast.error("Please select a batch to revise");
+            return;
+        }
+
+        if (!uploadFile) {
+            setErrorMessage("Please select a file to upload");
+            toast.error("Please select a file to upload");
+            return;
+        }
+
+        // Validate revision debtors exist
+        if (batchMode === "revise") {
+            const revisionDebtorsInBatch = debtors.filter(
+                (d) =>
+                    d.batch_id === selectedBatch &&
+                    d.contract_id === selectedContract &&
+                    d.status === "REVISION",
+            );
+
+            if (revisionDebtorsInBatch.length === 0) {
+                const revisionMessage = `No debtors with status REVISION found in batch ${selectedBatch} for contract ${selectedContract}.`;
+                setErrorMessage(revisionMessage);
+                toast.error(revisionMessage);
+                return;
+            }
+        }
+
+        setUploadPreviewLoading(true);
+        setErrorMessage("");
+
+        try {
+            // Parse file
+            const rows = await parseUploadRows(uploadFile);
+
+            if (rows.parseErrors?.length > 0) {
+                const firstParseError = rows.parseErrors[0];
+                const parseMessage = `Invalid CSV format${firstParseError?.row ? ` on row ${firstParseError.row}` : ""}: ${firstParseError?.message || "Unable to parse the uploaded file."}`;
+                setErrorMessage(parseMessage);
+                toast.error(parseMessage);
+                setUploadPreviewLoading(false);
+                return;
+            }
+
+            let normalizedRows = Array.isArray(rows.rows) ? rows.rows : [];
+
+            // Validate rows
+            const uploadValidation = validateUploadRows(
+                normalizedRows,
+                rows.headers,
+            );
+            normalizedRows = uploadValidation.normalizedRows;
+
+            if (uploadValidation.validationErrors.length > 0) {
+                const shortMessage = uploadValidation.validationErrors[0];
+                const detailedMessage =
+                    `Upload validation failed: ${uploadValidation.validationErrors.length} issue(s) found.\n` +
+                    `${uploadValidation.validationErrors.slice(0, 5).join("\n")}` +
+                    `${uploadValidation.validationErrors.length > 5 ? `\n...and ${uploadValidation.validationErrors.length - 5} more issue(s)` : ""}`;
+
+                setErrorMessage(detailedMessage);
+                toast.error(shortMessage);
+                setUploadPreviewLoading(false);
+                return;
+            }
+
+            if (!normalizedRows || normalizedRows.length === 0) {
+                setErrorMessage("File is empty or invalid format");
+                toast.error("File is empty or invalid format");
+                setUploadPreviewLoading(false);
+                return;
+            }
+
+            // Validate revision mode debtor matching
+            if (batchMode === "revise") {
+                const revisionDebtorsInBatch = debtors.filter(
+                    (d) =>
+                        d.batch_id === selectedBatch &&
+                        d.contract_id === selectedContract &&
+                        d.status === "REVISION",
+                );
+                const revisionNomorPesertaSet = new Set(
+                    revisionDebtorsInBatch.map((d) => d.nomor_peserta),
+                );
+
+                const invalidRows = [];
+                for (let i = 0; i < normalizedRows.length; i++) {
+                    const nomorPeserta = toNullableString(
+                        normalizedRows[i].nomor_peserta,
+                    );
+                    if (!revisionNomorPesertaSet.has(nomorPeserta)) {
+                        invalidRows.push({
+                            row: i + 2,
+                            nomor_peserta: nomorPeserta || "(empty)",
+                        });
+                    }
+                }
+
+                if (invalidRows.length > 0) {
+                    const details = invalidRows
+                        .slice(0, 5)
+                        .map(
+                            (r) =>
+                                `Row ${r.row}: nomor_peserta "${r.nomor_peserta}" is not a REVISION debtor in this batch`,
+                        )
+                        .join("\n");
+                    setErrorMessage(
+                        `Validation failed — file contains debtors that are not marked as REVISION in batch ${selectedBatch}:\n${details}${invalidRows.length > 5 ? `\n...and ${invalidRows.length - 5} more` : ""}`,
+                    );
+                    toast.error(
+                        `Validation failed: non-REVISION debtor found for batch ${selectedBatch}`,
+                    );
+                    setUploadPreviewLoading(false);
+                    return;
+                }
+            }
+
+            // Generate or retrieve batch ID
+            let batchId;
+            let borderoId;
+            let period;
+
+            if (batchMode === "new") {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, "0");
+                const randomNum =
+                    Math.floor(Math.random() * 900000) + 100000;
+                batchId = `BATCH-${year}-${month}-${randomNum}`;
+
+                const now2 = new Date();
+                period = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, "0")}`;
+                borderoId = `BRD-${batchId.replace("BATCH-", "")}`;
+            } else {
+                // Revision mode: use existing batch and bordero
+                batchId = selectedBatch;
+                const borderos = await backend.list("Bordero");
+                const match = Array.isArray(borderos)
+                    ? borderos.find(
+                          (b) =>
+                              b.batch_id === batchId &&
+                              b.contract_id === selectedContract,
+                      )
+                    : null;
+
+                if (!match?.bordero_id) {
+                    const borderoMessage = `Bordero not found for batch ${batchId} and contract ${selectedContract}. Please generate Bordero first.`;
+                    setErrorMessage(borderoMessage);
+                    toast.error(borderoMessage);
+                    setUploadPreviewLoading(false);
+                    return;
+                }
+
+                borderoId = match.bordero_id;
+                period = match.period || null;
+            }
+
+            // Build normalized debtor payloads
+            const previewPayloads = [];
+            for (let i = 0; i < normalizedRows.length; i++) {
+                try {
+                    const row = normalizedRows[i];
+                    const nomorPeserta = toNullableString(
+                        row.nomor_peserta,
+                    );
+                    const namaPeserta = toNullableString(row.nama_peserta);
+
+                    if (!nomorPeserta || !namaPeserta) {
+                        throw new Error(
+                            `Row ${i + 2}: nomor_peserta and nama_peserta are required`,
+                        );
+                    }
+
+                    const payload = buildDebtorPayload(
+                        row,
+                        borderoId,
+                        batchId,
+                        selectedContract,
+                    );
+                    previewPayloads.push(payload);
+                } catch (rowError) {
+                    const rowMessage = rowError?.message ||
+                        "Unknown upload error";
+                    if (/^Row\s+\d+:/i.test(rowMessage)) {
+                        throw new Error(rowMessage);
+                    }
+                    throw new Error(`Row ${i + 2}: ${rowMessage}`);
+                }
+            }
+
+            // Store preview data and switch to Tab 2
+            setUploadPreviewData(previewPayloads);
+            setUploadTabActive(2);
+        } catch (error) {
+            const errorMsg =
+                error?.message || "Failed to generate preview";
+            setErrorMessage(errorMsg);
+            toast.error(errorMsg);
+        } finally {
+            setUploadPreviewLoading(false);
+        }
+    };
 
     // === CHECKER BRINS: SUBMITTED → CHECKED_BRINS ===
     const handleCheckerBrinsCheck = async () => {
@@ -811,97 +1085,95 @@ export default function SubmitDebtor() {
 
     // Download template
     const handleDownloadTemplate = () => {
-        const sampleData = [
-            "1001,PRG-001,LA-001,P-001,KPR,Kredit Pemilikan Rumah,CIF-001,New,Full,2025-01-01,2030-12-31,500000000,4750000,1.0,0.1,0.05,3875000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,PT Maju Jaya,Jl. Sudirman No.1 Jakarta,CA-001,2025-01-15 10:00:00,2025-01-16 14:00:00,1,Approved,0,1,POL-001",
-            "1002,PRG-001,LA-002,P-002,KPR,Kredit Pemilikan Rumah,CIF-002,New,Full,2025-01-01,2030-12-31,300000000,2850000,1.0,0.1,0.05,2325000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,CV Berkah Abadi,Jl. Thamrin No.2 Jakarta,CA-002,2025-01-15 11:00:00,2025-01-16 15:00:00,1,Approved,0,1,POL-002",
-            "1003,PRG-001,LA-003,P-003,KPR,Kredit Pemilikan Rumah,CIF-003,New,Full,2025-01-01,2030-12-31,450000000,4275000,1.0,0.1,0.05,3487500,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,PT Cahaya Terang,Jl. Gatot Subroto No.3,CA-003,2025-01-15 12:00:00,2025-01-16 16:00:00,1,Good,0,1,POL-003",
-            "1004,PRG-001,LA-004,P-004,KPR,Kredit Pemilikan Rumah,CIF-004,New,Full,2025-01-01,2030-12-31,350000000,3325000,1.0,0.1,0.05,2712500,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,UD Sumber Rezeki,Jl. Rasuna Said No.4,CA-004,2025-01-15 13:00:00,2025-01-16 17:00:00,1,Verified,0,1,POL-004",
-            "1005,PRG-001,LA-005,P-005,KPR,Kredit Pemilikan Rumah,CIF-005,New,Full,2025-01-01,2030-12-31,400000000,3800000,1.0,0.1,0.05,3100000,U001,Unit Jakarta,Branch Sudirman,DKI Jakarta,CV Mitra Sejati,Jl. HR Rasuna No.5,CA-005,2025-01-15 14:00:00,2025-01-16 18:00:00,1,Complete,0,1,POL-005",
-        ];
-
         const headers = [
-            "cover_id",
-            "program_id",
-            "nomor_rekening_pinjaman",
-            "nomor_peserta",
-            "loan_type",
-            "loan_type_desc",
-            "cif_rekening_pinjaman",
-            "jenis_pengajuan_desc",
-            "jenis_covering_desc",
-            "tanggal_mulai_covering",
-            "tanggal_akhir_covering",
-            "plafon",
-            "nominal_premi",
-            "premi_percentage",
-            "ric_percentage",
-            "bf_percentage",
-            "net_premi",
-            "unit_code",
-            "unit_desc",
-            "branch_desc",
-            "region_desc",
-            "nama_peserta",
-            "alamat_usaha",
-            "nomor_perjanjian_kredit",
-            "tanggal_terima",
-            "tanggal_validasi",
-            "status_aktif",
-            "remark_premi",
-            "flag_restruktur",
-            "kolektabilitas",
-            "policy_no",
+            "COVER_ID", "PROGRAM_ID", "NOMOR_REKENING_PINJAMAN", "NOMOR_PESERTA",
+            "LOAN_TYPE", "CIF_REKENING_PINJAMAN", "JENIS_PENGAJUAN_DESC",
+            "JENIS_COVERING_DESC", "TANGGAL_MULAI_COVERING", "TANGGAL_AKHIR_COVERING",
+            "PLAFON", "NOMINAL_PREMI", "PREMIUM", "KOMISI", "NET_PREMI",
+            "NOMINAL_KOMISI_BROKER", "UNIT_CODE", "UNIT_DESC", "BRANCH_DESC",
+            "REGION_DESC", "NAMA_PESERTA", "ALAMAT_USAHA", "NOMOR_PERJANJIAN_KREDIT",
+            "TANGGAL_TERIMA", "TANGGAL_VALIDASI", "TELLER_PREMIUM_DATE",
+            "STATUS_AKTIF", "REMARK_PREMI", "FLAG_RESTRUK", "KOLEKTABILITAS"
         ];
 
-        const csvContent = headers.join(",") + "\n" + sampleData.join("\n");
+        const sampleData = [
+            ["1111301", "501", "002101000888123", "0000B.00021.2026.01.00001.1.1", "DL", "HEC7001", "New", "Conditional Automatic Cover", "01/01/2026", "01/01/2027", 500000000, 12500000, 5312500, 1460937, 3851563, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Budi Santoso", "Jl. Thamrin No. 10", "PK-001", "2026-01-05", "2026-01-06", "2026-01-06", 1, "BRISURF_COV_00501_002101000888123_01", 0, 1],
+            ["1111302", "501", "002101000888456", "0000C.00021.2026.01.00002.1.1", "DL", "HEC7002", "New", "Conditional Automatic Cover", "05/01/2026", "05/01/2027", 250000000, 6250000, 2656250, 730468, 1925782, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Siti Aminah", "Jl. Sudirman Kav 25", "PK-002", "2026-01-10", "2026-01-11", "2026-01-11", 1, "BRISURF_COV_00501_002101000888456_01", 0, 1],
+            ["1111303", "501", "004501502999789", "0000D.00045.2026.02.00001.1.1", "DL", "HEC7003", "New", "Conditional Automatic Cover", "12/02/2026", "12/02/2027", 750000000, 18750000, 7968750, 2191406, 5777344, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Andi Wijaya", "Jl. Asia Afrika No. 5", "PK-003", "2026-02-15", "2026-02-16", "2026-02-16", 1, "BRISURF_COV_00501_004501502999789_02", 0, 1],
+            ["1111304", "501", "004501502999000", "0000E.00045.2026.02.00002.1.1", "DL", "HEC7004", "New", "Conditional Automatic Cover", "20/02/2026", "20/02/2027", 100000000, 2500000, 1062500, 292187, 770313, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Dewi Lestari", "Jl. Braga No. 12", "PK-004", "2026-02-22", "2026-02-23", "2026-02-23", 1, "BRISURF_COV_00501_004501502999000_02", 0, 1],
+            ["1111305", "501", "009901000777321", "0000F.00099.2026.03.00001.1.1", "DL", "HEC7005", "New", "Conditional Automatic Cover", "01/03/2026", "01/03/2027", 300000000, 7500000, 3187500, 876562, 2310938, 119000, "0099", "KCP MEDAN", "KC Medan", "Sumatera Utara", "Ahmad Fauzi", "Jl. Gatot Subroto No. 88", "PK-005", "2026-03-05", "2026-03-06", "2026-03-06", 1, "BRISURF_COV_00501_009901000777321_03", 0, 1]
+        ];
 
-        const blob = new Blob([csvContent], { type: "text/csv" });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "debtor_template.csv";
-        a.click();
+        const data = [headers, ...sampleData];
+
+        const worksheet = XLSX.utils.aoa_to_sheet(data);
+        const workbook = XLSX.utils.book_new();
+
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Debtor Template");
+
+        XLSX.writeFile(workbook, "debtor_template.xlsx");
+
         toast.success("Template downloaded");
     };
 
-    // Submit bulk upload
-    const handleBulkUpload = async () => {
-        if (!selectedContract) {
-            setErrorMessage("Please select a contract");
-            toast.error("Please select a contract");
-            return;
+    // Get all column keys for preview table
+    const getPreviewColumnKeys = () => {
+        if (!uploadPreviewData || uploadPreviewData.length === 0) return [];
+        
+        // Get all keys from the first row
+        const firstRow = uploadPreviewData[0];
+        const keys = Object.keys(firstRow).filter(key => 
+            // Exclude system fields
+            !['contract_id', 'batch_id', 'bordero_id', 'version_no', 'status', 'is_locked'].includes(key)
+        );
+        return keys;
+    };
+
+    // Format column header name (e.g., nomor_peserta -> Nomor Peserta)
+    const formatHeaderName = (key) => {
+        return key
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    };
+
+    // Format value for display
+    const formatCellValue = (key, value) => {
+        if (value === null || value === undefined || value === '') return '-';
+        
+        // Format currency fields
+        if (key.includes('plafon') || key.includes('nominal') || key.includes('premium') || 
+            key.includes('ric_') || key.includes('bf_') || key.includes('net_premi')) {
+            if (typeof value === 'number') return formatRupiahAdaptive(value);
         }
-
-        if (batchMode === "revise" && !selectedBatch) {
-            setErrorMessage("Please select a batch to revise");
-            toast.error("Please select a batch to revise");
-            return;
-        }
-
-        if (!uploadFile) {
-            setErrorMessage("Please select a file to upload");
-            toast.error("Please select a file to upload");
-            return;
-        }
-
-        // === REVISION VALIDATION ===
-        // When revising, validate that the selected contract+batch has REVISION debtors
-        if (batchMode === "revise") {
-            const revisionDebtorsInBatch = debtors.filter(
-                (d) =>
-                    d.batch_id === selectedBatch &&
-                    d.contract_id === selectedContract &&
-                    d.status === "REVISION",
-            );
-
-            if (revisionDebtorsInBatch.length === 0) {
-                const revisionMessage =
-                    `No debtors with status REVISION found in batch ${selectedBatch} for contract ${selectedContract}. ` +
-                    `Please ensure the contract and batch match the debtor(s) that were marked for revision.`;
-                setErrorMessage(revisionMessage);
-                toast.error(revisionMessage);
-                return;
+        
+        // Format date fields
+        if (key.includes('tanggal') || key.includes('date') || key.includes('_date')) {
+            if (typeof value === 'string' && value.length >= 10) {
+                return value.slice(0, 10); // Show only date part
             }
+        }
+        
+        // Format percentage fields
+        if (key.includes('percentage') || key.includes('pct')) {
+            if (typeof value === 'number') return `${value.toFixed(2)}%`;
+        }
+        
+        // Format numeric fields
+        if (key.includes('_no') && typeof value === 'number') {
+            return value.toString();
+        }
+        
+        return String(value);
+    };
+
+    // Submit bulk upload
+    const handleConfirmSave = async () => {
+        // Validate preview data exists
+        if (!uploadPreviewData || uploadPreviewData.length === 0) {
+            setErrorMessage("No preview data available. Please generate preview first.");
+            toast.error("No preview data available.");
+            return;
         }
 
         setUploading(true);
@@ -910,109 +1182,20 @@ export default function SubmitDebtor() {
 
         let uploaded = 0;
         const createdDebtorIds = [];
-        let batchId = null;
-        let borderoId = null;
 
         try {
-            const rows = await parseUploadRows(uploadFile);
+            // Extract batch and bordero IDs from preview data (all rows have the same batch_id and bordero_id)
+            const batchId = uploadPreviewData[0].batch_id;
+            const borderoId = uploadPreviewData[0].bordero_id;
+            const contractId = uploadPreviewData[0].contract_id;
 
-            if (rows.parseErrors?.length > 0) {
-                const firstParseError = rows.parseErrors[0];
-                const parseMessage = `Invalid CSV format${firstParseError?.row ? ` on row ${firstParseError.row}` : ""}: ${firstParseError?.message || "Unable to parse the uploaded file."}`;
-                setErrorMessage(parseMessage);
-                toast.error(parseMessage);
-                setUploading(false);
-                return;
-            }
-
-            let normalizedRows = Array.isArray(rows.rows) ? rows.rows : [];
-
-            const uploadValidation = validateUploadRows(
-                normalizedRows,
-                rows.headers,
-            );
-            normalizedRows = uploadValidation.normalizedRows;
-
-            if (uploadValidation.validationErrors.length > 0) {
-                const shortMessage = uploadValidation.validationErrors[0];
-                const detailedMessage =
-                    `Upload validation failed: ${uploadValidation.validationErrors.length} issue(s) found.\n` +
-                    `${uploadValidation.validationErrors.slice(0, 5).join("\n")}` +
-                    `${uploadValidation.validationErrors.length > 5 ? `\n...and ${uploadValidation.validationErrors.length - 5} more issue(s)` : ""}`;
-
-                setErrorMessage(detailedMessage);
-                toast.error(shortMessage);
-                setUploading(false);
-                return;
-            }
-
-            if (!normalizedRows || normalizedRows.length === 0) {
-                setErrorMessage("File is empty or invalid format");
-                toast.error("File is empty or invalid format");
-                setUploading(false);
-                return;
-            }
-
-            // === REVISION MODE: Validate nomor_peserta matches REVISION debtors ===
-            if (batchMode === "revise") {
-                const revisionDebtorsInBatch = debtors.filter(
-                    (d) =>
-                        d.batch_id === selectedBatch &&
-                        d.contract_id === selectedContract &&
-                        d.status === "REVISION",
-                );
-                const revisionNomorPesertaSet = new Set(
-                    revisionDebtorsInBatch.map((d) => d.nomor_peserta),
-                );
-
-                const invalidRows = [];
-                for (let i = 0; i < normalizedRows.length; i++) {
-                    const nomorPeserta = toNullableString(normalizedRows[i].nomor_peserta);
-                    if (!revisionNomorPesertaSet.has(nomorPeserta)) {
-                        invalidRows.push({
-                            row: i + 2,
-                            nomor_peserta: nomorPeserta || "(empty)",
-                        });
-                    }
-                }
-
-                if (invalidRows.length > 0) {
-                    const details = invalidRows
-                        .slice(0, 5)
-                        .map(
-                            (r) =>
-                                `Row ${r.row}: nomor_peserta "${r.nomor_peserta}" is not a REVISION debtor in this batch`,
-                        )
-                        .join("\n");
-                    setErrorMessage(
-                        `Validation failed — file contains debtors that are not marked as REVISION in batch ${selectedBatch}:\n${details}${invalidRows.length > 5 ? `\n...and ${invalidRows.length - 5} more` : ""}`,
-                    );
-                    toast.error(
-                        `Validation failed: non-REVISION debtor found for batch ${selectedBatch}`,
-                    );
-                    setUploading(false);
-                    return;
-                }
-            }
-
-            // Generate batch ID
-            if (batchMode === "revise") {
-                batchId = selectedBatch;
-            } else {
-                const now = new Date();
-                const year = now.getFullYear();
-                const month = String(now.getMonth() + 1).padStart(2, "0");
-                const randomNum = Math.floor(Math.random() * 900000) + 100000;
-                batchId = `BATCH-${year}-${month}-${randomNum}`;
-            }
-
-            // Calculate batch totals
-            const totalExposure = normalizedRows.reduce(
-                (sum, row) => Number(sum) + (toNumber(row.plafon) || 0),
+            // Calculate totals from normalized data
+            const totalExposure = uploadPreviewData.reduce(
+                (sum, row) => Number(sum) + (row.plafon || 0),
                 0,
             );
-            const totalPremium = normalizedRows.reduce(
-                (sum, row) => Number(sum) + (toNumber(row.nominal_premi) || 0),
+            const totalPremium = uploadPreviewData.reduce(
+                (sum, row) => Number(sum) + (row.nominal_premi || 0),
                 0,
             );
 
@@ -1024,21 +1207,20 @@ export default function SubmitDebtor() {
                     batch_id: batchId,
                     batch_month: new Date().getMonth() + 1,
                     batch_year: new Date().getFullYear(),
-                    contract_id: selectedContract,
-                    total_records: normalizedRows.length,
+                    contract_id: contractId,
+                    total_records: uploadPreviewData.length,
                     total_exposure: totalExposure,
                     total_premium: totalPremium,
                     status: "Uploaded",
                 });
 
-                // Create Bordero first so debtors can reference it
+                // Create Bordero
                 const now = new Date();
                 period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-                borderoId = `BRD-${batchId.replace("BATCH-", "")}`;
 
                 await backend.create("Bordero", {
                     bordero_id: borderoId,
-                    contract_id: selectedContract,
+                    contract_id: contractId,
                     batch_id: batchId,
                     period: period,
                     total_debtors: 0,
@@ -1047,113 +1229,20 @@ export default function SubmitDebtor() {
                     currency: "IDR",
                     status: "GENERATED",
                 });
-            } else {
-                // Revision mode: find existing Bordero for this batch+contract
-                const borderos = await backend.list("Bordero");
-                const match = Array.isArray(borderos)
-                    ? borderos.find(
-                          (b) =>
-                              b.batch_id === batchId &&
-                              b.contract_id === selectedContract,
-                      )
-                    : null;
-
-                if (!match?.bordero_id) {
-                    const borderoMessage = `Bordero not found for batch ${batchId} and contract ${selectedContract}. Please generate Bordero first.`;
-                    setErrorMessage(borderoMessage);
-                    toast.error(borderoMessage);
-                    setUploading(false);
-                    return;
-                }
-
-                borderoId = match.bordero_id;
-                period = match.period || null;
             }
 
-            // Create debtors
-            for (let i = 0; i < normalizedRows.length; i++) {
+            // Create debtors from pre-normalized payloads
+            for (let i = 0; i < uploadPreviewData.length; i++) {
                 try {
-                    const row = normalizedRows[i];
-
-                    const nomorPeserta = toNullableString(row.nomor_peserta);
-                    const namaPeserta = toNullableString(row.nama_peserta);
-
-                    if (!nomorPeserta || !namaPeserta) {
-                        throw new Error(
-                            `Row ${i + 2}: nomor_peserta and nama_peserta are required`,
-                        );
-                    }
-
-                    const payload = {
-                        cover_id: toNullableString(row.cover_id),
-                        program_id: toNullableString(row.program_id),
-                        bordero_id: borderoId,
-                        nomor_rekening_pinjaman: toNullableString(
-                            row.nomor_rekening_pinjaman,
-                        ),
-                        nomor_peserta: nomorPeserta,
-                        loan_type: toNullableString(row.loan_type),
-                        loan_type_desc: toNullableString(row.loan_type_desc),
-                        cif_rekening_pinjaman: toNullableString(
-                            row.cif_rekening_pinjaman,
-                        ),
-                        jenis_pengajuan_desc: toNullableString(
-                            row.jenis_pengajuan_desc,
-                        ),
-                        jenis_covering_desc: toNullableString(
-                            row.jenis_covering_desc,
-                        ),
-                        tanggal_mulai_covering: toIsoDate(
-                            row.tanggal_mulai_covering,
-                        ),
-                        tanggal_akhir_covering: toIsoDate(
-                            row.tanggal_akhir_covering,
-                        ),
-                        plafon: toNumber(row.plafon),
-                        nominal_premi: toNumber(row.nominal_premi),
-                        premi_percentage: toNumber(row.premi_percentage),
-                        premium_amount: toNumber(row.premium_amount),
-                        ric_percentage: toNumber(row.ric_percentage),
-                        ric_amount: toNumber(row.ric_amount),
-                        bf_percentage: toNumber(row.bf_percentage),
-                        bf_amount: toNumber(row.bf_amount),
-                        net_premi: toNumber(row.net_premi),
-                        unit_code: toNullableString(row.unit_code),
-                        unit_desc: toNullableString(row.unit_desc),
-                        branch_desc: toNullableString(row.branch_desc),
-                        region_desc: toNullableString(row.region_desc),
-                        nama_peserta: namaPeserta,
-                        alamat_usaha: toNullableString(row.alamat_usaha),
-                        nomor_perjanjian_kredit: toNullableString(
-                            row.nomor_perjanjian_kredit,
-                        ),
-                        tanggal_terima: toIsoDate(row.tanggal_terima),
-                        tanggal_validasi: toIsoDate(row.tanggal_validasi),
-                        teller_premium_date: toIsoDate(row.teller_premium_date),
-                        status_aktif: toInteger(row.status_aktif),
-                        remark_premi: toNullableString(row.remark_premi),
-                        flag_restruk: toInteger(
-                            row.flag_restruk ?? row.flag_restruktur,
-                        ),
-                        kolektabilitas: toInteger(row.kolektabilitas),
-                        policy_no: toNullableString(row.policy_no),
-                        contract_id: selectedContract,
-                        batch_id: batchId,
-                        version_no: 1,
-                        status: "SUBMITTED",
-                        is_locked: false,
-                    };
-
+                    const payload = uploadPreviewData[i];
                     const createdDebtor = await backend.create("Debtor", payload);
                     if (createdDebtor?.id) {
                         createdDebtorIds.push(createdDebtor.id);
                     }
                     uploaded++;
                 } catch (rowError) {
-                    const rowMessage = rowError?.message || "Unknown upload error";
-                    if (/^Row\s+\d+:/i.test(rowMessage)) {
-                        throw new Error(rowMessage);
-                    }
+                    const rowMessage = rowError?.message ||
+                        "Unknown upload error";
                     throw new Error(`Row ${i + 2}: ${rowMessage}`);
                 }
             }
@@ -1180,10 +1269,12 @@ export default function SubmitDebtor() {
                     entity_type: "Debtor",
                     entity_id: batchId,
                     old_value: "",
-                    new_value: JSON.stringify({ count: normalizedRows.length }),
+                    new_value: JSON.stringify({
+                        count: uploadPreviewData.length,
+                    }),
                     user_email: auditActor?.user_email || user?.email,
                     user_role: auditActor?.user_role || user?.role,
-                    reason: `Uploaded ${normalizedRows.length} debtors to batch ${batchId}`,
+                    reason: `Uploaded ${uploadPreviewData.length} debtors to batch ${batchId}`,
                 });
             } catch (auditError) {
                 console.warn("Failed to create audit log:", auditError);
@@ -1194,14 +1285,14 @@ export default function SubmitDebtor() {
                 const revisionDebtorsInBatch = debtors.filter(
                     (d) =>
                         d.batch_id === selectedBatch &&
-                        d.contract_id === selectedContract &&
+                        d.contract_id === contractId &&
                         d.status === "REVISION",
                 );
 
                 // Get the nomor_peserta of newly uploaded debtors
                 const uploadedNomorPeserta = new Set(
-                    normalizedRows
-                        .map((r) => toNullableString(r.nomor_peserta))
+                    uploadPreviewData
+                        .map((r) => r.nomor_peserta)
                         .filter(Boolean),
                 );
 
@@ -1277,7 +1368,7 @@ export default function SubmitDebtor() {
                 }
             }
 
-            // Create notification
+            // Create notifications
             try {
                 await backend.create("Notification", {
                     title: "Batch Upload Completed",
@@ -1310,28 +1401,33 @@ export default function SubmitDebtor() {
             // Send notification email for upload
             try {
                 sendNotificationEmail({
-                    targetGroup: 'brins-checker',
-                    objectType: 'Record',
-                    statusTo: 'SUBMITTED',
-                    recipientRole: 'BRINS',
+                    targetGroup: "brins-checker",
+                    objectType: "Record",
+                    statusTo: "SUBMITTED",
+                    recipientRole: "BRINS",
                     variables: {
-                        batch_id: batchId || '',
-                        user_name: auditActor?.user_email || user?.email || 'System',
-                        date: new Date().toLocaleDateString('id-ID'),
+                        batch_id: batchId || "",
+                        user_name: auditActor?.user_email || user?.email || "System",
+                        date: new Date().toLocaleDateString("id-ID"),
                         count: String(uploaded),
                     },
-                    fallbackSubject: 'Debtor Upload Completed – Batch {batch_id}',
-                    fallbackBody: '<p>{user_name} has uploaded {count} debtor(s) to batch {batch_id} on {date}. Awaiting review.</p>',
-                }).catch(err => console.error("Background email failed:", err));
+                    fallbackSubject: "Debtor Upload Completed – Batch {batch_id}",
+                    fallbackBody:
+                        "<p>{user_name} has uploaded {count} debtor(s) to batch {batch_id} on {date}. Awaiting review.</p>",
+                }).catch((err) =>
+                    console.error("Background email failed:", err),
+                );
             } catch (emailError) {
-                console.warn('Failed to send notification email:', emailError);
+                console.warn("Failed to send notification email:", emailError);
             }
 
             if (batchMode === "revise") {
                 setSuccessMessage(
                     `Successfully uploaded ${uploaded} revised debtor(s) to batch ${batchId}. Old REVISION data has been moved to ReviseLog.`,
                 );
-                toast.success(`Successfully uploaded ${uploaded} revised debtor(s).`);
+                toast.success(
+                    `Successfully uploaded ${uploaded} revised debtor(s).`,
+                );
             } else {
                 setSuccessMessage(
                     `Successfully uploaded ${uploaded} debtors to batch ${batchId}`,
@@ -1339,11 +1435,15 @@ export default function SubmitDebtor() {
                 toast.success(`Successfully uploaded ${uploaded} debtors.`);
             }
 
+            // Close dialog and reset states
             setUploadDialogOpen(false);
+            setUploadTabActive(1);
+            setUploadPreviewData([]);
             setUploadFile(null);
             setSelectedContract("");
             setBatchMode("new");
             setSelectedBatch("");
+            setErrorMessage("");
 
             // Reload data
             await loadBatches();
@@ -1351,6 +1451,7 @@ export default function SubmitDebtor() {
         } catch (error) {
             console.error("Upload error:", error);
 
+            // Rollback: delete created debtors
             if (createdDebtorIds.length > 0) {
                 for (const debtorId of createdDebtorIds.reverse()) {
                     try {
@@ -1364,7 +1465,17 @@ export default function SubmitDebtor() {
                 }
             }
 
+            // Rollback: delete batch and bordero if in new mode
             if (batchMode === "new") {
+                const borderoId =
+                    uploadPreviewData.length > 0
+                        ? uploadPreviewData[0].bordero_id
+                        : null;
+                const batchId =
+                    uploadPreviewData.length > 0
+                        ? uploadPreviewData[0].batch_id
+                        : null;
+
                 if (borderoId) {
                     try {
                         await backend.delete("Bordero", borderoId);
@@ -1786,113 +1897,233 @@ export default function SubmitDebtor() {
                 />
             </div>
 
-            {/* Upload Dialog */}
+            {/* Upload Dialog - Two Tabs */}
             <Dialog
                 open={uploadDialogOpen}
                 onOpenChange={(open) => {
                     setUploadDialogOpen(open);
                     if (!open) {
+                        // Reset all upload dialog states
                         setErrorMessage("");
+                        setUploadTabActive(1);
+                        setUploadPreviewData([]);
+                        setUploadFile(null);
+                        setSelectedContract("");
+                        setBatchMode("new");
+                        setSelectedBatch("");
                     }
                 }}
             >
-                <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle>Upload Debtors</DialogTitle>
+                <DialogContent
+                    className="max-w-4xl w-full"
+                    style={{
+                        maxHeight: "90vh",
+                        display: "flex",
+                        flexDirection: "column",
+                        overflow: "hidden",
+                    }}
+                >
+                    <DialogHeader className="shrink-0">
+                        <DialogTitle>
+                            {uploadTabActive === 1
+                                ? "Upload Debtors"
+                                : "Debtor Preview"}
+                        </DialogTitle>
                         <DialogDescription>
-                            Upload a CSV/XLS/XLSX file containing debtor information
+                            {uploadTabActive === 1
+                                ? "Upload CSV/XLS/XLSX file containing debtor information"
+                                : "Periksa data sebelum disimpan ke database"}
                         </DialogDescription>
+
+                        {/* Stepper */}
+                        <div className="flex mt-3">
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    uploadTabActive === 1
+                                        ? "border-blue-600 text-blue-600 font-medium"
+                                        : "border-green-600 text-green-600"
+                                }`}
+                            >
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        uploadTabActive === 1
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-green-600 text-white"
+                                    }`}
+                                >
+                                    {uploadTabActive === 1 ? "1" : "✓"}
+                                </div>
+                                Upload Debtors
+                            </div>
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    uploadTabActive === 2
+                                        ? "border-blue-600 text-blue-600 font-medium"
+                                        : "border-gray-200 text-gray-400"
+                                }`}
+                            >
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        uploadTabActive === 2
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-200 text-gray-500"
+                                    }`}
+                                >
+                                    2
+                                </div>
+                                Debtor Preview
+                            </div>
+                        </div>
                     </DialogHeader>
 
-                    {errorMessage && (
-                        <Alert className="border-red-200 bg-red-50">
-                            <AlertCircle className="h-4 w-4 text-red-600" />
-                            <AlertDescription className="text-red-800 space-y-2">
-                                <p className="font-medium">{uploadErrorView.summary}</p>
-                                {uploadErrorView.title && (
-                                    <p className="text-sm">{uploadErrorView.title}</p>
+                    <div className="py-4 space-y-4 overflow-y-auto flex-1 min-h-0 pr-1">
+                        {/* Tab 1: Upload */}
+                        {uploadTabActive === 1 && (
+                            <>
+                                {errorMessage && (
+                                    <Alert className="border-red-200 bg-red-50">
+                                        <AlertCircle className="h-4 w-4 text-red-600" />
+                                        <AlertDescription className="text-red-800 space-y-2">
+                                            <p className="font-medium">
+                                                {uploadErrorView.summary}
+                                            </p>
+                                            {uploadErrorView.title && (
+                                                <p className="text-sm">
+                                                    {uploadErrorView.title}
+                                                </p>
+                                            )}
+                                            {uploadErrorView.items.length > 0 && (
+                                                <ul className="list-disc pl-5 space-y-1 text-sm">
+                                                    {uploadErrorView.items.map(
+                                                        (item) => (
+                                                            <li key={item}>
+                                                                {item}
+                                                            </li>
+                                                        ),
+                                                    )}
+                                                </ul>
+                                            )}
+                                        </AlertDescription>
+                                    </Alert>
                                 )}
-                                {uploadErrorView.items.length > 0 && (
-                                    <ul className="list-disc pl-5 space-y-1 text-sm">
-                                        {uploadErrorView.items.map((item) => (
-                                            <li key={item}>{item}</li>
-                                        ))}
-                                    </ul>
-                                )}
-                            </AlertDescription>
-                        </Alert>
-                    )}
 
-                    <div className="space-y-4">
-                        <div>
-                            <Label>Select Contract *</Label>
-                            <Select
-                                value={selectedContract}
-                                onValueChange={(val) => {
-                                    setSelectedContract(val);
-                                    // Reset batch when contract changes
-                                    setSelectedBatch("");
-                                }}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select contract" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {activeContracts.map((c) => (
-                                        <SelectItem
-                                            key={c.contract_id}
-                                            value={c.contract_id}
+                                <div>
+                                    <Label>Select Contract *</Label>
+                                    <Select
+                                        value={selectedContract}
+                                        onValueChange={(val) => {
+                                            setSelectedContract(val);
+                                            // Reset batch when contract changes
+                                            setSelectedBatch("");
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select contract" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {activeContracts.map((c) => (
+                                                <SelectItem
+                                                    key={c.contract_id}
+                                                    value={c.contract_id}
+                                                >
+                                                    {c.contract_id} -
+                                                    {c.contract_status}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div>
+                                    <Label>Batch Mode *</Label>
+                                    <Select
+                                        value={batchMode}
+                                        onValueChange={setBatchMode}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="new">
+                                                New Batch
+                                            </SelectItem>
+                                            <SelectItem value="revise">
+                                                Revise Existing Batch
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                {batchMode === "revise" && (
+                                    <div>
+                                        <Label>
+                                            Select Batch to Revise *
+                                        </Label>
+                                        <Select
+                                            value={selectedBatch}
+                                            onValueChange={setSelectedBatch}
                                         >
-                                            {c.contract_id} - {c.contract_status}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div>
-                            <Label>Batch Mode *</Label>
-                            <Select
-                                value={batchMode}
-                                onValueChange={setBatchMode}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="new">
-                                        New Batch
-                                    </SelectItem>
-                                    <SelectItem value="revise">
-                                        Revise Existing Batch
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {batchMode === "revise" && (
-                            <div>
-                                <Label>Select Batch to Revise *</Label>
-                                <Select
-                                    value={selectedBatch}
-                                    onValueChange={setSelectedBatch}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select batch" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {/* Only show batches for the selected contract that have REVISION debtors */}
-                                        {batches
-                                            .filter((b) => {
-                                                if (!selectedContract)
-                                                    return false;
-                                                if (
-                                                    b.contract_id !==
-                                                    selectedContract
-                                                )
-                                                    return false;
-                                                // Check if this batch has debtors with REVISION status
-                                                const hasRevisionDebtors =
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select batch" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {batches
+                                                    .filter((b) => {
+                                                        if (!selectedContract)
+                                                            return false;
+                                                        if (
+                                                            b.contract_id !==
+                                                            selectedContract
+                                                        )
+                                                            return false;
+                                                        // Check if this batch has debtors with REVISION status
+                                                        const hasRevisionDebtors =
+                                                            debtors.some(
+                                                                (d) =>
+                                                                    d.batch_id ===
+                                                                        b.batch_id &&
+                                                                    d.contract_id ===
+                                                                        selectedContract &&
+                                                                    d.status ===
+                                                                        "REVISION",
+                                                            );
+                                                        return hasRevisionDebtors;
+                                                    })
+                                                    .map((b) => {
+                                                        const revCount =
+                                                            debtors.filter(
+                                                                (d) =>
+                                                                    d.batch_id ===
+                                                                        b.batch_id &&
+                                                                    d.contract_id ===
+                                                                        selectedContract &&
+                                                                    d.status ===
+                                                                        "REVISION",
+                                                            ).length;
+                                                        return (
+                                                            <SelectItem
+                                                                key={
+                                                                    b.batch_id
+                                                                }
+                                                                value={
+                                                                    b.batch_id
+                                                                }
+                                                            >
+                                                                {b.batch_id} —{" "}
+                                                                {revCount}{" "}
+                                                                debtor(s) need
+                                                                revision
+                                                            </SelectItem>
+                                                        );
+                                                    })}
+                                            </SelectContent>
+                                        </Select>
+                                        {selectedContract &&
+                                            batchMode === "revise" &&
+                                            batches.filter(
+                                                (b) =>
+                                                    b.contract_id ===
+                                                        selectedContract &&
                                                     debtors.some(
                                                         (d) =>
                                                             d.batch_id ===
@@ -1901,118 +2132,277 @@ export default function SubmitDebtor() {
                                                                 selectedContract &&
                                                             d.status ===
                                                                 "REVISION",
-                                                    );
-                                                return hasRevisionDebtors;
-                                            })
-                                            .map((b) => {
-                                                const revCount = debtors.filter(
-                                                    (d) =>
-                                                        d.batch_id ===
-                                                            b.batch_id &&
-                                                        d.contract_id ===
-                                                            selectedContract &&
-                                                        d.status === "REVISION",
-                                                ).length;
-                                                return (
-                                                    <SelectItem
-                                                        key={b.batch_id}
-                                                        value={b.batch_id}
-                                                    >
-                                                        {b.batch_id} —{" "}
-                                                        {revCount} debtor(s)
-                                                        need revision
-                                                    </SelectItem>
-                                                );
-                                            })}
-                                    </SelectContent>
-                                </Select>
-                                {selectedContract &&
-                                    batchMode === "revise" &&
-                                    batches.filter(
-                                        (b) =>
-                                            b.contract_id ===
-                                                selectedContract &&
-                                            debtors.some(
-                                                (d) =>
-                                                    d.batch_id === b.batch_id &&
-                                                    d.contract_id ===
-                                                        selectedContract &&
-                                                    d.status === "REVISION",
-                                            ),
-                                    ).length === 0 && (
-                                        <p className="text-sm text-red-600 mt-1">
-                                            No batches with REVISION debtors
-                                            found for this contract.
+                                                    ),
+                                            ).length === 0 && (
+                                                <p className="text-sm text-red-600 mt-1">
+                                                    No batches with REVISION
+                                                    debtors found for this
+                                                    contract.
+                                                </p>
+                                            )}
+                                    </div>
+                                )}
+
+                                <div>
+                                    <Label>Upload File *</Label>
+                                    <Input
+                                        type="file"
+                                        accept=".csv,.xlsx,.xls"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            setUploadFile(file);
+                                        }}
+                                    />
+                                    {uploadFile && (
+                                        <p className="text-sm text-gray-600 mt-1">
+                                            Selected: {uploadFile.name}
                                         </p>
                                     )}
-                            </div>
+                                </div>
+
+                                <Alert>
+                                    <FileSpreadsheet className="h-4 w-4" />
+                                    <AlertDescription>
+                                        Download the template first to see the
+                                        required format. Make sure all required
+                                        fields are filled.
+                                    </AlertDescription>
+                                </Alert>
+
+                                {batchMode === "revise" && (
+                                    <Alert className="border-orange-200 bg-orange-50">
+                                        <AlertCircle className="h-4 w-4 text-orange-600" />
+                                        <AlertDescription className="text-orange-800">
+                                            <strong>Revise Mode:</strong> The
+                                            upload file must only contain debtors
+                                            that were marked for REVISION. Each
+                                            debtor's{" "}
+                                            <code className="font-mono text-xs bg-orange-100 px-1 rounded">
+                                                nomor_peserta
+                                            </code>{" "}
+                                            must match a REVISION debtor in the
+                                            selected batch. Old REVISION data
+                                            will be moved to ReviseLog after
+                                            upload.
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
+                            </>
                         )}
 
-                        <div>
-                            <Label>Upload File *</Label>
-                            <Input
-                                type="file"
-                                accept=".csv,.xlsx,.xls"
-                                onChange={(e) =>
-                                    setUploadFile(e.target.files?.[0])
-                                }
-                            />
-                            {uploadFile && (
-                                <p className="text-sm text-gray-600 mt-1">
-                                    Selected: {uploadFile.name}
-                                </p>
-                            )}
-                        </div>
+                        {/* Tab 2: Preview */}
+                        {uploadTabActive === 2 && (
+                            <>
+                                <div className="flex gap-3 flex-wrap">
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">
+                                            Total Rows
+                                        </p>
+                                        <p className="text-xl font-medium">
+                                            {uploadPreviewData.length}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">
+                                            Mode
+                                        </p>
+                                        <p className="text-sm font-medium mt-1">
+                                            {batchMode === "new"
+                                                ? "New Batch"
+                                                : "Revise"}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">
+                                            Contract
+                                        </p>
+                                        <p className="text-sm font-medium mt-1">
+                                            {selectedContract || "-"}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">
+                                            File
+                                        </p>
+                                        <p className="text-sm font-medium mt-1">
+                                            {uploadFile?.name || "-"}
+                                        </p>
+                                    </div>
+                                </div>
 
-                        <Alert>
-                            <FileSpreadsheet className="h-4 w-4" />
-                            <AlertDescription>
-                                Download the template first to see the required
-                                format. Make sure all required fields are
-                                filled.
-                            </AlertDescription>
-                        </Alert>
+                                <Alert className="bg-blue-50 border-blue-200">
+                                    <AlertCircle className="h-4 w-4 text-blue-600" />
+                                    <AlertDescription className="text-blue-700">
+                                        Below is a preview of the data that will
+                                        be saved. Please review it before
+                                        confirming.
+                                    </AlertDescription>
+                                </Alert>
 
-                        {batchMode === "revise" && (
-                            <Alert className="border-orange-200 bg-orange-50">
-                                <AlertCircle className="h-4 w-4 text-orange-600" />
-                                <AlertDescription className="text-orange-800">
-                                    <strong>Revise Mode:</strong> The upload
-                                    file must only contain debtors that were
-                                    marked for REVISION. Each debtor's{" "}
-                                    <code className="font-mono text-xs bg-orange-100 px-1 rounded">
-                                        nomor_peserta
-                                    </code>{" "}
-                                    must match a REVISION debtor in the selected
-                                    batch. Old REVISION data will be moved to
-                                    ReviseLog after upload.
-                                </AlertDescription>
-                            </Alert>
+                                {uploadPreviewLoading && (
+                                    <div className="flex items-center justify-center py-8">
+                                        <Loader2 className="w-5 h-5 animate-spin text-blue-600 mr-2" />
+                                        <span className="text-sm text-gray-600">
+                                            Generating preview...
+                                        </span>
+                                    </div>
+                                )}
+
+                                {!uploadPreviewLoading && (
+                                    <div
+                                        style={{
+                                            overflowX: "auto",
+                                            overflowY: "auto",
+                                            maxHeight: "500px",
+                                            border: "1px solid #e5e7eb",
+                                            borderRadius: "8px",
+                                            width: "100%",
+                                        }}
+                                    >
+                                        <table
+                                            className="text-xs"
+                                            style={{
+                                                minWidth: "max-content",
+                                                borderCollapse: "collapse",
+                                            }}
+                                        >
+                                            <thead className="bg-gray-50 sticky top-0 z-10">
+                                                <tr>
+                                                    <th className="px-4 py-2 text-left font-medium text-gray-700 border-b border-r border-gray-200 whitespace-nowrap bg-gray-100 min-w-fit">
+                                                        #
+                                                    </th>
+                                                    {getPreviewColumnKeys().map(
+                                                        (key) => (
+                                                            <th
+                                                                key={key}
+                                                                className="px-4 py-2 text-left font-medium text-gray-700 border-b border-r border-gray-200 whitespace-nowrap bg-gray-100 min-w-fit"
+                                                            >
+                                                                {formatHeaderName(
+                                                                    key,
+                                                                )}
+                                                            </th>
+                                                        ),
+                                                    )}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {uploadPreviewData.map(
+                                                    (row, rowIndex) => (
+                                                        <tr
+                                                            key={rowIndex}
+                                                            className={
+                                                                rowIndex % 2 ===
+                                                                0
+                                                                    ? "bg-white"
+                                                                    : "bg-gray-50"
+                                                            }
+                                                        >
+                                                            <td className="px-4 py-2 border-r border-gray-200 text-gray-900 text-center font-medium min-w-fit">
+                                                                {rowIndex + 1}
+                                                            </td>
+                                                            {getPreviewColumnKeys().map(
+                                                                (key) => (
+                                                                    <td
+                                                                        key={`${rowIndex}-${key}`}
+                                                                        className="px-4 py-2 border-r border-gray-200 text-gray-900 whitespace-nowrap min-w-fit"
+                                                                        title={String(
+                                                                            row[
+                                                                                key
+                                                                            ] ||
+                                                                                "-"
+                                                                        )}
+                                                                    >
+                                                                        {formatCellValue(
+                                                                            key,
+                                                                            row[
+                                                                                key
+                                                                            ],
+                                                                        )}
+                                                                    </td>
+                                                                ),
+                                                            )}
+                                                        </tr>
+                                                    ),
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
 
                     {canShowActionButtons && (
-                        <DialogFooter>
-                            <Button
-                                variant="outline"
-                                onClick={() => setUploadDialogOpen(false)}
-                                disabled={uploading}
-                            >
-                                Cancel
-                            </Button>
-                            <Button onClick={handleBulkUpload} disabled={uploading}>
-                                {uploading ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Uploading...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Upload className="w-4 h-4 mr-2" />
-                                        Upload
-                                    </>
-                                )}
-                            </Button>
+                        <DialogFooter className="shrink-0 border-t pt-4">
+                            {uploadTabActive === 1 && (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() =>
+                                            setUploadDialogOpen(false)
+                                        }
+                                        disabled={uploadPreviewLoading}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        onClick={handlePreviewData}
+                                        disabled={uploadPreviewLoading}
+                                    >
+                                        {uploadPreviewLoading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                Processing...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Eye className="w-4 h-4 mr-2" />
+                                                Preview Data
+                                            </>
+                                        )}
+                                    </Button>
+                                </>
+                            )}
+                            {uploadTabActive === 2 && (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            setUploadTabActive(1);
+                                            setErrorMessage("");
+                                        }}
+                                        disabled={uploading}
+                                    >
+                                        <ChevronLeft className="w-4 h-4 mr-2" />
+                                        Back to Upload
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() =>
+                                            setUploadDialogOpen(false)
+                                        }
+                                        disabled={uploading}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        onClick={handleConfirmSave}
+                                        disabled={uploading}
+                                    >
+                                        {uploading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                Uploading...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Upload className="w-4 h-4 mr-2" />
+                                                Confirm Upload
+                                            </>
+                                        )}
+                                    </Button>
+                                </>
+                            )}
                         </DialogFooter>
                     )}
                 </DialogContent>

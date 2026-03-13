@@ -1177,13 +1177,13 @@ export default function NotaManagement() {
             )}
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full max-w-3xl grid-cols-3">
+                {/* <TabsList className="grid w-full max-w-3xl grid-cols-3">
                     <TabsTrigger value="notas">Notas</TabsTrigger>
                     <TabsTrigger value="reconciliation">
                         Reconciliation
                     </TabsTrigger>
                     <TabsTrigger value="dncn">Exception</TabsTrigger>
-                </TabsList>
+                </TabsList> */}
 
                 {/* NOTAS TAB */}
                 <TabsContent value="notas" className="space-y-6">

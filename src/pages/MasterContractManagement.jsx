@@ -57,7 +57,13 @@ const defaultFilter = {
 };
 
 const normalizeRole = (role = "") => String(role).trim().toLowerCase();
-const ALL_ROLE_NAMES = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role"];
+const ALL_ROLE_NAMES = [
+    "maker-brins-role",
+    "checker-brins-role",
+    "approver-brins-role",
+    "checker-tugure-role",
+    "approver-tugure-role",
+];
 const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
 const BRINS_UPLOAD_ROLES = ["maker-brins-role", "checker-brins-role"];
 const hasTugureActionRole = (roles = []) =>
@@ -97,12 +103,16 @@ export default function MasterContractManagement() {
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [statsContracts, setStatsContracts] = useState([]); // full list for stat cards only
+    const [uploadPreviewData, setUploadPreviewData] = useState([]);
+    const [uploadTabActive, setUploadTabActive] = useState(1); // 1 = upload, 2 = preview
     const pageSize = 10;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const canManageUploadTemplate = hasBrinsUploadRole(tokenRoles);
 
     // Per-role booleans for multi-step approval
-    const normalizedRoles = (Array.isArray(tokenRoles) ? tokenRoles : []).map(normalizeRole);
+    const normalizedRoles = (Array.isArray(tokenRoles) ? tokenRoles : []).map(
+        normalizeRole,
+    );
     const isCheckerBrins = normalizedRoles.includes("checker-brins-role");
     const isApproverBrins = normalizedRoles.includes("approver-brins-role");
     const isCheckerTugure = normalizedRoles.includes("checker-tugure-role");
@@ -125,8 +135,12 @@ export default function MasterContractManagement() {
         }
         loadData(1, filters);
     }, [
-        filters.status, filters.contractId, filters.productType,
-        filters.creditType, filters.startDate, filters.endDate,
+        filters.status,
+        filters.contractId,
+        filters.productType,
+        filters.creditType,
+        filters.startDate,
+        filters.endDate,
     ]);
 
     // Reload when page changes
@@ -145,7 +159,8 @@ export default function MasterContractManagement() {
 
     const loadUser = async () => {
         try {
-            const { default: keycloakService } = await import('@/services/keycloakService');
+            const { default: keycloakService } =
+                await import("@/services/keycloakService");
             const userInfo = keycloakService.getCurrentUserInfo();
             if (userInfo) {
                 const roles = keycloakService.getRoles();
@@ -157,7 +172,12 @@ export default function MasterContractManagement() {
                     (Array.isArray(roles) && roles.length > 0
                         ? normalizeRole(roles[0])
                         : "user");
-                setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
+                setUser({
+                    id: userInfo.id,
+                    email: userInfo.email,
+                    full_name: userInfo.name,
+                    role,
+                });
             }
         } catch (error) {
             console.error("Failed to load user:", error);
@@ -389,7 +409,10 @@ export default function MasterContractManagement() {
         return `MC-${stamp}-${String(index).padStart(3, "0")}`;
     };
 
-    const readableError = (error, fallback = "Terjadi kesalahan saat memproses data") => {
+    const readableError = (
+        error,
+        fallback = "Terjadi kesalahan saat memproses data",
+    ) => {
         const msg = String(error?.message || "").trim();
         if (!msg) return fallback;
 
@@ -412,18 +435,15 @@ export default function MasterContractManagement() {
         return msg;
     };
 
-    const handleUploadExcel = async () => {
+    // Fungsi ini dipanggil saat tombol "Preview Data" diklik
+    const handlePreviewExcel = async () => {
         if (!uploadFile) return;
-
         if (uploadMode === "revise" && !selectedContractForRevision) {
             setErrorMessage("Please select a contract to revise");
             return;
         }
-
         setProcessing(true);
         setErrorMessage("");
-        setSuccessMessage("");
-
         try {
             const rows = await parseUploadFile(uploadFile);
             if (!rows || rows.length === 0) {
@@ -431,13 +451,9 @@ export default function MasterContractManagement() {
                 setProcessing(false);
                 return;
             }
-
             const contractsPayload = rows.map((row, i) => {
                 const derivedId = buildContractId(row, i + 1);
-                const contractId =
-                    uploadMode === "revise"
-                        ? null
-                        : derivedId;
+                const contractId = uploadMode === "revise" ? null : derivedId;
 
                 return {
                     contract_id: contractId,
@@ -458,7 +474,9 @@ export default function MasterContractManagement() {
                     bank_obligee: toNullableString(row.bank_obligee),
 
                     endorsement_type: toNullableString(row.endorsement_type),
-                    endorsement_reason: toNullableString(row.endorsement_reason),
+                    endorsement_reason: toNullableString(
+                        row.endorsement_reason,
+                    ),
                     endorsement_reason_detail: toNullableString(
                         row.endorsement_reason_detail,
                     ),
@@ -543,13 +561,26 @@ export default function MasterContractManagement() {
                 };
             });
 
+            setUploadPreviewData(contractsPayload);
+            setUploadTabActive(2); // pindah ke tab preview
+        } catch (error) {
+            setErrorMessage(readableError(error));
+        }
+        setProcessing(false);
+    };
+
+    const handleConfirmSave = async () => {
+        setProcessing(true);
+        setErrorMessage("");
+        setSuccessMessage("");
+        try {
             const result = await backend.uploadMasterContractsAtomic({
                 uploadMode,
                 selectedContractForRevision:
                     uploadMode === "revise"
                         ? selectedContractForRevision
                         : null,
-                contracts: contractsPayload,
+                contracts: uploadPreviewData,
             });
 
             const uploaded = Number(result?.createdCount || 0);
@@ -562,20 +593,24 @@ export default function MasterContractManagement() {
             // Send notification email for upload
             try {
                 sendNotificationEmail({
-                    targetGroup: 'brins-checker',
-                    objectType: 'Contract',
-                    statusTo: 'Draft/Active',
-                    recipientRole: 'BRINS',
+                    targetGroup: "brins-checker",
+                    objectType: "Contract",
+                    statusTo: "Draft/Active",
+                    recipientRole: "BRINS",
                     variables: {
-                        user_name: auditActor?.user_email || user?.email || 'System',
-                        date: new Date().toLocaleDateString('id-ID'),
+                        user_name:
+                            auditActor?.user_email || user?.email || "System",
+                        date: new Date().toLocaleDateString("id-ID"),
                         count: String(uploaded),
                     },
-                    fallbackSubject: 'Contracts Uploaded',
-                    fallbackBody: '<p>{user_name} has uploaded {count} contract(s) on {date}. Awaiting review.</p>',
-                }).catch(err => console.error("Background email failed:", err));
+                    fallbackSubject: "Contracts Uploaded",
+                    fallbackBody:
+                        "<p>{user_name} has uploaded {count} contract(s) on {date}. Awaiting review.</p>",
+                }).catch((err) =>
+                    console.error("Background email failed:", err),
+                );
             } catch (emailError) {
-                console.warn('Failed to send notification email:', emailError);
+                console.warn("Failed to send notification email:", emailError);
             }
 
             setShowUploadDialog(false);
@@ -585,12 +620,13 @@ export default function MasterContractManagement() {
             loadData(page, filters);
             loadStats();
         } catch (error) {
-            console.error("Upload error:", error);
             setErrorMessage(
-                readableError(error, "Upload gagal. Periksa data dan coba lagi."),
+                readableError(
+                    error,
+                    "Upload gagal. Periksa data dan coba lagi.",
+                ),
             );
         }
-
         setProcessing(false);
     };
 
@@ -606,14 +642,20 @@ export default function MasterContractManagement() {
         try {
             let processedCount = 0;
             for (const contractId of selectedContractIds) {
-                const contract = contracts.find((c) => (c.contract_id || c.id) === contractId);
+                const contract = contracts.find(
+                    (c) => (c.contract_id || c.id) === contractId,
+                );
                 if (!contract) continue;
                 const status = (contract.contract_status || "").toString();
                 if (status !== "Draft" && status !== "Active") continue;
 
-                await backend.update("MasterContract", contract.contract_id || contract.id, {
-                    contract_status: "CHECKED_BRINS",
-                });
+                await backend.update(
+                    "MasterContract",
+                    contract.contract_id || contract.id,
+                    {
+                        contract_status: "CHECKED_BRINS",
+                    },
+                );
                 processedCount++;
 
                 try {
@@ -634,13 +676,19 @@ export default function MasterContractManagement() {
             }
 
             if (processedCount === 0) {
-                toast.warning("No contracts with Draft/Active status were found in your selection.");
+                toast.warning(
+                    "No contracts with Draft/Active status were found in your selection.",
+                );
                 setSelectedContractIds([]);
                 setProcessing(false);
                 return;
             }
 
-            const brinsRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role"];
+            const brinsRoles = [
+                "maker-brins-role",
+                "checker-brins-role",
+                "approver-brins-role",
+            ];
             for (const role of brinsRoles) {
                 try {
                     await backend.create("Notification", {
@@ -658,23 +706,29 @@ export default function MasterContractManagement() {
             // Send notification email for status transition
             try {
                 sendNotificationEmail({
-                    targetGroup: 'brins-approver',
-                    objectType: 'Contract',
-                    statusTo: 'CHECKED_BRINS',
-                    recipientRole: 'BRINS',
+                    targetGroup: "brins-approver",
+                    objectType: "Contract",
+                    statusTo: "CHECKED_BRINS",
+                    recipientRole: "BRINS",
                     variables: {
-                        user_name: auditActor?.user_email || user?.email || 'System',
-                        date: new Date().toLocaleDateString('id-ID'),
+                        user_name:
+                            auditActor?.user_email || user?.email || "System",
+                        date: new Date().toLocaleDateString("id-ID"),
                         count: String(processedCount),
                     },
-                    fallbackSubject: 'Contracts Checked',
-                    fallbackBody: '<p>{user_name} has checked {count} contract(s) on {date}. Awaiting Approver BRINS approval.</p>',
-                }).catch(err => console.error("Background email failed:", err));
+                    fallbackSubject: "Contracts Checked",
+                    fallbackBody:
+                        "<p>{user_name} has checked {count} contract(s) on {date}. Awaiting Approver BRINS approval.</p>",
+                }).catch((err) =>
+                    console.error("Background email failed:", err),
+                );
             } catch (emailError) {
-                console.warn('Failed to send notification email:', emailError);
+                console.warn("Failed to send notification email:", emailError);
             }
 
-            setSuccessMessage(`${processedCount} contract(s) checked successfully.`);
+            setSuccessMessage(
+                `${processedCount} contract(s) checked successfully.`,
+            );
             toast.success(`${processedCount} contract(s) checked.`);
             setSelectedContractIds([]);
             loadData(page, filters);
@@ -698,12 +752,19 @@ export default function MasterContractManagement() {
         try {
             let processedCount = 0;
             for (const contractId of selectedContractIds) {
-                const contract = contracts.find((c) => (c.contract_id || c.id) === contractId);
-                if (!contract || contract.contract_status !== "CHECKED_BRINS") continue;
+                const contract = contracts.find(
+                    (c) => (c.contract_id || c.id) === contractId,
+                );
+                if (!contract || contract.contract_status !== "CHECKED_BRINS")
+                    continue;
 
-                await backend.update("MasterContract", contract.contract_id || contract.id, {
-                    contract_status: "APPROVED_BRINS",
-                });
+                await backend.update(
+                    "MasterContract",
+                    contract.contract_id || contract.id,
+                    {
+                        contract_status: "APPROVED_BRINS",
+                    },
+                );
                 processedCount++;
 
                 try {
@@ -724,13 +785,21 @@ export default function MasterContractManagement() {
             }
 
             if (processedCount === 0) {
-                toast.warning("No contracts with CHECKED_BRINS status were found in your selection.");
+                toast.warning(
+                    "No contracts with CHECKED_BRINS status were found in your selection.",
+                );
                 setSelectedContractIds([]);
                 setProcessing(false);
                 return;
             }
 
-            const allRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role"];
+            const allRoles = [
+                "maker-brins-role",
+                "checker-brins-role",
+                "approver-brins-role",
+                "checker-tugure-role",
+                "approver-tugure-role",
+            ];
             for (const role of allRoles) {
                 try {
                     await backend.create("Notification", {
@@ -748,23 +817,29 @@ export default function MasterContractManagement() {
             // Send notification email for status transition
             try {
                 sendNotificationEmail({
-                    targetGroup: 'tugure-checker',
-                    objectType: 'Contract',
-                    statusTo: 'APPROVED_BRINS',
-                    recipientRole: 'TUGURE',
+                    targetGroup: "tugure-checker",
+                    objectType: "Contract",
+                    statusTo: "APPROVED_BRINS",
+                    recipientRole: "TUGURE",
                     variables: {
-                        user_name: auditActor?.user_email || user?.email || 'System',
-                        date: new Date().toLocaleDateString('id-ID'),
+                        user_name:
+                            auditActor?.user_email || user?.email || "System",
+                        date: new Date().toLocaleDateString("id-ID"),
                         count: String(processedCount),
                     },
-                    fallbackSubject: 'Contracts Approved by BRINS',
-                    fallbackBody: '<p>{user_name} has approved {count} contract(s) on {date}. Now available for Tugure review.</p>',
-                }).catch(err => console.error("Background email failed:", err));
+                    fallbackSubject: "Contracts Approved by BRINS",
+                    fallbackBody:
+                        "<p>{user_name} has approved {count} contract(s) on {date}. Now available for Tugure review.</p>",
+                }).catch((err) =>
+                    console.error("Background email failed:", err),
+                );
             } catch (emailError) {
-                console.warn('Failed to send notification email:', emailError);
+                console.warn("Failed to send notification email:", emailError);
             }
 
-            setSuccessMessage(`${processedCount} contract(s) approved by BRINS. Now available for Tugure review.`);
+            setSuccessMessage(
+                `${processedCount} contract(s) approved by BRINS. Now available for Tugure review.`,
+            );
             toast.success(`${processedCount} contract(s) approved by BRINS.`);
             setSelectedContractIds([]);
             loadData(page, filters);
@@ -788,12 +863,19 @@ export default function MasterContractManagement() {
         try {
             let processedCount = 0;
             for (const contractId of selectedContractIds) {
-                const contract = contracts.find((c) => (c.contract_id || c.id) === contractId);
-                if (!contract || contract.contract_status !== "APPROVED_BRINS") continue;
+                const contract = contracts.find(
+                    (c) => (c.contract_id || c.id) === contractId,
+                );
+                if (!contract || contract.contract_status !== "APPROVED_BRINS")
+                    continue;
 
-                await backend.update("MasterContract", contract.contract_id || contract.id, {
-                    contract_status: "CHECKED_TUGURE",
-                });
+                await backend.update(
+                    "MasterContract",
+                    contract.contract_id || contract.id,
+                    {
+                        contract_status: "CHECKED_TUGURE",
+                    },
+                );
                 processedCount++;
 
                 try {
@@ -814,7 +896,9 @@ export default function MasterContractManagement() {
             }
 
             if (processedCount === 0) {
-                toast.warning("No contracts with APPROVED_BRINS status were found in your selection.");
+                toast.warning(
+                    "No contracts with APPROVED_BRINS status were found in your selection.",
+                );
                 setSelectedContractIds([]);
                 setProcessing(false);
                 return;
@@ -837,23 +921,29 @@ export default function MasterContractManagement() {
             // Send notification email for status transition
             try {
                 sendNotificationEmail({
-                    targetGroup: 'tugure-approver',
-                    objectType: 'Contract',
-                    statusTo: 'CHECKED_TUGURE',
-                    recipientRole: 'TUGURE',
+                    targetGroup: "tugure-approver",
+                    objectType: "Contract",
+                    statusTo: "CHECKED_TUGURE",
+                    recipientRole: "TUGURE",
                     variables: {
-                        user_name: auditActor?.user_email || user?.email || 'System',
-                        date: new Date().toLocaleDateString('id-ID'),
+                        user_name:
+                            auditActor?.user_email || user?.email || "System",
+                        date: new Date().toLocaleDateString("id-ID"),
                         count: String(processedCount),
                     },
-                    fallbackSubject: 'Contracts Checked by Tugure',
-                    fallbackBody: '<p>{user_name} has checked {count} contract(s) on {date}. Awaiting Tugure Approver final decision.</p>',
-                }).catch(err => console.error("Background email failed:", err));
+                    fallbackSubject: "Contracts Checked by Tugure",
+                    fallbackBody:
+                        "<p>{user_name} has checked {count} contract(s) on {date}. Awaiting Tugure Approver final decision.</p>",
+                }).catch((err) =>
+                    console.error("Background email failed:", err),
+                );
             } catch (emailError) {
-                console.warn('Failed to send notification email:', emailError);
+                console.warn("Failed to send notification email:", emailError);
             }
 
-            setSuccessMessage(`${processedCount} contract(s) checked by Tugure. Awaiting final approval.`);
+            setSuccessMessage(
+                `${processedCount} contract(s) checked by Tugure. Awaiting final approval.`,
+            );
             toast.success(`${processedCount} contract(s) checked by Tugure.`);
             setSelectedContractIds([]);
             loadData(page, filters);
@@ -877,22 +967,31 @@ export default function MasterContractManagement() {
         setErrorMessage("");
         setSuccessMessage("");
         try {
-            const newStatus = approvalAction === "REVISION" ? "REVISION" : "APPROVED";
+            const newStatus =
+                approvalAction === "REVISION" ? "REVISION" : "APPROVED";
             let processedCount = 0;
             for (const contractId of selectedContractIds) {
-                const contract = contracts.find((c) => (c.contract_id || c.id) === contractId);
-                if (!contract || contract.contract_status !== "CHECKED_TUGURE") continue;
+                const contract = contracts.find(
+                    (c) => (c.contract_id || c.id) === contractId,
+                );
+                if (!contract || contract.contract_status !== "CHECKED_TUGURE")
+                    continue;
 
                 const updateData = { contract_status: newStatus };
                 if (newStatus === "APPROVED") {
-                    updateData.first_approved_by = auditActor?.user_email || user?.email;
+                    updateData.first_approved_by =
+                        auditActor?.user_email || user?.email;
                     updateData.first_approved_date = new Date().toISOString();
                 }
                 if (newStatus === "REVISION" && approvalRemarks) {
                     updateData.revision_reason = approvalRemarks;
                 }
 
-                await backend.update("MasterContract", contract.contract_id || contract.id, updateData);
+                await backend.update(
+                    "MasterContract",
+                    contract.contract_id || contract.id,
+                    updateData,
+                );
                 processedCount++;
 
                 try {
@@ -902,10 +1001,15 @@ export default function MasterContractManagement() {
                         entity_type: "MasterContract",
                         entity_id: contract.contract_id || contract.id,
                         old_value: JSON.stringify({ status: "CHECKED_TUGURE" }),
-                        new_value: JSON.stringify({ status: newStatus, remarks: approvalRemarks }),
+                        new_value: JSON.stringify({
+                            status: newStatus,
+                            remarks: approvalRemarks,
+                        }),
                         user_email: auditActor?.user_email || user?.email,
                         user_role: auditActor?.user_role || user?.role,
-                        reason: approvalRemarks || `Approver Tugure ${newStatus.toLowerCase()} contract`,
+                        reason:
+                            approvalRemarks ||
+                            `Approver Tugure ${newStatus.toLowerCase()} contract`,
                     });
                 } catch (auditError) {
                     console.warn("Failed to create audit log:", auditError);
@@ -913,7 +1017,9 @@ export default function MasterContractManagement() {
             }
 
             if (processedCount === 0) {
-                toast.warning("No contracts with CHECKED_TUGURE status were found in your selection.");
+                toast.warning(
+                    "No contracts with CHECKED_TUGURE status were found in your selection.",
+                );
                 setSelectedContractIds([]);
                 setProcessing(false);
                 return;
@@ -922,7 +1028,10 @@ export default function MasterContractManagement() {
             for (const role of ALL_ROLE_NAMES) {
                 try {
                     await backend.create("Notification", {
-                        title: newStatus === "APPROVED" ? "Contracts Approved (Final)" : "Contracts Marked for Revision",
+                        title:
+                            newStatus === "APPROVED"
+                                ? "Contracts Approved (Final)"
+                                : "Contracts Marked for Revision",
                         message: `${auditActor?.user_email || user?.email} ${newStatus === "APPROVED" ? "approved" : "marked for revision"} ${processedCount} contract(s).`,
                         type: newStatus === "REVISION" ? "WARNING" : "INFO",
                         module: "CONFIG",
@@ -936,25 +1045,38 @@ export default function MasterContractManagement() {
             // Send notification email for status transition
             try {
                 sendNotificationEmail({
-                    targetGroup: newStatus === "REVISION" ? 'brins-maker' : 'tugure-approver', // If approved, maybe no-one needs it or we send to a generic group
-                    objectType: 'Contract',
+                    targetGroup:
+                        newStatus === "REVISION"
+                            ? "brins-maker"
+                            : "tugure-approver", // If approved, maybe no-one needs it or we send to a generic group
+                    objectType: "Contract",
                     statusTo: newStatus,
-                    recipientRole: newStatus === "REVISION" ? 'BRINS' : 'ALL',
+                    recipientRole: newStatus === "REVISION" ? "BRINS" : "ALL",
                     variables: {
-                        user_name: auditActor?.user_email || user?.email || 'System',
-                        date: new Date().toLocaleDateString('id-ID'),
+                        user_name:
+                            auditActor?.user_email || user?.email || "System",
+                        date: new Date().toLocaleDateString("id-ID"),
                         count: String(processedCount),
                         reason: approvalRemarks || "No remarks",
                     },
-                    fallbackSubject: newStatus === "APPROVED" ? 'Contracts Approved (Final)' : 'Contracts Marked for Revision',
+                    fallbackSubject:
+                        newStatus === "APPROVED"
+                            ? "Contracts Approved (Final)"
+                            : "Contracts Marked for Revision",
                     fallbackBody: `<p>{user_name} ${newStatus === "APPROVED" ? "approved" : "marked for revision"} {count} contract(s) on {date}.</p><p>Remarks: {reason}</p>`,
-                }).catch(err => console.error("Background email failed:", err));
+                }).catch((err) =>
+                    console.error("Background email failed:", err),
+                );
             } catch (emailError) {
-                console.warn('Failed to send notification email:', emailError);
+                console.warn("Failed to send notification email:", emailError);
             }
 
-            setSuccessMessage(`${processedCount} contract(s) ${newStatus === "APPROVED" ? "approved" : "sent for revision"}.`);
-            toast.success(`${processedCount} contract(s) ${newStatus === "APPROVED" ? "approved" : "sent for revision"}.`);
+            setSuccessMessage(
+                `${processedCount} contract(s) ${newStatus === "APPROVED" ? "approved" : "sent for revision"}.`,
+            );
+            toast.success(
+                `${processedCount} contract(s) ${newStatus === "APPROVED" ? "approved" : "sent for revision"}.`,
+            );
             setSelectedContractIds([]);
             setShowApprovalDialog(false);
             setApprovalAction("");
@@ -985,12 +1107,17 @@ export default function MasterContractManagement() {
         ? statsContracts
               .filter(
                   (c) =>
-                      normalizeStatus(c.contract_status || c.effective_status) ===
-                      "REVISION",
+                      normalizeStatus(
+                          c.contract_status || c.effective_status,
+                      ) === "REVISION",
               )
               .sort((a, b) => {
-                  const left = new Date(b.input_date || b.updated_at || 0).getTime();
-                  const right = new Date(a.input_date || a.updated_at || 0).getTime();
+                  const left = new Date(
+                      b.input_date || b.updated_at || 0,
+                  ).getTime();
+                  const right = new Date(
+                      a.input_date || a.updated_at || 0,
+                  ).getTime();
                   return left - right;
               })
         : [];
@@ -1002,7 +1129,8 @@ export default function MasterContractManagement() {
         pending: statsContracts.filter((c) =>
             ["Draft", "Revision"].includes(c.effective_status),
         ).length,
-        draft: statsContracts.filter((c) => c.effective_status === "Draft").length,
+        draft: statsContracts.filter((c) => c.effective_status === "Draft")
+            .length,
     };
 
     const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -1015,10 +1143,17 @@ export default function MasterContractManagement() {
         {
             header: (
                 <Checkbox
-                    checked={filteredContracts.length > 0 && selectedContractIds.length === filteredContracts.length}
+                    checked={
+                        filteredContracts.length > 0 &&
+                        selectedContractIds.length === filteredContracts.length
+                    }
                     onCheckedChange={(checked) => {
                         if (checked) {
-                            setSelectedContractIds(filteredContracts.map((c) => c.contract_id || c.id));
+                            setSelectedContractIds(
+                                filteredContracts.map(
+                                    (c) => c.contract_id || c.id,
+                                ),
+                            );
                         } else {
                             setSelectedContractIds([]);
                         }
@@ -1027,13 +1162,17 @@ export default function MasterContractManagement() {
             ),
             cell: (row) => (
                 <Checkbox
-                    checked={selectedContractIds.includes(row.contract_id || row.id)}
+                    checked={selectedContractIds.includes(
+                        row.contract_id || row.id,
+                    )}
                     onCheckedChange={(checked) => {
                         const cId = row.contract_id || row.id;
                         if (checked) {
                             setSelectedContractIds((prev) => [...prev, cId]);
                         } else {
-                            setSelectedContractIds((prev) => prev.filter((id) => id !== cId));
+                            setSelectedContractIds((prev) =>
+                                prev.filter((id) => id !== cId),
+                            );
                         }
                     }}
                 />
@@ -1090,6 +1229,76 @@ export default function MasterContractManagement() {
             width: "80px",
         },
     ];
+
+    const previewColumnKeys = [
+        "contract_id",
+        "underwriter_name",
+        "input_date",
+        "input_status",
+        "contract_status",
+        "source_type",
+        "source_name",
+        "ceding_name",
+        "ceding_same_as_source",
+        "endorsement_type",
+        "endorsement_reason",
+        "endorsement_reason_detail",
+        "kind_of_business",
+        "offer_date",
+        "contract_no",
+        "binder_no_tugure",
+        "contract_no_from",
+        "binder_no_from",
+        "type_of_contract",
+        "bank_obligee",
+        "credit_type",
+        "debtor_principal",
+        "product_type",
+        "product_name",
+        "contract_start_date",
+        "contract_end_date",
+        "effective_date",
+        "stnc_date",
+        "outward_retrocession",
+        "automatic_cession",
+        "retro_program",
+        "reinsurance_commission_pct",
+        "profit_commission_pct",
+        "brokerage_fee_pct",
+        "reporting_participant_days",
+        "reporting_claim_days",
+        "claim_reporting_type",
+        "payment_scenario",
+        "installment_frequency",
+        "stop_loss_value",
+        "stop_loss_basis",
+        "cut_loss_value",
+        "cut_loss_basis",
+        "cut_off_value",
+        "cut_off_basis",
+        "loss_ratio_value",
+        "loss_ratio_basis",
+        "evaluation_period_value",
+        "evaluation_period_unit",
+        "max_tenor_value",
+        "max_tenor_unit",
+        "max_sum_insured",
+        "perils_covers",
+        "limit_coverage_type",
+        "kolektibilitas_max",
+        "kolektibilitas_limit_amount",
+    ];
+
+    const formatPreviewValue = (key, val) => {
+        if (val === null || val === undefined || val === "") return "-";
+        if (typeof val === "boolean") return val ? "Yes" : "No";
+        if (
+            String(key).toLowerCase().includes("date") &&
+            typeof val === "string"
+        )
+            return val.slice(0, 10);
+        return String(val);
+    };
 
     return (
         <div className="space-y-6">
@@ -1228,8 +1437,14 @@ export default function MasterContractManagement() {
                             { value: "Active", label: "Active" },
                             { value: "Inactive", label: "Inactive" },
                             { value: "Archived", label: "Archived" },
-                            { value: "APPROVED_BRINS", label: "Approved by BRINS" },
-                            { value: "CHECKED_BRINS", label: "Checked by BRINS" },
+                            {
+                                value: "APPROVED_BRINS",
+                                label: "Approved by BRINS",
+                            },
+                            {
+                                value: "CHECKED_BRINS",
+                                label: "Checked by BRINS",
+                            },
                         ],
                     },
                     {
@@ -1253,30 +1468,45 @@ export default function MasterContractManagement() {
                     <Button
                         variant="outline"
                         onClick={handleCheckerBrinsCheck}
-                        disabled={processing || selectedContractIds.length === 0}
+                        disabled={
+                            processing || selectedContractIds.length === 0
+                        }
                     >
                         <Check className="w-4 h-4 mr-2" />
-                        Check {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                        Check{" "}
+                        {selectedContractIds.length > 0
+                            ? `(${selectedContractIds.length})`
+                            : ""}
                     </Button>
                 )}
                 {isApproverBrins && (
                     <Button
                         variant="outline"
                         onClick={handleApproverBrinsApprove}
-                        disabled={processing || selectedContractIds.length === 0}
+                        disabled={
+                            processing || selectedContractIds.length === 0
+                        }
                     >
                         <ShieldCheck className="w-4 h-4 mr-2" />
-                        Approve {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                        Approve{" "}
+                        {selectedContractIds.length > 0
+                            ? `(${selectedContractIds.length})`
+                            : ""}
                     </Button>
                 )}
                 {isCheckerTugure && (
                     <Button
                         variant="outline"
                         onClick={handleCheckerTugureCheck}
-                        disabled={processing || selectedContractIds.length === 0}
+                        disabled={
+                            processing || selectedContractIds.length === 0
+                        }
                     >
                         <Check className="w-4 h-4 mr-2" />
-                        Check {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                        Check{" "}
+                        {selectedContractIds.length > 0
+                            ? `(${selectedContractIds.length})`
+                            : ""}
                     </Button>
                 )}
                 {isApproverTugure && (
@@ -1287,10 +1517,15 @@ export default function MasterContractManagement() {
                                 setApprovalAction("APPROVED");
                                 setShowApprovalDialog(true);
                             }}
-                            disabled={processing || selectedContractIds.length === 0}
+                            disabled={
+                                processing || selectedContractIds.length === 0
+                            }
                         >
                             <ShieldCheck className="w-4 h-4 mr-2" />
-                            Approve {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                            Approve{" "}
+                            {selectedContractIds.length > 0
+                                ? `(${selectedContractIds.length})`
+                                : ""}
                         </Button>
                         <Button
                             variant="outline"
@@ -1298,10 +1533,15 @@ export default function MasterContractManagement() {
                                 setApprovalAction("REVISION");
                                 setShowApprovalDialog(true);
                             }}
-                            disabled={processing || selectedContractIds.length === 0}
+                            disabled={
+                                processing || selectedContractIds.length === 0
+                            }
                         >
                             <Pen className="w-4 h-4 mr-2" />
-                            Revision {selectedContractIds.length > 0 ? `(${selectedContractIds.length})` : ""}
+                            Revision{" "}
+                            {selectedContractIds.length > 0
+                                ? `(${selectedContractIds.length})`
+                                : ""}
                         </Button>
                     </>
                 )}
@@ -1361,7 +1601,7 @@ export default function MasterContractManagement() {
                             />
                         </div>
                     </div>
-                    <DialogFooter>
+                    <DialogFooter className="shrink-0 border-t pt-4">
                         <Button
                             variant="outline"
                             onClick={() => {
@@ -1406,8 +1646,12 @@ export default function MasterContractManagement() {
                                             new_value: JSON.stringify({
                                                 status: newStatus,
                                             }),
-                                            user_email: auditActor?.user_email || user?.email,
-                                            user_role: auditActor?.user_role || user?.role,
+                                            user_email:
+                                                auditActor?.user_email ||
+                                                user?.email,
+                                            user_role:
+                                                auditActor?.user_role ||
+                                                user?.role,
                                             reason: approvalRemarks,
                                         });
                                     } catch (auditError) {
@@ -1446,101 +1690,748 @@ export default function MasterContractManagement() {
             </Dialog>
 
             {/* Upload Dialog */}
-            <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Upload Master Contracts</DialogTitle>
+            <Dialog
+                open={showUploadDialog}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setShowUploadDialog(false);
+                        setUploadMode("new");
+                        setSelectedContractForRevision("");
+                        setUploadFile(null);
+                        setUploadPreviewData([]);
+                        setUploadTabActive(1);
+                    }
+                }}
+            >
+                <DialogContent
+                    className="max-w-4xl w-full"
+                    style={{
+                        maxHeight: "90vh",
+                        display: "flex",
+                        flexDirection: "column",
+                        overflow: "hidden",
+                    }}
+                >
+                    <DialogHeader className="shrink-0">
+                        <DialogTitle>
+                            {uploadTabActive === 1
+                                ? "Upload Master Contracts"
+                                : "Master Contract Preview"}
+                        </DialogTitle>
                         <DialogDescription>
-                            Upload or revise contracts via Excel/CSV
+                            {uploadTabActive === 1
+                                ? "Upload atau revisi kontrak via Excel/CSV"
+                                : "Periksa data sebelum disimpan ke database"}
                         </DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4 space-y-4">
-                        <div>
-                            <label className="text-sm font-medium">
-                                Upload Mode
-                            </label>
-                            <Select
-                                value={uploadMode}
-                                onValueChange={setUploadMode}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="new">
-                                        Create New Contracts
-                                    </SelectItem>
-                                    <SelectItem value="revise">
-                                        Revise Existing Contract
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
 
-                        {uploadMode === "revise" && (
-                            <div>
-                                <label className="text-sm font-medium">
-                                    Select Contract to Revise
-                                </label>
-                                <Select
-                                    value={selectedContractForRevision}
-                                    onValueChange={
-                                        setSelectedContractForRevision
-                                    }
+                        {/* Stepper */}
+                        <div className="flex mt-3">
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    uploadTabActive === 1
+                                        ? "border-blue-600 text-blue-600 font-medium"
+                                        : "border-green-600 text-green-600"
+                                }`}
+                            >
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        uploadTabActive === 1
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-green-600 text-white"
+                                    }`}
                                 >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select contract" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {revisionContracts.length === 0 ? (
-                                            <SelectItem value="__no_revision__" disabled>
-                                                Tidak ada kontrak berstatus REVISION
-                                            </SelectItem>
-                                        ) : (
-                                            revisionContracts.map((contract) => {
-                                                const contractId = contract.contract_id || "-";
-                                                const contractNo = contract.contract_no || "-";
-                                                return (
-                                                    <SelectItem
-                                                        key={contractId}
-                                                        value={contractId}
-                                                    >
-                                                        {contractNo} ({contractId})
-                                                    </SelectItem>
-                                                );
-                                            })
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                {selectedContractForRevision && (
-                                    <Alert className="mt-2 bg-blue-50 border-blue-200">
-                                        <AlertCircle className="h-4 w-4 text-blue-600" />
-                                        <AlertDescription className="text-blue-700">
-                                            Will create new version and archive
-                                            previous
-                                        </AlertDescription>
-                                    </Alert>
-                                )}
+                                    {uploadTabActive === 1 ? "1" : "✓"}
+                                </div>
+                                Upload Master Contracts
                             </div>
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    uploadTabActive === 2
+                                        ? "border-blue-600 text-blue-600 font-medium"
+                                        : "border-gray-200 text-gray-400"
+                                }`}
+                            >
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        uploadTabActive === 2
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-200 text-gray-500"
+                                    }`}
+                                >
+                                    2
+                                </div>
+                                Master Contract Preview
+                            </div>
+                        </div>
+                    </DialogHeader>
+
+                    <div className="py-4 space-y-4 overflow-y-auto flex-1 min-h-0 pr-1">
+                        {/* Tab 1: Upload */}
+                        {uploadTabActive === 1 && (
+                            <>
+                                <div>
+                                    <label className="text-sm font-medium">
+                                        Upload Mode
+                                    </label>
+                                    <Select
+                                        value={uploadMode}
+                                        onValueChange={setUploadMode}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="new">
+                                                Create New Contracts
+                                            </SelectItem>
+                                            <SelectItem value="revise">
+                                                Revise Existing Contract
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                {uploadMode === "revise" && (
+                                    <div>
+                                        <label className="text-sm font-medium">
+                                            Select Contract to Revise
+                                        </label>
+                                        <Select
+                                            value={selectedContractForRevision}
+                                            onValueChange={
+                                                setSelectedContractForRevision
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select contract" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {revisionContracts.length ===
+                                                0 ? (
+                                                    <SelectItem
+                                                        value="__no_revision__"
+                                                        disabled
+                                                    >
+                                                        Tidak ada kontrak
+                                                        berstatus REVISION
+                                                    </SelectItem>
+                                                ) : (
+                                                    revisionContracts.map(
+                                                        (contract) => {
+                                                            const contractId =
+                                                                contract.contract_id ||
+                                                                "-";
+                                                            return (
+                                                                <SelectItem
+                                                                    key={
+                                                                        contractId
+                                                                    }
+                                                                    value={
+                                                                        contractId
+                                                                    }
+                                                                >
+                                                                    {contract.contract_no ||
+                                                                        "-"}{" "}
+                                                                    (
+                                                                    {contractId}
+                                                                    )
+                                                                </SelectItem>
+                                                            );
+                                                        },
+                                                    )
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                        {selectedContractForRevision && (
+                                            <Alert className="mt-2 bg-blue-50 border-blue-200">
+                                                <AlertCircle className="h-4 w-4 text-blue-600" />
+                                                <AlertDescription className="text-blue-700">
+                                                    Akan membuat versi baru dan
+                                                    mengarsipkan yang sebelumnya
+                                                </AlertDescription>
+                                            </Alert>
+                                        )}
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="text-sm font-medium">
+                                        Upload File
+                                    </label>
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls,.csv"
+                                        onChange={(e) =>
+                                            setUploadFile(e.target.files[0])
+                                        }
+                                        className="w-full mt-1 text-sm"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Excel atau CSV format
+                                    </p>
+                                </div>
+                            </>
                         )}
 
-                        <div>
-                            <label className="text-sm font-medium">
-                                Upload File
-                            </label>
-                            <input
-                                type="file"
-                                accept=".xlsx,.xls,.csv"
-                                onChange={(e) =>
-                                    setUploadFile(e.target.files[0])
-                                }
-                                className="w-full mt-1 text-sm"
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                                Excel or CSV format
-                            </p>
-                        </div>
+                        {/* Tab 2: Preview */}
+                        {uploadTabActive === 2 && (
+                            <>
+                                <div className="flex gap-3 flex-wrap">
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">
+                                            Total Rows
+                                        </p>
+                                        <p className="text-xl font-medium">
+                                            {uploadPreviewData.length}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">
+                                            Mode
+                                        </p>
+                                        <p className="text-sm font-medium mt-1">
+                                            {uploadMode === "new"
+                                                ? "New Contracts"
+                                                : "Revise"}
+                                        </p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">
+                                            File
+                                        </p>
+                                        <p className="text-sm font-medium mt-1">
+                                            {uploadFile?.name}
+                                        </p>
+                                    </div>
+                                </div>
+                                <Alert className="bg-blue-50 border-blue-200">
+                                    <AlertCircle className="h-4 w-4 text-blue-600" />
+                                    <AlertDescription className="text-blue-700">
+                                        Below is a preview of the data that will
+                                        be saved. Please review it before
+                                        confirming.
+                                    </AlertDescription>
+                                </Alert>
+                                <div
+                                    style={{
+                                        overflowX: "auto",
+                                        overflowY: "auto",
+                                        maxHeight: "340px",
+                                        border: "1px solid #e5e7eb",
+                                        borderRadius: "8px",
+                                        width: "100%",
+                                    }}
+                                >
+                                    <table
+                                        className="text-xs"
+                                        style={{
+                                            minWidth: "max-content",
+                                            borderCollapse: "collapse",
+                                        }}
+                                    >
+                                        <thead className="bg-gray-50 sticky top-0 z-10">
+                                            <tr>
+                                                {[
+                                                    { key: "#", label: "#" },
+                                                    {
+                                                        key: "contract_id",
+                                                        label: "Contract ID",
+                                                    },
+                                                    {
+                                                        key: "underwriter_name",
+                                                        label: "Underwriter Name",
+                                                    },
+                                                    {
+                                                        key: "input_date",
+                                                        label: "Input Date",
+                                                    },
+                                                    {
+                                                        key: "input_status",
+                                                        label: "Input Status",
+                                                    },
+                                                    {
+                                                        key: "contract_status",
+                                                        label: "Contract Status",
+                                                    },
+                                                    {
+                                                        key: "source_type",
+                                                        label: "Source Type",
+                                                    },
+                                                    {
+                                                        key: "source_name",
+                                                        label: "Source Name",
+                                                    },
+                                                    {
+                                                        key: "ceding_name",
+                                                        label: "Ceding Name",
+                                                    },
+                                                    {
+                                                        key: "ceding_same_as_source",
+                                                        label: "Ceding = Source",
+                                                    },
+                                                    {
+                                                        key: "bank_obligee",
+                                                        label: "Bank Obligee",
+                                                    },
+                                                    {
+                                                        key: "endorsement_type",
+                                                        label: "Endorsement Type",
+                                                    },
+                                                    {
+                                                        key: "endorsement_reason",
+                                                        label: "Endorsement Reason",
+                                                    },
+                                                    {
+                                                        key: "endorsement_reason_detail",
+                                                        label: "Endorsement Detail",
+                                                    },
+                                                    {
+                                                        key: "kind_of_business",
+                                                        label: "Kind of Business",
+                                                    },
+                                                    {
+                                                        key: "offer_date",
+                                                        label: "Offer Date",
+                                                    },
+                                                    {
+                                                        key: "contract_no",
+                                                        label: "Contract No",
+                                                    },
+                                                    {
+                                                        key: "binder_no_tugure",
+                                                        label: "Binder No Tugure",
+                                                    },
+                                                    {
+                                                        key: "contract_no_from",
+                                                        label: "Contract No From",
+                                                    },
+                                                    {
+                                                        key: "binder_no_from",
+                                                        label: "Binder No From",
+                                                    },
+                                                    {
+                                                        key: "type_of_contract",
+                                                        label: "Type of Contract",
+                                                    },
+                                                    {
+                                                        key: "credit_type",
+                                                        label: "Credit Type",
+                                                    },
+                                                    {
+                                                        key: "debtor_principal",
+                                                        label: "Debtor Principal",
+                                                    },
+                                                    {
+                                                        key: "product_type",
+                                                        label: "Product Type",
+                                                    },
+                                                    {
+                                                        key: "product_name",
+                                                        label: "Product Name",
+                                                    },
+                                                    {
+                                                        key: "contract_start_date",
+                                                        label: "Start Date",
+                                                    },
+                                                    {
+                                                        key: "contract_end_date",
+                                                        label: "End Date",
+                                                    },
+                                                    {
+                                                        key: "effective_date",
+                                                        label: "Effective Date",
+                                                    },
+                                                    {
+                                                        key: "stnc_date",
+                                                        label: "STNC Date",
+                                                    },
+                                                    {
+                                                        key: "outward_retrocession",
+                                                        label: "Outward Retrocession",
+                                                    },
+                                                    {
+                                                        key: "automatic_cession",
+                                                        label: "Automatic Cession",
+                                                    },
+                                                    {
+                                                        key: "retro_program",
+                                                        label: "Retro Program",
+                                                    },
+                                                    {
+                                                        key: "reinsurance_commission_pct",
+                                                        label: "RI Commission %",
+                                                    },
+                                                    {
+                                                        key: "profit_commission_pct",
+                                                        label: "Profit Commission %",
+                                                    },
+                                                    {
+                                                        key: "brokerage_fee_pct",
+                                                        label: "Brokerage Fee %",
+                                                    },
+                                                    {
+                                                        key: "reporting_participant_days",
+                                                        label: "Report Participant Days",
+                                                    },
+                                                    {
+                                                        key: "reporting_claim_days",
+                                                        label: "Report Claim Days",
+                                                    },
+                                                    {
+                                                        key: "claim_reporting_type",
+                                                        label: "Claim Reporting Type",
+                                                    },
+                                                    {
+                                                        key: "payment_scenario",
+                                                        label: "Payment Scenario",
+                                                    },
+                                                    {
+                                                        key: "installment_frequency",
+                                                        label: "Installment Freq.",
+                                                    },
+                                                    {
+                                                        key: "stop_loss_value",
+                                                        label: "Stop Loss Value",
+                                                    },
+                                                    {
+                                                        key: "stop_loss_basis",
+                                                        label: "Stop Loss Basis",
+                                                    },
+                                                    {
+                                                        key: "cut_loss_value",
+                                                        label: "Cut Loss Value",
+                                                    },
+                                                    {
+                                                        key: "cut_loss_basis",
+                                                        label: "Cut Loss Basis",
+                                                    },
+                                                    {
+                                                        key: "cut_off_value",
+                                                        label: "Cut Off Value",
+                                                    },
+                                                    {
+                                                        key: "cut_off_basis",
+                                                        label: "Cut Off Basis",
+                                                    },
+                                                    {
+                                                        key: "loss_ratio_value",
+                                                        label: "Loss Ratio Value",
+                                                    },
+                                                    {
+                                                        key: "loss_ratio_basis",
+                                                        label: "Loss Ratio Basis",
+                                                    },
+                                                    {
+                                                        key: "evaluation_period_value",
+                                                        label: "Eval. Period Value",
+                                                    },
+                                                    {
+                                                        key: "evaluation_period_unit",
+                                                        label: "Eval. Period Unit",
+                                                    },
+                                                    {
+                                                        key: "max_tenor_value",
+                                                        label: "Max Tenor Value",
+                                                    },
+                                                    {
+                                                        key: "max_tenor_unit",
+                                                        label: "Max Tenor Unit",
+                                                    },
+                                                    {
+                                                        key: "max_sum_insured",
+                                                        label: "Max Sum Insured",
+                                                    },
+                                                    {
+                                                        key: "perils_covers",
+                                                        label: "Perils Covers",
+                                                    },
+                                                    {
+                                                        key: "limit_coverage_type",
+                                                        label: "Limit Coverage Type",
+                                                    },
+                                                    {
+                                                        key: "kolektibilitas_max",
+                                                        label: "Kolektibilitas Max",
+                                                    },
+                                                    {
+                                                        key: "kolektibilitas_limit_amount",
+                                                        label: "Kolektibilitas Limit",
+                                                    },
+                                                ].map(({ key, label }) => (
+                                                    <th
+                                                        key={key}
+                                                        className="text-left p-2 font-medium text-gray-500 border-b whitespace-nowrap"
+                                                        style={{
+                                                            minWidth:
+                                                                key === "#"
+                                                                    ? "36px"
+                                                                    : "130px",
+                                                        }}
+                                                    >
+                                                        {label}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {uploadPreviewData.map((row, i) => (
+                                                <tr
+                                                    key={i}
+                                                    className="hover:bg-gray-50 border-b border-gray-100"
+                                                >
+                                                    <td className="p-2 text-gray-400 whitespace-nowrap">
+                                                        {i + 1}
+                                                    </td>
+                                                    <td className="p-2 font-mono whitespace-nowrap">
+                                                        {row.contract_id ?? "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.underwriter_name ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.input_date
+                                                            ? String(
+                                                                  row.input_date,
+                                                              ).slice(0, 10)
+                                                            : "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.input_status ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs">
+                                                            {row.contract_status ??
+                                                                "Draft"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.source_type ?? "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.source_name ?? "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.ceding_name ?? "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.ceding_same_as_source ===
+                                                        true
+                                                            ? "Ya"
+                                                            : row.ceding_same_as_source ===
+                                                                false
+                                                              ? "Tidak"
+                                                              : "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.bank_obligee ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.endorsement_type ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.endorsement_reason ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.endorsement_reason_detail ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.kind_of_business ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.offer_date
+                                                            ? String(
+                                                                  row.offer_date,
+                                                              ).slice(0, 10)
+                                                            : "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.contract_no ?? "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.binder_no_tugure ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.contract_no_from ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.binder_no_from ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.type_of_contract ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.credit_type ?? "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.debtor_principal ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.product_type ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.product_name ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.contract_start_date
+                                                            ? String(
+                                                                  row.contract_start_date,
+                                                              ).slice(0, 10)
+                                                            : "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.contract_end_date
+                                                            ? String(
+                                                                  row.contract_end_date,
+                                                              ).slice(0, 10)
+                                                            : "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.effective_date
+                                                            ? String(
+                                                                  row.effective_date,
+                                                              ).slice(0, 10)
+                                                            : "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.stnc_date
+                                                            ? String(
+                                                                  row.stnc_date,
+                                                              ).slice(0, 10)
+                                                            : "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.outward_retrocession ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.automatic_cession ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.retro_program ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.reinsurance_commission_pct ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.profit_commission_pct ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.brokerage_fee_pct ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.reporting_participant_days ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.reporting_claim_days ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.claim_reporting_type ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.payment_scenario ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.installment_frequency ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.stop_loss_value ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.stop_loss_basis ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.cut_loss_value ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.cut_loss_basis ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.cut_off_value ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.cut_off_basis ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.loss_ratio_value ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.loss_ratio_basis ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.evaluation_period_value ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.evaluation_period_unit ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.max_tenor_value ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.max_tenor_unit ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.max_sum_insured ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.perils_covers ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.limit_coverage_type ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.kolektibilitas_max ??
+                                                            "-"}
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        {row.kolektibilitas_limit_amount ??
+                                                            "-"}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        )}
                     </div>
+
                     <DialogFooter>
                         <Button
                             variant="outline"
@@ -1549,21 +2440,42 @@ export default function MasterContractManagement() {
                                 setUploadMode("new");
                                 setSelectedContractForRevision("");
                                 setUploadFile(null);
+                                setUploadPreviewData([]);
+                                setUploadTabActive(1);
                             }}
                         >
                             Cancel
                         </Button>
-                        <Button
-                            onClick={handleUploadExcel}
-                            disabled={
-                                processing ||
-                                !uploadFile ||
-                                (uploadMode === "revise" &&
-                                    !selectedContractForRevision)
-                            }
-                        >
-                            {processing ? "Uploading..." : "Upload"}
-                        </Button>
+                        {uploadTabActive === 2 && (
+                            <Button
+                                variant="outline"
+                                onClick={() => setUploadTabActive(1)}
+                            >
+                                ← Back
+                            </Button>
+                        )}
+                        {uploadTabActive === 1 && (
+                            <Button
+                                onClick={handlePreviewExcel}
+                                disabled={
+                                    processing ||
+                                    !uploadFile ||
+                                    (uploadMode === "revise" &&
+                                        !selectedContractForRevision)
+                                }
+                            >
+                                {processing ? "Memproses..." : "Preview Data →"}
+                            </Button>
+                        )}
+                        {uploadTabActive === 2 && (
+                            <Button
+                                onClick={handleConfirmSave}
+                                disabled={processing}
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                                {processing ? "Uploading..." : "Upload"}
+                            </Button>
+                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -1608,7 +2520,11 @@ export default function MasterContractManagement() {
                         </Button>
                         <Button
                             onClick={handleApproverTugureAction}
-                            disabled={processing || (approvalAction === "REVISION" && !approvalRemarks)}
+                            disabled={
+                                processing ||
+                                (approvalAction === "REVISION" &&
+                                    !approvalRemarks)
+                            }
                         >
                             {processing ? "Processing..." : "Confirm"}
                         </Button>
@@ -1719,7 +2635,15 @@ export default function MasterContractManagement() {
 
             {/* Detail Dialog */}
             <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-                <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+                <DialogContent
+                    className="max-w-4xl w-full"
+                    style={{
+                        maxHeight: "90vh",
+                        display: "flex",
+                        flexDirection: "column",
+                        overflow: "hidden",
+                    }}
+                >
                     <DialogHeader>
                         <DialogTitle>Master Contract Detail</DialogTitle>
                         <DialogDescription>

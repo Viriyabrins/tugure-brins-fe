@@ -1122,13 +1122,21 @@ export default function SubmitDebtor() {
     const getPreviewColumnKeys = () => {
         if (!uploadPreviewData || uploadPreviewData.length === 0) return [];
         
-        // Get all keys from the first row
+        const allowedHeaders = [
+            "COVER_ID", "PROGRAM_ID", "NOMOR_REKENING_PINJAMAN", "NOMOR_PESERTA",
+            "LOAN_TYPE", "CIF_REKENING_PINJAMAN", "JENIS_PENGAJUAN_DESC",
+            "JENIS_COVERING_DESC", "TANGGAL_MULAI_COVERING", "TANGGAL_AKHIR_COVERING",
+            "PLAFON", "NOMINAL_PREMI", "PREMIUM", "KOMISI", "NET_PREMI",
+            "NOMINAL_KOMISI_BROKER", "UNIT_CODE", "UNIT_DESC", "BRANCH_DESC",
+            "REGION_DESC", "NAMA_PESERTA", "ALAMAT_USAHA", "NOMOR_PERJANJIAN_KREDIT",
+            "TANGGAL_TERIMA", "TANGGAL_VALIDASI", "TELLER_PREMIUM_DATE",
+            "STATUS_AKTIF", "REMARK_PREMI", "FLAG_RESTRUK", "KOLEKTABILITAS"
+        ].map(h => h.toLowerCase());
+
         const firstRow = uploadPreviewData[0];
-        const keys = Object.keys(firstRow).filter(key => 
-            // Exclude system fields
-            !['contract_id', 'batch_id', 'bordero_id', 'version_no', 'status', 'is_locked'].includes(key)
-        );
-        return keys;
+        
+        // Only return columns that are explicitly in the allowed headers list
+        return allowedHeaders.filter(key => key in firstRow);
     };
 
     // Format column header name (e.g., nomor_peserta -> Nomor Peserta)

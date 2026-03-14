@@ -73,7 +73,7 @@ const statusColors = {
   Unknown: 'bg-gray-200 text-gray-700'
 };
 
-export default function StatusBadge({ status, className }) {
+export default function StatusBadge({ status, className = "" }) {
   const colorClass = statusColors[status] || statusColors.Unknown || 'bg-gray-200 text-gray-700';
   const displayText = status?.replace(/_/g, ' ') || 'Unknown';
   

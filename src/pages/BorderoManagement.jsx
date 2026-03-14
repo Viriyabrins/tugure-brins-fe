@@ -95,6 +95,13 @@ export default function BorderoManagement() {
     const [totalContracts, setTotalContracts] = useState(0);
     const isFirstContractPageEffect = useRef(true);
 
+    // Bordero Debtors pagination
+    const [borderoDebtors, setBorderoDebtors] = useState([]);
+    const [borderoDebtorsPage, setBorderoDebtorsPage] = useState(1);
+    const [totalBorderoDebtors, setTotalBorderoDebtors] = useState(0);
+    const [borderoDebtorsLoading, setBorderoDebtorsLoading] = useState(false);
+    const isFirstBorderoDebtorsPageEffect = useRef(true);
+
     useEffect(() => {
         loadDebtors(1, filters);
         loadBorderos(1, filters);
@@ -173,6 +180,23 @@ export default function BorderoManagement() {
         }
     };
 
+    const loadBorderoDebtors = async (borderoId, pageToLoad = borderoDebtorsPage) => {
+        if (!borderoId) return;
+        setBorderoDebtorsLoading(true);
+        try {
+            const query = { page: pageToLoad, limit: pageSize, q: JSON.stringify({ bordero_id: borderoId }) };
+            const result = await backend.listPaginated("Debtor", query);
+            setBorderoDebtors(Array.isArray(result.data) ? result.data : []);
+            setTotalBorderoDebtors(Number(result.pagination?.total) || 0);
+        } catch (error) {
+            console.error("Error loading bordero debtors:", error);
+            setBorderoDebtors([]);
+            setTotalBorderoDebtors(0);
+        } finally {
+            setBorderoDebtorsLoading(false);
+        }
+    };
+
     // --- Pagination computed values ---
 
     // Debtor pagination
@@ -192,6 +216,12 @@ export default function BorderoManagement() {
     const claimTotalPages = Math.max(1, Math.ceil(claimTotal / pageSize));
     const claimFrom = claimTotal === 0 ? 0 : (claimPage - 1) * pageSize + 1;
     const claimTo = Math.min(claimTotal, claimPage * pageSize);
+
+    // Bordero Debtors pagination
+    const borderoDebtorsTotal = totalBorderoDebtors;
+    const borderoDebtorsTotalPages = Math.max(1, Math.ceil(borderoDebtorsTotal / pageSize));
+    const borderoDebtorsFrom = borderoDebtorsTotal === 0 ? 0 : (borderoDebtorsPage - 1) * pageSize + 1;
+    const borderoDebtorsTo = Math.min(borderoDebtorsTotal, borderoDebtorsPage * pageSize);
 
     // --- Filter change effects ---
 
@@ -254,6 +284,21 @@ export default function BorderoManagement() {
         if (isFirstContractPageEffect.current) { isFirstContractPageEffect.current = false; return; }
         loadContracts(contractPage);
     }, [contractPage]);
+
+    // Bordero Debtors: reload on borderoId or page change
+    useEffect(() => {
+        if (activeTab === "borderos" && showDetailDialog && selectedItem?.bordero_id) {
+            if (isFirstBorderoDebtorsPageEffect.current) {
+                isFirstBorderoDebtorsPageEffect.current = false;
+                return;
+            }
+            loadBorderoDebtors(selectedItem.bordero_id, borderoDebtorsPage);
+        }
+    }, [borderoDebtorsPage]);
+
+    useEffect(() => {
+        if (borderoDebtorsPage > borderoDebtorsTotalPages) setBorderoDebtorsPage(borderoDebtorsTotalPages);
+    }, [borderoDebtorsTotalPages]);
 
     const handleExportExcel = () => {
         let data = [];
@@ -352,6 +397,10 @@ export default function BorderoManagement() {
 
     const openDetailDialog = (item) => {
         setSelectedItem(item);
+        if (activeTab === "borderos") {
+            setBorderoDebtorsPage(1);
+            loadBorderoDebtors(item.bordero_id, 1);
+        }
         setShowDetailDialog(true);
     };
 
@@ -482,24 +531,32 @@ export default function BorderoManagement() {
         { header: "Bordero ID", accessorKey: "bordero_id" },
         { header: "Period", accessorKey: "period" },
         { header: "Total Debtors", accessorKey: "total_debtors" },
-        // {
-        //     header: "Plafond",
-        //     cell: (row) => formatRupiahAdaptive(row.plafon)
-        // },
         {
-            header: "Exposure",
-            cell: (row) => formatRupiahAdaptive(row.total_exposure)
+            header: 'Plafond',
+            cell: (row) => formatRupiahAdaptive(row.total_plafon || 0),
         },
         {
-            header: "Total Premium",
-            cell: (row) => formatRupiahAdaptive(row.total_premium),
+            header: 'Nominal Premi',
+            cell: (row) => formatRupiahAdaptive(row.total_nominal_premi || 0),
         },
         {
-            header: "Status",
-            cell: (row) => <StatusBadge status={row.status} />,
+            header: 'Premium Amount',
+            cell: (row) => formatRupiahAdaptive(row.total_premium_amount || 0),
         },
         {
-            header: "Actions",
+            header: 'Komisi',
+            cell: (row) => formatRupiahAdaptive(row.total_ric_amount || 0),
+        },
+        {
+            header: 'Net Premi',
+            cell: (row) => formatRupiahAdaptive(row.total_net_premi || 0),
+        },
+        {
+            header: 'Broker Comission',
+            cell: (row) => formatRupiahAdaptive(row.total_bf_amount || 0),
+        },
+        {
+            header: "Action",
             cell: (row) => (
                 <div className="flex gap-2">
                     <Button
@@ -876,7 +933,7 @@ export default function BorderoManagement() {
 
             {/* Detail Dialog */}
             <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-                <DialogContent className="max-w-3xl">
+                <DialogContent className="max-w-7xl w-full max-h-[80vh]">
                     <DialogHeader>
                         <DialogTitle>
                             {activeTab === "debtors" && "Debtor Detail"}
@@ -887,7 +944,7 @@ export default function BorderoManagement() {
                         </DialogTitle>
                     </DialogHeader>
                     {selectedItem && (
-                        <div className="space-y-4">
+                        <div className="space-y-4 overflow-y-auto max-h-[70vh] pr-1">
                             {activeTab === "debtors" && (
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
@@ -971,54 +1028,59 @@ export default function BorderoManagement() {
                                 </div>
                             )}
                             {activeTab === "borderos" && (
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-6">
                                     <div>
-                                        <Label className="text-gray-500">
-                                            Bordero ID
-                                        </Label>
-                                        <p className="font-medium">
-                                            {selectedItem.bordero_id}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-gray-500">
-                                            Period
-                                        </Label>
-                                        <p className="font-medium">
-                                            {selectedItem.period}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-gray-500">
-                                            Total Debtors
-                                        </Label>
-                                        <p className="font-medium">
-                                            {selectedItem.total_debtors}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-gray-500">
-                                            Total Exposure
-                                        </Label>
-                                        <p className="font-medium">
-                                            {formatRupiahAdaptive(selectedItem.total_exposure)}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-gray-500">
-                                            Total Premium
-                                        </Label>
-                                        <p className="font-medium">
-                                            {formatRupiahAdaptive(selectedItem.total_premium)}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-gray-500">
-                                            Status
-                                        </Label>
-                                        <StatusBadge
-                                            status={selectedItem.status}
+                                        <h3 className="text-lg font-medium mb-4">
+                                            Debtors in this Bordero
+                                        </h3>
+                                        <div className="w-full overflow-x-auto">
+                                            <DataTable
+                                            columns={[
+                                                { header: "Cover ID", cell: (row) => row.cover_id },
+                                                { header: "Program ID", cell: (row) => row.program_id },
+                                                { header: "No Rekening Pinjaman", cell: (row) => row.nomor_rekening_pinjaman },
+                                                { header: "No Peserta", cell: (row) => row.nomor_peserta },
+                                                { header: "Loan Type", cell: (row) => row.loan_type },
+                                                { header: "CIF", cell: (row) => row.cif_rekening_pinjaman },
+                                                { header: "Jenis Pengajuan", cell: (row) => row.jenis_pengajuan_desc },
+                                                { header: "Jenis Covering", cell: (row) => row.jenis_covering_desc },
+                                                { header: "Tgl Mulai", cell: (row) => row.tanggal_mulai_covering ? new Date(row.tanggal_mulai_covering).toLocaleDateString() : '-' },
+                                                { header: "Tgl Akhir", cell: (row) => row.tanggal_akhir_covering ? new Date(row.tanggal_akhir_covering).toLocaleDateString() : '-' },
+                                                { header: "Plafon", cell: (row) => formatRupiahAdaptive(row.plafon) },
+                                                { header: "Nominal Premi", cell: (row) => formatRupiahAdaptive(row.nominal_premi) },
+                                                { header: "Premium", cell: (row) => formatRupiahAdaptive(row.premium_amount) },
+                                                { header: "Komisi", cell: (row) => formatRupiahAdaptive(row.ric_amount) },
+                                                { header: "Net Premi", cell: (row) => formatRupiahAdaptive(row.net_premi) },
+                                                { header: "Nominal Komisi Broker", cell: (row) => formatRupiahAdaptive(row.bf_amount) },
+                                                { header: "Unit Code", cell: (row) => row.unit_code },
+                                                { header: "Unit Desc", cell: (row) => row.unit_desc },
+                                                { header: "Branch", cell: (row) => row.branch_desc },
+                                                { header: "Region", cell: (row) => row.region_desc },
+                                                { header: "Nama Peserta", cell: (row) => row.nama_peserta },
+                                                { header: "Alamat Usaha", cell: (row) => row.alamat_usaha },
+                                                { header: "No Perjanjian", cell: (row) => row.nomor_perjanjian_kredit },
+                                                { header: "Tgl Terima", cell: (row) => row.tanggal_terima ? new Date(row.tanggal_terima).toLocaleDateString() : '-' },
+                                                { header: "Tgl Validasi", cell: (row) => row.tanggal_validasi ? new Date(row.tanggal_validasi).toLocaleDateString() : '-' },
+                                                { header: "Teller Date", cell: (row) => row.teller_premium_date ? new Date(row.teller_premium_date).toLocaleDateString() : '-' },
+                                                { header: "Status Aktif", cell: (row) => row.status_aktif },
+                                                { header: "Remark", cell: (row) => row.remark_premi },
+                                                { header: "Flag Restruk", cell: (row) => row.flag_restruk },
+                                                { header: "Kolektabilitas", cell: (row) => row.kolektabilitas },
+                                            ]}
+                                            data={borderoDebtors}
+                                            isLoading={borderoDebtorsLoading}
+                                            onRowClick={() => {}}
+                                            pagination={{
+                                                from: borderoDebtorsFrom,
+                                                to: borderoDebtorsTo,
+                                                total: borderoDebtorsTotal,
+                                                page: borderoDebtorsPage,
+                                                totalPages: borderoDebtorsTotalPages,
+                                            }}
+                                            onPageChange={(p) => setBorderoDebtorsPage(p)}
+                                            emptyMessage="No debtors found for this bordero"
                                         />
+                                        </div>
                                     </div>
                                 </div>
                             )}

@@ -64,10 +64,13 @@ const defaultFilter = {
 const HEADER_ALIAS_MAP = {
     premium_425: "premium_amount",
     premium_42_5: "premium_amount",
+    premium: "premium_amount",
     ric_325: "ric_amount",
     ric_32_5: "ric_amount",
+    komisi: "ric_amount",
     bf_25: "bf_amount",
     bf_2_5: "bf_amount",
+    nominal_komisi_broker: "bf_amount",
     flag_restruktur: "flag_restruk",
     policyno: "policy_no",
 };
@@ -1234,10 +1237,7 @@ export default function SubmitDebtor() {
                     batch_id: batchId,
                     period: period,
                     total_debtors: 0,
-                    total_exposure: 0,
-                    total_premium: 0,
                     currency: "IDR",
-                    status: "GENERATED",
                 });
             }
 
@@ -1257,13 +1257,35 @@ export default function SubmitDebtor() {
                 }
             }
 
+            // Calculate new totals for Bordero
+            let totalPlafon = 0;
+            let totalNominalPremi = 0;
+            let totalNetPremi = 0;
+            let totalPremiumAmount = 0;
+            let totalRicAmount = 0;
+            let totalBfAmount = 0;
+            
+            for (let i = 0; i < uploadPreviewData.length; i++) {
+                const r = uploadPreviewData[i];
+                totalPlafon += (parseFloat(r.plafon) || 0);
+                totalNominalPremi += (parseFloat(r.nominal_premi) || 0);
+                totalNetPremi += (parseFloat(r.net_premi) || 0);
+                totalPremiumAmount += (parseFloat(r.premium_amount) || 0);
+                totalRicAmount += (parseFloat(r.ric_amount) || 0);
+                totalBfAmount += (parseFloat(r.bf_amount) || 0);
+            }
+
             // Update Bordero totals after debtor creation
             if (borderoId) {
                 try {
                     await backend.update("Bordero", borderoId, {
                         total_debtors: uploaded,
-                        total_exposure: totalExposure,
-                        total_premium: totalPremium,
+                        total_plafon: totalPlafon,
+                        total_nominal_premi: totalNominalPremi,
+                        total_net_premi: totalNetPremi,
+                        total_premium_amount: totalPremiumAmount,
+                        total_ric_amount: totalRicAmount,
+                        total_bf_amount: totalBfAmount,
                     });
                 } catch (borderoError) {
                     console.error("Failed to update Bordero:", borderoError);

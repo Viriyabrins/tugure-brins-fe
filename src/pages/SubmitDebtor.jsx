@@ -473,7 +473,9 @@ export default function SubmitDebtor() {
     const [batches, setBatches] = useState([]);
     const [debtors, setDebtors] = useState([]);
     const [totalDebtors, setTotalDebtors] = useState(0);
-    const [loading, setLoading] = useState(true);
+    // Split loading states: page boot vs table refetch
+    const [pageLoading, setPageLoading] = useState(true);
+    const [tableLoading, setTableLoading] = useState(false);
 
     // Form state
     const [selectedContract, setSelectedContract] = useState("");
@@ -984,7 +986,7 @@ export default function SubmitDebtor() {
     };
 
     const loadInitialData = async () => {
-        setLoading(true);
+        setPageLoading(true);
         setSuccessMessage("");
         setErrorMessage("");
 
@@ -994,7 +996,7 @@ export default function SubmitDebtor() {
             console.error("Failed to load data:", error);
             setErrorMessage("Failed to load data. Please refresh the page.");
         } finally {
-            setLoading(false);
+            setPageLoading(false);
         }
     };
 
@@ -1023,7 +1025,7 @@ export default function SubmitDebtor() {
     };
 
     const loadDebtors = async (pageToLoad = page, activeFilters = filters) => {
-        setLoading(true);
+        setTableLoading(true);
         try {
             const query = { page: pageToLoad, limit: pageSize };
             if (activeFilters) {
@@ -1043,7 +1045,7 @@ export default function SubmitDebtor() {
             setDebtors([]);
             setTotalDebtors(0);
         } finally {
-            setLoading(false);
+            setTableLoading(false);
         }
     };
 
@@ -1702,7 +1704,7 @@ export default function SubmitDebtor() {
     // Only include contracts that have been approved in the system
     const activeContracts = contracts.filter((c) => c.contract_status === "APPROVED");
 
-    if (loading) {
+    if (pageLoading) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -1890,7 +1892,7 @@ export default function SubmitDebtor() {
                 <DataTable
                     columns={columns}
                     data={pageData}
-                    isLoading={loading}
+                    isLoading={tableLoading}
                     emptyMessage="No debtors found. Upload your first batch to get started."
                     pagination={{ from, to, total, page, totalPages }}
                     onPageChange={(p) => setPage(p)}

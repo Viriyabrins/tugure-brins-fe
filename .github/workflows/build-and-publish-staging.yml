@@ -103,6 +103,10 @@ jobs:
             echo "Pulling image ${IMAGE}"
             podman pull "${IMAGE}"
 
+            # Prune podman images older than 24 hours to free disk space
+            echo "Pruning podman images older than 24 hours..."
+            podman image prune -a --filter "until=24h" -f || true
+
             # Prepare host directories (no host app dir needed; containers manage app files)
             BACKUP_DIR=/home/brins/backups
             mkdir -p "${BACKUP_DIR}"

@@ -96,7 +96,7 @@ export default function Layout({ children, currentPageName }) {
       // { name: 'Batch Processing', icon: FileText, path: 'BatchProcessing', roles: ['TUGURE'] },
       // { name: 'Document Eligibility', icon: FileCheck, path: 'DocumentEligibilityBatch', roles: ['BRINS'] },
       { name: 'Debtor Review', icon: FileCheck, path: 'DebtorReview', accesses: ['tugure review'] },
-      { name: 'Nota Management', icon: FileText, path: 'NotaManagement', accesses: ['tugure review'] },
+      // { name: 'Nota Management', icon: FileText, path: 'NotaManagement', accesses: ['tugure review'] },
       // { name: 'Payment Intent', icon: DollarSign, path: 'PaymentIntent', accesses: ['brins operation'] },
       { name: isBrinsUser ? 'Recovery Submit' : 'Claim Submit', icon: FileText, path: 'ClaimSubmit', accesses: ['brins operation'] },
       // { name: 'Document Claim', icon: FileCheck, path: 'DocumentClaim', roles: ['BRINS'] },
@@ -104,10 +104,11 @@ export default function Layout({ children, currentPageName }) {
     ],
     shared: [
       { name: 'Master Contract', icon: FileText, path: 'MasterContractManagement', roles: [] },
+      { name: 'Nota Management', icon: FileText, path: 'NotaManagement', roles: [] },
       { name: 'Bordero Management', icon: BarChart3, path: 'BorderoManagement', roles: [] },
       { name: 'Advanced Reports', icon: BarChart3, path: 'AdvancedReports', roles: [] },
       { name: 'Audit Log', icon: Activity, path: 'AuditLog', roles: [] },
-      { name: 'System Configuration', icon: Settings, path: 'SystemConfiguration', badge: unreadNotifications, roles: [] },
+      { name: 'System Configuration', icon: Settings, path: 'SystemConfiguration', roles: [] },
       { name: 'Profile', icon: User, path: 'Profile', roles: [] }
     ]
   };

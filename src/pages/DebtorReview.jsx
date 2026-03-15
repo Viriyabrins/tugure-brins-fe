@@ -33,6 +33,7 @@ import {
     AlertCircle,
     Pen,
     ShieldCheck,
+    History,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -98,6 +99,7 @@ export default function DebtorReview() {
     const [processing, setProcessing] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
+    const [revisionDiffs, setRevisionDiffs] = useState([]);
 
     useEffect(() => {
         loadUser();
@@ -547,6 +549,58 @@ export default function DebtorReview() {
         loadDebtors(page);
     }, [page]);
 
+    // Fetch revision diffs when detail dialog opens for a REVISION status debtor
+    useEffect(() => {
+        let mounted = true;
+        const fetchRevisionDiffs = async () => {
+            if (!showDetailDialog || !selectedDebtor) {
+                if (mounted) setRevisionDiffs([]);
+                return;
+            }
+
+            const status = String(selectedDebtor.status || '').trim().toUpperCase();
+            if (status !== 'REVISION') {
+                if (mounted) setRevisionDiffs([]);
+                return;
+            }
+
+            try {
+                // Query DebtorRevise to find the previous version for this nomor_peserta
+                const res = await backend.listPaginated('DebtorRevise', {
+                    page: 1,
+                    limit: 1,
+                    q: JSON.stringify({ nomor_peserta: selectedDebtor.nomor_peserta }),
+                });
+                const prev = Array.isArray(res.data) && res.data.length > 0 ? res.data[0] : null;
+                if (!prev) {
+                    if (mounted) setRevisionDiffs([]);
+                    return;
+                }
+
+                // Compare fields between current and previous version
+                const diffs = [];
+                const keys = Object.keys(selectedDebtor || {}).filter((k) => k !== 'id' && k !== 'created_at');
+                for (const k of keys) {
+                    const oldVal = prev[k];
+                    const newVal = selectedDebtor[k];
+                    const oldStr = oldVal === null || oldVal === undefined ? '' : String(oldVal);
+                    const newStr = newVal === null || newVal === undefined ? '' : String(newVal);
+                    if (oldStr !== newStr) {
+                        diffs.push({ key: k, old: oldStr || '-', new: newStr || '-' });
+                    }
+                }
+                if (mounted) setRevisionDiffs(diffs);
+            } catch (e) {
+                console.error('Failed to load previous revision:', e);
+                if (mounted) setRevisionDiffs([]);
+            }
+        };
+        fetchRevisionDiffs();
+        return () => {
+            mounted = false;
+        };
+    }, [showDetailDialog, selectedDebtor]);
+
     const toggleDebtorSelection = (debtorId) => {
         if (selectedDebtors.includes(debtorId)) {
             setSelectedDebtors(selectedDebtors.filter((id) => id !== debtorId));
@@ -627,15 +681,6 @@ export default function DebtorReview() {
             cell: (row) => <StatusBadge status={row.status} />,
         },
         {
-            header: "Remarks",
-            cell: (row) =>
-                row.validation_remarks ? (
-                    <span className="text-xs text-orange-600">⚠️ Issues</span>
-                ) : (
-                    <span className="text-xs text-green-600">✓ OK</span>
-                ),
-        },
-        {
             header: "Actions",
             cell: (row) => (
                 <div className="flex gap-2">
@@ -654,9 +699,10 @@ export default function DebtorReview() {
                     {/* {row.status === "APPROVED_BRINS" && isCheckerTugure && (
                         <Button
                             size="sm"
-                            className="bg-teal-500 hover:bg-teal-600"
+                            className="bg-teal-500 hover:bg-teal-600 text-white"
                             onClick={() => handleCheck(false, row)}
                             disabled={processing}
+                            title="Check & Move to CHECKED_TUGURE"
                         >
                             <Check className="w-4 h-4" />
                         </Button>
@@ -666,25 +712,27 @@ export default function DebtorReview() {
                         <>
                             <Button
                                 size="sm"
-                                className="bg-green-500 hover:bg-green-600"
+                                className="bg-green-500 hover:bg-green-600 text-white"
                                 onClick={() => {
                                     setSelectedDebtor(row);
                                     setApprovalAction("approve");
                                     setShowApprovalDialog(true);
                                 }}
                                 disabled={processing}
+                                title="Approve"
                             >
                                 <CheckCircle2 className="w-4 h-4" />
                             </Button>
                             <Button
                                 size="sm"
-                                className="bg-orange-500 hover:bg-orange-600"
+                                className="bg-orange-500 hover:bg-orange-600 text-white"
                                 onClick={() => {
                                     setSelectedDebtor(row);
                                     setApprovalAction("revision");
                                     setShowApprovalDialog(true);
                                 }}
                                 disabled={processing}
+                                title="Request Revision"
                             >
                                 <Pen className="w-4 h-4" />
                             </Button>
@@ -921,7 +969,44 @@ export default function DebtorReview() {
                                     </p>
                                 </div>
                             )}
+                            {selectedDebtor?.version_no && (
+                                <div>
+                                    <span className="text-gray-500">
+                                        Version No:
+                                    </span>
+                                    <p className="font-medium">
+                                        {selectedDebtor.version_no}
+                                    </p>
+                                </div>
+                            )}
                         </div>
+                        {/* Revision Diffs Section */}
+                        {String(selectedDebtor?.status || '').trim().toUpperCase() === 'REVISION' && revisionDiffs.length > 0 && (
+                            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <History className="w-5 h-5 text-blue-600" />
+                                    <h3 className="font-semibold text-blue-900">Revision Changes</h3>
+                                </div>
+                                <div className="space-y-2">
+                                    {revisionDiffs.slice(0, 10).map((diff, idx) => (
+                                        <div key={idx} className="flex items-start gap-3 text-sm">
+                                            <span className="font-mono text-xs bg-white px-2 py-1 rounded text-gray-700 flex-shrink-0 w-24">
+                                                {diff.key}
+                                            </span>
+                                            <div className="flex-1">
+                                                <p className="text-red-600 line-through text-xs">Old: {diff.old}</p>
+                                                <p className="text-green-600 text-xs">New: {diff.new}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {revisionDiffs.length > 10 && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            ...and {revisionDiffs.length - 10} more changes
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <DialogFooter>
                         <Button onClick={() => setShowDetailDialog(false)}>

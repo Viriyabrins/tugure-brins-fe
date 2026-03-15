@@ -1241,20 +1241,21 @@ export default function SubmitDebtor() {
                 });
             }
 
-            // Create debtors from pre-normalized payloads
-            for (let i = 0; i < uploadPreviewData.length; i++) {
-                try {
-                    const payload = uploadPreviewData[i];
-                    const createdDebtor = await backend.create("Debtor", payload);
-                    if (createdDebtor?.id) {
-                        createdDebtorIds.push(createdDebtor.id);
-                    }
-                    uploaded++;
-                } catch (rowError) {
-                    const rowMessage = rowError?.message ||
-                        "Unknown upload error";
-                    throw new Error(`Row ${i + 2}: ${rowMessage}`);
-                }
+            // Create debtors using atomic upload (handles versioning and archiving)
+            const result = await backend.uploadDebtorsAtomic({
+                uploadMode: batchMode,
+                selectedDebtorForRevision: batchMode === 'revise' ? selectedBatch : null,
+                debtors: uploadPreviewData,
+            });
+
+            const createdDebtors = result?.debtors || [];
+            createdDebtorIds.push(...(createdDebtors.map((d) => d.id) || []));
+            uploaded = createdDebtors.length;
+
+            if (uploaded === 0) {
+                setErrorMessage("No debtors were created. Please check your data and try again.");
+                setUploading(false);
+                return;
             }
 
             // Calculate new totals for Bordero
@@ -1292,7 +1293,14 @@ export default function SubmitDebtor() {
                 }
             }
 
-            // Create audit log
+            // === REVISION MODE HANDLED BY BACKEND ===
+            // uploadDebtorsAtomic on the backend handles:
+            // - Archiving old REVISION debtors to DebtorRevise
+            // - Deleting old debtors from Debtor table
+            // - Creating versioned records with version_no incremented
+            // - parent_debtor_id relationships
+
+            // Create audit log for the upload
             try {
                 await backend.create("AuditLog", {
                     action:
@@ -1303,101 +1311,14 @@ export default function SubmitDebtor() {
                     old_value: "",
                     new_value: JSON.stringify({
                         count: uploadPreviewData.length,
+                        upload_mode: batchMode,
                     }),
                     user_email: auditActor?.user_email || user?.email,
                     user_role: auditActor?.user_role || user?.role,
-                    reason: `Uploaded ${uploadPreviewData.length} debtors to batch ${batchId}`,
+                    reason: `${batchMode === 'new' ? 'Uploaded' : 'Revised'} ${uploadPreviewData.length} debtors to batch ${batchId}`,
                 });
             } catch (auditError) {
                 console.warn("Failed to create audit log:", auditError);
-            }
-
-            // === REVISION MODE: Move old REVISION debtors to ReviseLog and delete from Debtor ===
-            if (batchMode === "revise" && uploaded > 0) {
-                const revisionDebtorsInBatch = debtors.filter(
-                    (d) =>
-                        d.batch_id === selectedBatch &&
-                        d.contract_id === contractId &&
-                        d.status === "REVISION",
-                );
-
-                // Get the nomor_peserta of newly uploaded debtors
-                const uploadedNomorPeserta = new Set(
-                    uploadPreviewData
-                        .map((r) => r.nomor_peserta)
-                        .filter(Boolean),
-                );
-
-                for (const oldDebtor of revisionDebtorsInBatch) {
-                    // Only move if the CSV had a matching nomor_peserta
-                    if (!uploadedNomorPeserta.has(oldDebtor.nomor_peserta))
-                        continue;
-
-                    try {
-                        // 1. Create ReviseLog entry (save old data)
-                        await backend.create("ReviseLog", {
-                            debtor_id: oldDebtor.id,
-                            batch_id: oldDebtor.batch_id,
-                            nomor_peserta: oldDebtor.nomor_peserta,
-                            nama_peserta: oldDebtor.nama_peserta,
-                            alamat_usaha: oldDebtor.alamat_usaha || null,
-                            nomor_perjanjian_kredit:
-                                oldDebtor.nomor_perjanjian_kredit || null,
-                            plafon: parseFloat(oldDebtor.plafon) || null,
-                            nominal_premi:
-                                parseFloat(oldDebtor.nominal_premi) || null,
-                            contract_id: oldDebtor.contract_id || null,
-                            status: oldDebtor.status,
-                            revision_reason:
-                                oldDebtor.revision_reason ||
-                                oldDebtor.validation_remarks ||
-                                null,
-                            created_by: user?.email || null,
-                        });
-
-                        // 2. Delete old REVISION debtor from Debtor table
-                        await backend.update("Debtor", oldDebtor.id, {
-                            status: "ARCHIVED_REVISION",
-                        });
-
-                        // Try to delete, fall back to status update if delete not supported
-                        try {
-                            await backend.delete("Debtor", oldDebtor.id);
-                        } catch (deleteErr) {
-                            console.warn(
-                                `Delete failed for debtor ${oldDebtor.id}:`,
-                                deleteErr,
-                            );
-                        }
-                    } catch (reviseError) {
-                        console.error(
-                            `Failed to move debtor ${oldDebtor.id} to ReviseLog:`,
-                            reviseError,
-                        );
-                    }
-                }
-
-                // Create audit log for revision move
-                try {
-                    await backend.create("AuditLog", {
-                        action: "REVISION_DEBTORS_ARCHIVED",
-                        module: "DEBTOR",
-                        entity_type: "ReviseLog",
-                        entity_id: batchId,
-                        old_value: JSON.stringify({
-                            revision_count: revisionDebtorsInBatch.length,
-                        }),
-                        new_value: JSON.stringify({
-                            moved_to_revise_log: revisionDebtorsInBatch.length,
-                            new_submitted: uploaded,
-                        }),
-                        user_email: auditActor?.user_email || user?.email,
-                        user_role: auditActor?.user_role || user?.role,
-                        reason: `Moved ${revisionDebtorsInBatch.length} REVISION debtors to ReviseLog and replaced with ${uploaded} new SUBMITTED debtors`,
-                    });
-                } catch (auditError) {
-                    console.warn("Failed to create audit log:", auditError);
-                }
             }
 
             // Create notifications

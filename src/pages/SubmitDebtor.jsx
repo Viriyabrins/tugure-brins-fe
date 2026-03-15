@@ -688,49 +688,9 @@ export default function SubmitDebtor() {
                 return;
             }
 
-            // Validate revision mode debtor matching
-            if (batchMode === "revise") {
-                const revisionDebtorsInBatch = debtors.filter(
-                    (d) =>
-                        d.batch_id === selectedBatch &&
-                        d.contract_id === selectedContract &&
-                        d.status === "REVISION",
-                );
-                const revisionNomorPesertaSet = new Set(
-                    revisionDebtorsInBatch.map((d) => d.nomor_peserta),
-                );
-
-                const invalidRows = [];
-                for (let i = 0; i < normalizedRows.length; i++) {
-                    const nomorPeserta = toNullableString(
-                        normalizedRows[i].nomor_peserta,
-                    );
-                    if (!revisionNomorPesertaSet.has(nomorPeserta)) {
-                        invalidRows.push({
-                            row: i + 2,
-                            nomor_peserta: nomorPeserta || "(empty)",
-                        });
-                    }
-                }
-
-                if (invalidRows.length > 0) {
-                    const details = invalidRows
-                        .slice(0, 5)
-                        .map(
-                            (r) =>
-                                `Row ${r.row}: nomor_peserta "${r.nomor_peserta}" is not a REVISION debtor in this batch`,
-                        )
-                        .join("\n");
-                    setErrorMessage(
-                        `Validation failed — file contains debtors that are not marked as REVISION in batch ${selectedBatch}:\n${details}${invalidRows.length > 5 ? `\n...and ${invalidRows.length - 5} more` : ""}`,
-                    );
-                    toast.error(
-                        `Validation failed: non-REVISION debtor found for batch ${selectedBatch}`,
-                    );
-                    setUploadPreviewLoading(false);
-                    return;
-                }
-            }
+            // In revise mode, the backend will automatically filter to only REVISION debtors
+            // No frontend validation needed - user can upload the full batch file
+            // and the backend will process only those marked for REVISION
 
             // Extract or retrieve batch ID
             let batchId;
@@ -2248,20 +2208,19 @@ export default function SubmitDebtor() {
                                 </Alert>
 
                                 {batchMode === "revise" && (
-                                    <Alert className="border-orange-200 bg-orange-50">
-                                        <AlertCircle className="h-4 w-4 text-orange-600" />
-                                        <AlertDescription className="text-orange-800">
-                                            <strong>Revise Mode:</strong> The
-                                            upload file must only contain debtors
-                                            that were marked for REVISION. Each
-                                            debtor's{" "}
-                                            <code className="font-mono text-xs bg-orange-100 px-1 rounded">
-                                                nomor_peserta
+                                    <Alert className="border-blue-200 bg-blue-50">
+                                        <AlertCircle className="h-4 w-4 text-blue-600" />
+                                        <AlertDescription className="text-blue-800">
+                                            <strong>Revise Mode:</strong> You can
+                                            upload the complete batch file. The
+                                            system will automatically process only
+                                            the debtors marked as{" "}
+                                            <code className="font-mono text-xs bg-blue-100 px-1 rounded">
+                                                REVISION
                                             </code>{" "}
-                                            must match a REVISION debtor in the
-                                            selected batch. Old REVISION data
-                                            will be moved to ReviseLog after
-                                            upload.
+                                            in the selected batch and skip the
+                                            rest. Old REVISION data will be
+                                            archived after upload.
                                         </AlertDescription>
                                     </Alert>
                                 )}

@@ -76,6 +76,12 @@ const hasBrinsUploadRole = (roles = []) =>
         .some((role) => BRINS_UPLOAD_ROLES.includes(role));
 const normalizeStatus = (status = "") => String(status).trim().toUpperCase();
 
+const extractBaseContractNo = (cn = "") => {
+    if (!cn) return "";
+    const m = String(cn).match(/^(.*?)(?:_V\d+_.*)?$/i);
+    return m ? m[1] : String(cn);
+};
+
 export default function MasterContractManagement() {
     const [user, setUser] = useState(null);
     const [tokenRoles, setTokenRoles] = useState([]);
@@ -100,11 +106,14 @@ export default function MasterContractManagement() {
     const [approvalRemarks, setApprovalRemarks] = useState("");
     const [uploadFile, setUploadFile] = useState(null);
     const [showDetailDialog, setShowDetailDialog] = useState(false);
+    const [revisionDiffs, setRevisionDiffs] = useState([]);
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const [statsContracts, setStatsContracts] = useState([]); // full list for stat cards only
     const [uploadPreviewData, setUploadPreviewData] = useState([]);
     const [uploadTabActive, setUploadTabActive] = useState(1); // 1 = upload, 2 = preview
+    const [previewValidationError, setPreviewValidationError] =
+        useState("");
     const pageSize = 10;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const canManageUploadTemplate = hasBrinsUploadRole(tokenRoles);
@@ -156,6 +165,60 @@ export default function MasterContractManagement() {
     useEffect(() => {
         if (page > totalPages) setPage(totalPages);
     }, [totalPages]);
+
+    // When opening detail dialog for a revisioned contract (version >= 2),
+    // fetch the latest archived ContractRevise entry and compute field diffs.
+    useEffect(() => {
+        let mounted = true;
+        const fetchPrevRevision = async () => {
+            if (!showDetailDialog || !selectedContract) {
+                if (mounted) setRevisionDiffs([]);
+                return;
+            }
+            const ver = Number(selectedContract.version) || 0;
+            if (ver < 2) {
+                if (mounted) setRevisionDiffs([]);
+                return;
+            }
+
+            const base = extractBaseContractNo(
+                selectedContract.contract_no || selectedContract.contract_no_from || ''
+            );
+
+            try {
+                const res = await backend.listPaginated('ContractRevise', {
+                    page: 1,
+                    limit: 1,
+                    q: JSON.stringify({ contractId: base }),
+                });
+                const prev = Array.isArray(res.data) && res.data.length > 0 ? res.data[0] : null;
+                if (!prev) {
+                    if (mounted) setRevisionDiffs([]);
+                    return;
+                }
+
+                const diffs = [];
+                const keys = Object.keys(selectedContract || {}).filter((k) => k !== 'id');
+                for (const k of keys) {
+                    const oldVal = prev[k];
+                    const newVal = selectedContract[k];
+                    const oldStr = oldVal === null || oldVal === undefined ? '' : String(oldVal);
+                    const newStr = newVal === null || newVal === undefined ? '' : String(newVal);
+                    if (oldStr !== newStr) {
+                        diffs.push({ key: k, old: oldStr || '-', new: newStr || '-' });
+                    }
+                }
+                if (mounted) setRevisionDiffs(diffs);
+            } catch (e) {
+                console.error('Failed to load previous revision:', e);
+                if (mounted) setRevisionDiffs([]);
+            }
+        };
+        fetchPrevRevision();
+        return () => {
+            mounted = false;
+        };
+    }, [showDetailDialog, selectedContract]);
 
     const loadUser = async () => {
         try {
@@ -574,6 +637,46 @@ export default function MasterContractManagement() {
         setErrorMessage("");
         setSuccessMessage("");
         try {
+            // If we're in revise mode, perform final validation before saving.
+            if (uploadMode === "revise") {
+                if (!selectedContractForRevision) {
+                    setErrorMessage("Silakan pilih kontrak yang akan direvisi.");
+                    setProcessing(false);
+                    return;
+                }
+
+                const selected = revisionContracts.find(
+                    (c) => (c.contract_id || c.id) === selectedContractForRevision,
+                );
+                if (!selected) {
+                    setErrorMessage("Kontrak yang dipilih tidak ditemukan.");
+                    setProcessing(false);
+                    return;
+                }
+
+                const expectedNoRaw = toNullableString(selected.contract_no) || "";
+                const expectedBase = extractBaseContractNo(expectedNoRaw) || "";
+                if (!expectedBase) {
+                    setErrorMessage(
+                        "Kontrak terpilih tidak memiliki Contract No yang valid.",
+                    );
+                    setProcessing(false);
+                    return;
+                }
+
+                const mismatch = (uploadPreviewData || []).find((r) => {
+                    const rNo = toNullableString(r.contract_no) || "";
+                    return extractBaseContractNo(rNo).trim().toUpperCase() !== expectedBase.trim().toUpperCase();
+                });
+
+                if (mismatch) {
+                    setErrorMessage(
+                        `Contract No pada file (${extractBaseContractNo(mismatch.contract_no) || "-"}) tidak sesuai dengan kontrak yang dipilih untuk direvisi (${expectedBase}). Periksa kembali file atau pilihan kontrak.`,
+                    );
+                    setProcessing(false);
+                    return;
+                }
+            }
             const result = await backend.uploadMasterContractsAtomic({
                 uploadMode,
                 selectedContractForRevision:
@@ -1122,6 +1225,50 @@ export default function MasterContractManagement() {
               })
         : [];
 
+    // Validate preview when in Revise mode: ensure contract_no in uploaded file
+    // matches the contract_no of the selected contract to revise.
+    useEffect(() => {
+        if (uploadMode !== "revise" || uploadTabActive !== 2) {
+            setPreviewValidationError("");
+            return;
+        }
+
+        if (!selectedContractForRevision) {
+            setPreviewValidationError("Silakan pilih kontrak yang akan direvisi.");
+            return;
+        }
+
+        const selected = revisionContracts.find(
+            (c) => (c.contract_id || c.id) === selectedContractForRevision,
+        );
+        if (!selected) {
+            setPreviewValidationError("Kontrak yang dipilih tidak ditemukan.");
+            return;
+        }
+
+        const expectedNoRaw = toNullableString(selected.contract_no) || "";
+        const expectedBase = extractBaseContractNo(expectedNoRaw) || "";
+        if (!expectedBase) {
+            setPreviewValidationError(
+                "Kontrak terpilih tidak memiliki Contract No yang valid.",
+            );
+            return;
+        }
+
+        const mismatch = (uploadPreviewData || []).find((r) => {
+            const rNo = toNullableString(r.contract_no) || "";
+            return extractBaseContractNo(rNo).trim().toUpperCase() !== expectedBase.trim().toUpperCase();
+        });
+
+        if (mismatch) {
+            setPreviewValidationError(
+                `Contract No pada file (${extractBaseContractNo(mismatch.contract_no) || "-"}) tidak sesuai dengan kontrak yang dipilih untuk direvisi (${expectedBase}). Periksa kembali file atau pilihan kontrak.`,
+            );
+        } else {
+            setPreviewValidationError("");
+        }
+    }, [uploadPreviewData, selectedContractForRevision, uploadMode, uploadTabActive, revisionContracts]);
+
     const stats = {
         total: statsContracts.length,
         active: activeContracts.length,
@@ -1179,7 +1326,14 @@ export default function MasterContractManagement() {
             ),
             width: "50px",
         },
-        { header: "Contract No", accessorKey: "contract_no" },
+        {
+            header: "Contract No",
+            accessorKey: "contract_no",
+            cell: (row) => {
+                const v = row.contract_no || row.contract_no_from || row.contract_id || '';
+                return extractBaseContractNo(v) || '-';
+            },
+        },
         { header: "Underwriter Name", accessorKey: "underwriter_name" },
         {
             header: "Contract Status",
@@ -1288,17 +1442,6 @@ export default function MasterContractManagement() {
         "kolektibilitas_max",
         "kolektibilitas_limit_amount",
     ];
-
-    const formatPreviewValue = (key, val) => {
-        if (val === null || val === undefined || val === "") return "-";
-        if (typeof val === "boolean") return val ? "Yes" : "No";
-        if (
-            String(key).toLowerCase().includes("date") &&
-            typeof val === "string"
-        )
-            return val.slice(0, 10);
-        return String(val);
-    };
 
     return (
         <div className="space-y-6">
@@ -1845,8 +1988,8 @@ export default function MasterContractManagement() {
                                             <Alert className="mt-2 bg-blue-50 border-blue-200">
                                                 <AlertCircle className="h-4 w-4 text-blue-600" />
                                                 <AlertDescription className="text-blue-700">
-                                                    Akan membuat versi baru dan
-                                                    mengarsipkan yang sebelumnya
+                                                    Will create a new version and
+                                                    archive the previous one
                                                 </AlertDescription>
                                             </Alert>
                                         )}
@@ -1902,14 +2045,23 @@ export default function MasterContractManagement() {
                                         </p>
                                     </div>
                                 </div>
-                                <Alert className="bg-blue-50 border-blue-200">
-                                    <AlertCircle className="h-4 w-4 text-blue-600" />
-                                    <AlertDescription className="text-blue-700">
-                                        Below is a preview of the data that will
-                                        be saved. Please review it before
-                                        confirming.
-                                    </AlertDescription>
-                                </Alert>
+                                {previewValidationError ? (
+                                    <Alert className="bg-red-50 border-red-200">
+                                        <AlertCircle className="h-4 w-4 text-red-600" />
+                                        <AlertDescription className="text-red-700">
+                                            {previewValidationError}
+                                        </AlertDescription>
+                                    </Alert>
+                                ) : (
+                                    <Alert className="bg-blue-50 border-blue-200">
+                                        <AlertCircle className="h-4 w-4 text-blue-600" />
+                                        <AlertDescription className="text-blue-700">
+                                            Below is a preview of the data that will
+                                            be saved. Please review it before
+                                            confirming.
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
                                 <div
                                     style={{
                                         overflowX: "auto",
@@ -2468,13 +2620,39 @@ export default function MasterContractManagement() {
                             </Button>
                         )}
                         {uploadTabActive === 2 && (
-                            <Button
-                                onClick={handleConfirmSave}
-                                disabled={processing}
-                                className="bg-green-600 hover:bg-green-700 text-white"
+                            <div
+                                className={`inline-block ${
+                                    processing ||
+                                    (uploadMode === "revise" &&
+                                        !!previewValidationError)
+                                        ? "hover:cursor-not-allowed"
+                                        : ""
+                                }`}
                             >
-                                {processing ? "Uploading..." : "Upload"}
-                            </Button>
+                                <Button
+                                    onClick={handleConfirmSave}
+                                    disabled={
+                                        processing ||
+                                        (uploadMode === "revise" &&
+                                            !!previewValidationError)
+                                    }
+                                    className={`bg-green-600 text-white ${
+                                        processing ||
+                                        (uploadMode === "revise" &&
+                                            !!previewValidationError)
+                                            ? "opacity-60"
+                                            : "hover:bg-green-700"
+                                    }`}
+                                >
+                                    {processing
+                                        ? uploadMode === "revise"
+                                            ? "Revising..."
+                                            : "Uploading..."
+                                        : uploadMode === "revise"
+                                        ? "Revise"
+                                        : "Upload"}
+                                </Button>
+                            </div>
                         )}
                     </DialogFooter>
                 </DialogContent>
@@ -2641,13 +2819,14 @@ export default function MasterContractManagement() {
                         maxHeight: "90vh",
                         display: "flex",
                         flexDirection: "column",
-                        overflow: "hidden",
+                        overflowY: "auto",
                     }}
                 >
                     <DialogHeader>
                         <DialogTitle>Master Contract Detail</DialogTitle>
                         <DialogDescription>
                             {selectedContract?.contract_no ||
+                                selectedContract?.contract_no_from ||
                                 selectedContract?.contract_id ||
                                 "-"}
                         </DialogDescription>
@@ -2655,8 +2834,9 @@ export default function MasterContractManagement() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         {selectedContract &&
-                            Object.entries(selectedContract).map(
-                                ([key, val]) => (
+                            Object.entries(selectedContract)
+                                .filter(([key]) => key !== "id")
+                                .map(([key, val]) => (
                                     <div
                                         key={key}
                                         className="border rounded p-2"
@@ -2672,9 +2852,25 @@ export default function MasterContractManagement() {
                                                 : String(val)}
                                         </div>
                                     </div>
-                                ),
-                            )}
+                                ))}
                     </div>
+
+                    {revisionDiffs && revisionDiffs.length > 0 && (
+                        <div className="mt-4 w-full">
+                            <div className="font-semibold mb-2">Revision Differences</div>
+                            <div className="grid grid-cols-1 gap-2">
+                                {revisionDiffs.map((d) => (
+                                    <div key={d.key} className="p-2 border rounded flex justify-between">
+                                        <div className="w-1/3 font-medium text-sm">{d.key}</div>
+                                        <div className="w-2/3 text-sm">
+                                            <div className="text-yellow-600 font-normal">Old: {d.old}</div>
+                                            <div className="text-green-600 font-medium text-base">New: {d.new}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     <DialogFooter>
                         <Button

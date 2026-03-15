@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import jsPDF from "jspdf";
 import {
     Select,
     SelectContent,
@@ -38,6 +39,7 @@ import {
     AlertCircle,
     Lock,
     Check,
+    Download,
 } from "lucide-react";
 import { backend } from "@/api/backendClient";
 import PageHeader from "@/components/common/PageHeader";
@@ -1198,6 +1200,67 @@ export default function NotaManagement() {
         return true;
     });
 
+    const handleDownloadPDF = (nota) => {
+        try {
+            const pdf = new jsPDF("p", "mm", "a4");
+            
+            // Header
+            pdf.setFontSize(20);
+            pdf.setTextColor(41, 128, 185);
+            pdf.text("NOTA DETAILS", 105, 20, { align: "center" });
+
+            pdf.setFontSize(12);
+            pdf.setTextColor(0, 0, 0);
+
+            // Details
+            let yPos = 40;
+            const lineHeight = 10;
+
+            const addField = (label, value) => {
+                pdf.setFont("helvetica", "bold");
+                pdf.text(`${label}:`, 20, yPos);
+                pdf.setFont("helvetica", "normal");
+                pdf.text(String(value || "-"), 65, yPos);
+                yPos += lineHeight;
+            };
+
+            addField("Nota Number", nota.nota_number);
+            addField("Nota Type", nota.nota_type);
+            addField("Status", nota.status);
+            addField("Reference / Batch ID", nota.reference_id);
+            addField("Contract ID", nota.contract_id);
+            
+            // Monetary Values
+            yPos += 10;
+            pdf.setFont("helvetica", "bold");
+            pdf.text("Monetary Values", 20, yPos);
+            yPos += lineHeight;
+
+            pdf.setFont("helvetica", "normal");
+            addField("Amount", `Rp ${Number(nota.amount || 0).toLocaleString("id-ID")}`);
+            
+            if (nota.payment_reference) {
+                addField("Payment Ref", nota.payment_reference);
+            }
+            if (nota.paid_date) {
+                addField("Paid Date", new Date(nota.paid_date).toLocaleDateString("id-ID"));
+            }
+
+            if (nota.marked_paid_by) {
+                addField("Marked Paid By", nota.marked_paid_by);
+            }
+            if (nota.marked_paid_date) {
+                addField("Marked Paid Date", new Date(nota.marked_paid_date).toLocaleDateString("id-ID"));
+            }
+
+            pdf.save(`${nota.nota_number}.pdf`);
+            setSuccessMessage("PDF downloaded successfully");
+        } catch (error) {
+            console.error("Failed to generate PDF:", error);
+            setSuccessMessage("Failed to generate PDF");
+        }
+    };
+
     return (
         <div className="space-y-6">
             <PageHeader
@@ -1435,6 +1498,17 @@ export default function NotaManagement() {
                                         >
                                             <Eye className="w-4 h-4 mr-1" />
                                             View
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDownloadPDF(row);
+                                            }}
+                                        >
+                                            <Download className="w-4 h-4 mr-1" />
+                                            PDF
                                         </Button>
                                     </div>
                                 ),

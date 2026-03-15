@@ -100,6 +100,8 @@ export default function DebtorReview() {
     const [successMessage, setSuccessMessage] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
     const [revisionDiffs, setRevisionDiffs] = useState([]);
+    const [showApprovalSummaryDialog, setShowApprovalSummaryDialog] = useState(false);
+    const [approvalSummaryDebtors, setApprovalSummaryDebtors] = useState([]);
 
     useEffect(() => {
         loadUser();
@@ -335,6 +337,35 @@ export default function DebtorReview() {
             return;
         }
 
+        // If action is "approve", show summary dialog first
+        if (approvalAction.includes("approve")) {
+            const isBulk = approvalAction.startsWith("bulk_");
+            const debtorsToProcess = isBulk
+                ? debtors.filter((d) => selectedDebtors.includes(d.id))
+                : selectedDebtor
+                    ? [selectedDebtor]
+                    : [];
+            
+            if (debtorsToProcess.length === 0) return;
+            
+            setApprovalSummaryDebtors(debtorsToProcess);
+            setShowApprovalSummaryDialog(true);
+            return;
+        }
+
+        // For revision action, proceed directly
+        await executeApproval();
+    };
+
+    const executeApproval = async () => {
+        if (
+            (!selectedDebtor && selectedDebtors.length === 0) ||
+            !approvalAction
+        ) {
+            console.error("No debtors selected or no action specified");
+            return;
+        }
+
         setProcessing(true);
 
         try {
@@ -345,7 +376,6 @@ export default function DebtorReview() {
 
             const newStatus = action === "approve" ? "APPROVED" : "REVISION";
 
-            // Get debtors to process
             const debtorsToProcess = isBulk
                 ? debtors.filter((d) => selectedDebtors.includes(d.id))
                 : selectedDebtor
@@ -359,11 +389,16 @@ export default function DebtorReview() {
             }
 
             let processedCount = 0;
+            let totalPlafon = 0;
+            let totalNetPremi = 0;
+            const batchId = debtorsToProcess[0]?.batch_id;
+            const contractId = debtorsToProcess[0]?.contract_id;
+
             for (const debtor of debtorsToProcess) {
                 if (!debtor || !debtor.id || debtor.status !== "CHECKED_TUGURE") continue;
 
                 try {
-                    // Update debtor using backend client
+                    // Update debtor status
                     await backend.update("Debtor", debtor.id, {
                         status: newStatus,
                         revision_reason:
@@ -372,9 +407,11 @@ export default function DebtorReview() {
                             action === "revision" ? approvalRemarks : null,
                     });
                     processedCount++;
+                    totalPlafon += parseFloat(debtor.plafon) || 0;
+                    totalNetPremi += parseFloat(debtor.net_premi) || 0;
 
                     if (action === "approve") {
-                        // Create record using backend client
+                        // Create record
                         await backend.create("Record", {
                             batch_id: debtor.batch_id,
                             debtor_id: debtor.id,
@@ -387,23 +424,18 @@ export default function DebtorReview() {
                         });
                     }
 
-                    // Create audit log using backend client
+                    // Create audit log
                     try {
                         const actionLabel = action === "approve"
-                                ? "DEBTOR_APPROVED"
-                                : "DEBTOR_REVISION";
+                            ? "DEBTOR_APPROVED"
+                            : "DEBTOR_REVISION";
                         await backend.create("AuditLog", {
                             action: actionLabel,
                             module: "DEBTOR",
                             entity_type: "Debtor",
                             entity_id: debtor.id,
-                            old_value: JSON.stringify({
-                                status: debtor.status,
-                            }),
-                            new_value: JSON.stringify({
-                                status: newStatus,
-                                remarks: approvalRemarks,
-                            }),
+                            old_value: JSON.stringify({ status: debtor.status }),
+                            new_value: JSON.stringify({ status: newStatus, remarks: approvalRemarks }),
                             user_email: auditActor?.user_email || user?.email,
                             user_role: auditActor?.user_role || user?.role,
                             reason: approvalRemarks,
@@ -412,39 +444,57 @@ export default function DebtorReview() {
                         console.warn("Failed to create audit log:", auditError);
                     }
                 } catch (error) {
-                    console.error(
-                        `Error processing debtor ${debtor.id}:`,
-                        error,
-                    );
+                    console.error(`Error processing debtor ${debtor.id}:`, error);
                 }
             }
 
             if (processedCount === 0) {
-                toast.warning("No debtors with CHECKED_TUGURE status found in selection.");
+                toast.warning("No debtors with CHECKED_TUGURE status found.");
                 setShowApprovalDialog(false);
+                setShowApprovalSummaryDialog(false);
                 setProcessing(false);
                 return;
             }
 
-            // Create notifications for ALL roles
+            // **GENERATE NOTA IF ACTION IS APPROVE**
+            if (action === "approve" && contractId) {
+                try {
+                    const notaNumber = `NOTA-${contractId}-${Date.now()}`;
+                    await backend.create("Nota", {
+                        nota_number: notaNumber,
+                        nota_type: "INVOICE",
+                        reference_id: batchId,
+                        contract_id: contractId,
+                        amount: totalNetPremi,
+                        currency: "IDR",
+                        status: "UNPAID",
+                        issued_by: auditActor?.user_email || user?.email,
+                        issued_date: new Date().toISOString(),
+                        total_actual_paid: 0,
+                        reconciliation_status: "PENDING",
+                    });
+                    console.log("Nota generated:", notaNumber);
+                } catch (notaError) {
+                    console.warn("Failed to generate Nota:", notaError);
+                }
+            }
+
+            // Create notifications
             const notifTitle = action === "approve"
-                    ? "Debtors Approved (Final)"
-                    : "Debtors Marked for Revision";
+                ? "Debtors Approved (Final)"
+                : "Debtors Marked for Revision";
             const notifMessage = isBulk
                 ? `${auditActor?.user_email || user?.email} ${action === "approve" ? "approved" : "marked for revision"} ${processedCount} debtor(s).`
-                : `${auditActor?.user_email || user?.email} ${action === "approve" ? "approved" : "marked for revision"} debtor ${selectedDebtor?.nama_peserta || selectedDebtor?.debtor_name}.`;
-            const notifType = action === "revision" ? "WARNING" : "INFO";
+                : `${auditActor?.user_email || user?.email} ${action === "approve" ? "approved" : "marked for revision"} debtor.`;
 
             for (const role of ALL_ROLES) {
                 try {
                     await backend.create("Notification", {
                         title: notifTitle,
                         message: notifMessage,
-                        type: notifType,
+                        type: action === "revision" ? "WARNING" : "INFO",
                         module: "DEBTOR",
-                        reference_id: isBulk
-                            ? debtorsToProcess[0]?.batch_id
-                            : selectedDebtor?.id,
+                        reference_id: isBulk ? batchId : selectedDebtor?.id,
                         target_role: role,
                     });
                 } catch (notifError) {
@@ -452,66 +502,23 @@ export default function DebtorReview() {
                 }
             }
 
-            // Send Email Notifications via Keycloak groups
-            try {
-                if (action === "approve") {
-                    // Approver approves -> Notify brins-maker group
-                    sendNotificationEmail({
-                        targetGroup: "brins-maker",
-                        objectType: "Record",
-                        statusTo: "APPROVED",
-                        recipientRole: "BRINS",
-                        variables: {
-                            debtor_count: String(processedCount),
-                            action_by: auditActor?.user_email || user?.email,
-                        },
-                        fallbackSubject: `Debtor Approved`,
-                        fallbackBody: `${processedCount} debtor(s) have been approved by ${auditActor?.user_email || user?.email}.`,
-                    }).catch(err => console.error("Background email failed:", err));
-                } else if (action === "revision") {
-                    // Revision -> Notify brins-maker group
-                    sendNotificationEmail({
-                        targetGroup: "brins-maker",
-                        objectType: "Record",
-                        statusTo: "REVISION",
-                        recipientRole: "BRINS",
-                        variables: {
-                            debtor_count: String(processedCount),
-                            action_by: auditActor?.user_email || user?.email,
-                            remarks: approvalRemarks,
-                        },
-                        fallbackSubject: `Debtor Revision Required`,
-                        fallbackBody: `${processedCount} debtor(s) have been marked for revision by ${auditActor?.user_email || user?.email}. Reason: ${approvalRemarks}`,
-                    }).catch(err => console.error("Background email failed:", err));
-                }
-            } catch (emailErr) {
-                console.warn("Failed to send notification email:", emailErr);
-            }
-
-            const actionDisplay =
-                action === "approve"
-                        ? isBulk
-                            ? `${processedCount} approved (final)`
-                            : "approved (final)"
-                        : isBulk
-                            ? `${processedCount} marked for revision`
-                            : "marked for revision";
             setSuccessMessage(
-                isBulk
-                    ? `${actionDisplay}. Batch reconciliation handled by backend.`
-                    : `Debtor ${actionDisplay}. Batch reconciliation handled by backend.`,
+                action === "approve" 
+                    ? `${processedCount} debtor(s) approved. Nota generated.`
+                    : `${processedCount} debtor(s) marked for revision.`
             );
+            
             setShowApprovalDialog(false);
+            setShowApprovalSummaryDialog(false);
             setSelectedDebtor(null);
             setSelectedDebtors([]);
             setApprovalRemarks("");
+            setApprovalSummaryDebtors([]);
 
-            // Reload data after success
-            setTimeout(() => {
-                loadData();
-            }, 1000);
+            setTimeout(() => loadData(), 1000);
         } catch (error) {
             console.error("Approval error:", error);
+            toast.error("Failed to process approval");
         }
         setProcessing(false);
     };
@@ -1110,6 +1117,105 @@ export default function DebtorReview() {
                                 : approvalAction?.includes("approve")
                                   ? "Confirm Approval"
                                   : "Submit Revision Request"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Approval Summary Dialog */}
+            <Dialog open={showApprovalSummaryDialog} onOpenChange={setShowApprovalSummaryDialog}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Approve Debtors & Generate Nota</DialogTitle>
+                        <DialogDescription>
+                            Review the debtors that will be approved and a Nota will be automatically generated.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="py-4 space-y-4">
+                        {/* Summary Stats */}
+                        <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                            <div>
+                                <p className="text-sm text-gray-600">Total Debtors</p>
+                                <p className="text-2xl font-bold text-blue-600">{approvalSummaryDebtors.length}</p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-600">Total Exposure</p>
+                                <p className="text-lg font-semibold">
+                                    {formatRupiahAdaptive(
+                                        approvalSummaryDebtors.reduce((sum, d) => sum + (parseFloat(d.plafon) || 0), 0)
+                                    )}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-600">Total Net Premi</p>
+                                <p className="text-lg font-semibold">
+                                    {formatRupiahAdaptive(
+                                        approvalSummaryDebtors.reduce((sum, d) => sum + (parseFloat(d.net_premi) || 0), 0)
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Debtor List */}
+                        <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-100 sticky top-0">
+                                    <tr>
+                                        <th className="px-4 py-2 text-left font-semibold">Nomor Peserta</th>
+                                        <th className="px-4 py-2 text-left font-semibold">Nama</th>
+                                        <th className="px-4 py-2 text-right font-semibold">Plafon</th>
+                                        <th className="px-4 py-2 text-right font-semibold">Net Premi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {approvalSummaryDebtors.map((d, idx) => (
+                                        <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                                            <td className="px-4 py-2">{d.nomor_peserta}</td>
+                                            <td className="px-4 py-2 text-sm">{d.nama_peserta}</td>
+                                            <td className="px-4 py-2 text-right">{formatRupiahAdaptive(d.plafon)}</td>
+                                            <td className="px-4 py-2 text-right">{formatRupiahAdaptive(d.net_premi)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <Alert className="border-green-200 bg-green-50">
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            <AlertDescription className="text-green-800">
+                                An invoice Nota (UNPAID status) will be generated automatically and visible in Nota Management.
+                            </AlertDescription>
+                        </Alert>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowApprovalSummaryDialog(false);
+                                setApprovalSummaryDebtors([]);
+                            }}
+                            disabled={processing}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                            onClick={executeApproval}
+                            disabled={processing}
+                        >
+                            {processing ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Processing...
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                                    Approve & Generate Nota
+                                </>
+                            )}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

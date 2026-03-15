@@ -37,6 +37,7 @@ import {
     X,
     AlertCircle,
     Lock,
+    Check,
 } from "lucide-react";
 import { backend } from "@/api/backendClient";
 import PageHeader from "@/components/common/PageHeader";
@@ -95,11 +96,16 @@ const defaultFilterDnCn = {
 
 const normalizeRole = (role = "") => String(role).trim().toLowerCase();
 const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
-const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role"];
+const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role", "approver-brins-role"];
 const hasTugureActionRole = (roles = []) =>
     (Array.isArray(roles) ? roles : [])
         .map(normalizeRole)
         .some((role) => TUGURE_ACTION_ROLES.includes(role));
+
+const isBrinsRole = (roles = []) => 
+    (Array.isArray(roles) ? roles : [])
+        .map(normalizeRole)
+        .some((role) => BRINS_ACTION_ROLES.includes(role));
 
 export default function NotaManagement() {
     const [user, setUser] = useState(null);
@@ -141,6 +147,9 @@ export default function NotaManagement() {
     const [filters, setFilters] = useState(defaultFilter);
     const [reconFilters, setReconFilters] = useState(defaultFilterRecon);
     const [dnCnFilters, setDnCnFilters] = useState(defaultFilterDnCn);
+    const [showNotaStatusDialog, setShowNotaStatusDialog] = useState(false);
+    const [selectedNotaForStatus, setSelectedNotaForStatus] = useState(null);
+    const [newNotaStatus, setNewNotaStatus] = useState("PAID");
     const canManageNotaActions = hasTugureActionRole(tokenRoles);
 
     useEffect(() => {
@@ -531,6 +540,30 @@ export default function NotaManagement() {
             loadData();
         } catch (error) {
             console.error("Action error:", error);
+        }
+        setProcessing(false);
+    };
+
+    const handleChangeNotaStatus = async () => {
+        if (!selectedNotaForStatus) return;
+        
+        setProcessing(true);
+        try {
+            await backend.update("Nota", selectedNotaForStatus.nota_number, {
+                status: newNotaStatus,
+                confirmed_by: auditActor?.user_email || user?.email,
+                confirmed_date: new Date().toISOString(),
+            });
+            
+            // Reload notas
+            await loadData();
+            setShowNotaStatusDialog(false);
+            setSelectedNotaForStatus(null);
+            setNewNotaStatus("PAID");
+            toast.success(`Nota status updated to ${newNotaStatus}`);
+        } catch (error) {
+            console.error("Failed to update nota status:", error);
+            toast.error("Failed to update nota status");
         }
         setProcessing(false);
     };
@@ -1177,13 +1210,13 @@ export default function NotaManagement() {
             )}
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                {/* <TabsList className="grid w-full max-w-3xl grid-cols-3">
-                    <TabsTrigger value="notas">Notas</TabsTrigger>
+                <TabsList className="grid w-full max-w-3xl grid-cols-3">
+                    <TabsTrigger value="notas">Premi</TabsTrigger>
                     <TabsTrigger value="reconciliation">
-                        Reconciliation
+                        Claim
                     </TabsTrigger>
-                    <TabsTrigger value="dncn">Exception</TabsTrigger>
-                </TabsList> */}
+                    <TabsTrigger value="dncn">Subrogation</TabsTrigger>
+                </TabsList>
 
                 {/* NOTAS TAB */}
                 <TabsContent value="notas" className="space-y-6">
@@ -1325,22 +1358,53 @@ export default function NotaManagement() {
                                     </span>
                                 ),
                             },
+                            // {
+                            //     header: "Status",
+                            //     cell: (row) => (
+                            //         <StatusBadge status={row.status} />
+                            //     ),
+                            // },
+                            // {
+                            //     header: "Recon Status",
+                            //     cell: (row) =>
+                            //         row.reconciliation_status ? (
+                            //             <StatusBadge
+                            //                 status={row.reconciliation_status}
+                            //             />
+                            //         ) : (
+                            //             "-"
+                            //         ),
+                            // },
                             {
-                                header: "Status",
+                                header: "Payment Status",
                                 cell: (row) => (
-                                    <StatusBadge status={row.status} />
+                                    <div className="flex items-center gap-2">
+                                        {row.status === "PAID" ? (
+                                            <Badge variant="default" className="bg-green-600">PAID</Badge>
+                                        ) : (
+                                            <Badge variant="outline" className="text-orange-600 border-orange-300">UNPAID</Badge>
+                                        )}
+                                    </div>
                                 ),
                             },
                             {
-                                header: "Recon Status",
-                                cell: (row) =>
-                                    row.reconciliation_status ? (
-                                        <StatusBadge
-                                            status={row.reconciliation_status}
-                                        />
+                                header: "Payment Action",
+                                cell: (row) => (
+                                    isBrinsRole(tokenRoles) && row.status === "UNPAID" ? (
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                                setSelectedNotaForStatus(row);
+                                                setShowNotaStatusDialog(true);
+                                            }}
+                                        >
+                                            Mark Paid
+                                        </Button>
                                     ) : (
-                                        "-"
-                                    ),
+                                        <span className="text-xs text-gray-500">View Only</span>
+                                    )
+                                ),
                             },
                             {
                                 header: "Actions",
@@ -2649,6 +2713,73 @@ export default function NotaManagement() {
                             onClick={() => setShowViewDialog(false)}
                         >
                             Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Nota Status Change Dialog */}
+            <Dialog open={showNotaStatusDialog} onOpenChange={setShowNotaStatusDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Confirm Payment</DialogTitle>
+                        <DialogDescription>
+                            Mark Nota {selectedNotaForStatus?.nota_number} as Paid
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <Label className="text-xs text-gray-600">Nota Number</Label>
+                                <p className="font-mono text-sm">{selectedNotaForStatus?.nota_number}</p>
+                            </div>
+                            <div>
+                                <Label className="text-xs text-gray-600">Current Status</Label>
+                                <p className="font-semibold text-orange-600">{selectedNotaForStatus?.status}</p>
+                            </div>
+                            <div className="col-span-2">
+                                <Label className="text-xs text-gray-600">Amount</Label>
+                                <p className="text-lg font-bold">
+                                    {formatRupiahAdaptive(selectedNotaForStatus?.amount)}
+                                </p>
+                            </div>
+                        </div>
+
+                        <Alert className="border-blue-200 bg-blue-50">
+                            <AlertCircle className="h-4 w-4 text-blue-600" />
+                            <AlertDescription className="text-blue-800">
+                                Status will be changed from UNPAID to PAID
+                            </AlertDescription>
+                        </Alert>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowNotaStatusDialog(false);
+                                setSelectedNotaForStatus(null);
+                            }}
+                            disabled={processing}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleChangeNotaStatus}
+                            disabled={processing}
+                        >
+                            {processing ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Processing...
+                                </>
+                            ) : (
+                                <>
+                                    <Check className="w-4 h-4 mr-2" />
+                                    Confirm Payment
+                                </>
+                            )}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

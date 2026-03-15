@@ -43,6 +43,7 @@ import {
     ShieldCheck,
     Eye,
     ChevronLeft,
+    History,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -496,9 +497,12 @@ export default function SubmitDebtor() {
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
     const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+    const [showDetailDialog, setShowDetailDialog] = useState(false);
     const [selectedDebtors, setSelectedDebtors] = useState([]);
+    const [selectedDebtor, setSelectedDebtor] = useState(null);
     const [revisionNote, setRevisionNote] = useState("");
     const [actionNote, setActionNote] = useState("");
+    const [revisionDiffs, setRevisionDiffs] = useState([]);
 
     // Message state
     const [successMessage, setSuccessMessage] = useState("");
@@ -520,6 +524,86 @@ export default function SubmitDebtor() {
     const isApproverBrins = userRoles.some(
         (role) => String(role || "").trim().toLowerCase() === "approver-brins-role",
     );
+
+    useEffect(() => {
+        console.log('%c[RevisionDiffs] useEffect triggered', 'color: cyan; font-weight: bold');
+        console.log('showDetailDialog:', showDetailDialog, 'selectedDebtor:', selectedDebtor);
+        
+        let mounted = true;
+        const fetchPrevRevision = async () => {
+            console.log('%c[RevisionDiffs] fetchPrevRevision called', 'color: yellow');
+            
+            if (!showDetailDialog || !selectedDebtor) {
+                console.log('[RevisionDiffs] Early return: showDetailDialog or selectedDebtor is falsy');
+                if (mounted) setRevisionDiffs([]);
+                return;
+            }
+            
+            const version = selectedDebtor?.version_no || 0;
+            console.log('[RevisionDiffs] Debtor version_no:', version, 'Is revised?', version > 1);
+            
+            if (version <= 1) {
+                console.log('[RevisionDiffs] Early return: not a revised debtor (version_no <= 1)');
+                if (mounted) setRevisionDiffs([]);
+                return;
+            }
+
+            try {
+                console.log('[RevisionDiffs] Fetching for nomor_peserta:', selectedDebtor.nomor_peserta);
+                const res = await backend.listPaginated('DebtorRevise', {
+                    page: 1,
+                    limit: 100,
+                    q: JSON.stringify({ 
+                        nomor_peserta: selectedDebtor.nomor_peserta
+                    }),
+                });
+                
+                console.log('[RevisionDiffs] Query response:', res);
+                console.log('[RevisionDiffs] res.data:', res?.data);
+
+                if (!Array.isArray(res?.data) || res.data.length === 0) {
+                    console.warn('[RevisionDiffs] No records found OR res.data is not array. res.data:', res?.data);
+                    if (mounted) setRevisionDiffs([]);
+                    return;
+                }
+
+                const prev = res.data[0];
+                console.log('[RevisionDiffs] Previous version:', prev);
+                console.log('[RevisionDiffs] Current version_no:', selectedDebtor.version_no);
+
+                const diffs = [];
+                const keys = Object.keys(selectedDebtor || {}).filter((k) => 
+                    k !== 'id' && k !== 'created_at' && k !== 'updated_at' && k !== 'archived_at'
+                );
+                
+                console.log('[RevisionDiffs] Keys to compare:', keys);
+                
+                for (const k of keys) {
+                    const oldVal = prev[k];
+                    const newVal = selectedDebtor[k];
+                    const oldStr = oldVal === null || oldVal === undefined ? '' : String(oldVal);
+                    const newStr = newVal === null || newVal === undefined ? '' : String(newVal);
+                    if (oldStr !== newStr) {
+                        diffs.push({ key: k, old: oldStr || '-', new: newStr || '-' });
+                    }
+                }
+                
+                console.log('[RevisionDiffs] Final diffs array:', diffs);
+                if (mounted) {
+                    setRevisionDiffs(diffs);
+                    console.log('[RevisionDiffs] setRevisionDiffs called with:', diffs);
+                }
+            } catch (e) {
+                console.error('[RevisionDiffs] Exception caught:', e);
+                if (mounted) setRevisionDiffs([]);
+            }
+        };
+        
+        fetchPrevRevision();
+        return () => {
+            mounted = false;
+        };
+    }, [showDetailDialog, selectedDebtor]);
 
     // === GENERATE PREVIEW DATA FOR TAB 2 ===
     const handlePreviewData = async () => {
@@ -1650,6 +1734,25 @@ export default function SubmitDebtor() {
             accessorKey: "status",
             cell: (row) => <StatusBadge status={row.status} />,
         },
+        {
+            header: "action",
+            cell: (row) => (
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                            setSelectedDebtor(row);
+                            setShowDetailDialog(true);
+                        }}
+                        title="View detail"
+                    >
+                        <Eye className="w-4 h-4" />
+                    </Button>
+                </div>
+            ),
+            width: "80px",
+        },
     ];
 
     // Only include contracts that have been approved in the system
@@ -2358,6 +2461,110 @@ export default function SubmitDebtor() {
                             )}
                         </DialogFooter>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Detail Dialog */}
+            <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Debtor Details</DialogTitle>
+                        <DialogDescription>
+                            {selectedDebtor?.nama_peserta || selectedDebtor?.debtor_name}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span className="text-gray-500">
+                                    Nomor Peserta:
+                                </span>
+                                <p className="font-medium">
+                                    {selectedDebtor?.nomor_peserta}
+                                </p>
+                            </div>
+                            <div>
+                                <span className="text-gray-500">Batch ID:</span>
+                                <p className="font-medium">
+                                    {selectedDebtor?.batch_id}
+                                </p>
+                            </div>
+                            <div>
+                                <span className="text-gray-500">Plafon:</span>
+                                <p className="font-medium">
+                                    {formatRupiahAdaptive(
+                                        selectedDebtor?.plafon,
+                                    )}
+                                </p>
+                            </div>
+                            <div>
+                                <span className="text-gray-500">
+                                    Net Premi:
+                                </span>
+                                <p className="font-medium">
+                                    {formatRupiahAdaptive(
+                                        selectedDebtor?.net_premi,
+                                    )}
+                                </p>
+                            </div>
+                            <div>
+                                <span className="text-gray-500">Status:</span>
+                                <StatusBadge status={selectedDebtor?.status} />
+                            </div>
+                            {selectedDebtor?.validation_remarks && (
+                                <div className="col-span-2 p-3 bg-orange-50 border border-orange-200 rounded">
+                                    <p className="text-sm font-medium text-orange-700">
+                                        Validation Remarks:
+                                    </p>
+                                    <p className="text-sm text-orange-600">
+                                        {selectedDebtor.validation_remarks}
+                                    </p>
+                                </div>
+                            )}
+                            {selectedDebtor?.version_no && (
+                                <div>
+                                    <span className="text-gray-500">
+                                        Version No:
+                                    </span>
+                                    <p className="font-medium">
+                                        {selectedDebtor.version_no}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                        {/* Revision Diffs Section */}
+                        {(selectedDebtor?.version_no || 0) > 1 && revisionDiffs && revisionDiffs.length > 0 && (
+                            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <History className="w-5 h-5 text-blue-600" />
+                                    <h3 className="font-semibold text-blue-900">Revision Changes</h3>
+                                </div>
+                                <div className="space-y-2">
+                                    {revisionDiffs.slice(0, 15).map((diff, idx) => (
+                                        <div key={idx} className="flex items-start gap-3 text-sm">
+                                            <span className="font-mono text-xs bg-white px-2 py-1 rounded text-gray-700 flex-shrink-0 min-w-32">
+                                                {diff.key}
+                                            </span>
+                                            <div className="flex-1">
+                                                <p className="text-red-600 line-through text-xs">Old: {diff.old}</p>
+                                                <p className="text-green-600 text-xs">New: {diff.new}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {revisionDiffs.length > 15 && (
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            ...and {revisionDiffs.length - 15} more changes
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => setShowDetailDialog(false)}>
+                            Close
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 

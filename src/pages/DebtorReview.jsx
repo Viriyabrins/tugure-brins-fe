@@ -551,35 +551,56 @@ export default function DebtorReview() {
 
     // Fetch revision diffs when detail dialog opens for a REVISION status debtor
     useEffect(() => {
+        console.log('%c[RevisionDiffs] useEffect triggered', 'color: cyan; font-weight: bold');
+        console.log('showDetailDialog:', showDetailDialog, 'selectedDebtor:', selectedDebtor);
+        
         let mounted = true;
         const fetchRevisionDiffs = async () => {
+            console.log('%c[RevisionDiffs] fetchRevisionDiffs called', 'color: yellow');
+            
             if (!showDetailDialog || !selectedDebtor) {
+                console.log('[RevisionDiffs] Early return: showDetailDialog or selectedDebtor is falsy');
                 if (mounted) setRevisionDiffs([]);
                 return;
             }
 
-            const status = String(selectedDebtor.status || '').trim().toUpperCase();
-            if (status !== 'REVISION') {
+            const version = selectedDebtor?.version_no || 0;
+            console.log('[RevisionDiffs] Debtor version_no:', version, 'Is revised?', version > 1);
+            
+            if (version <= 1) {
+                console.log('[RevisionDiffs] Early return: not a revised debtor (version_no <= 1)');
                 if (mounted) setRevisionDiffs([]);
                 return;
             }
 
             try {
-                // Query DebtorRevise to find the previous version for this nomor_peserta
+                console.log('[RevisionDiffs] Fetching for nomor_peserta:', selectedDebtor.nomor_peserta);
                 const res = await backend.listPaginated('DebtorRevise', {
                     page: 1,
-                    limit: 1,
+                    limit: 100,
                     q: JSON.stringify({ nomor_peserta: selectedDebtor.nomor_peserta }),
                 });
-                const prev = Array.isArray(res.data) && res.data.length > 0 ? res.data[0] : null;
-                if (!prev) {
+                
+                console.log('[RevisionDiffs] Query response:', res);
+                console.log('[RevisionDiffs] res.data:', res?.data);
+
+                if (!Array.isArray(res?.data) || res.data.length === 0) {
+                    console.warn('[RevisionDiffs] No records found OR res.data is not array. res.data:', res?.data);
                     if (mounted) setRevisionDiffs([]);
                     return;
                 }
 
-                // Compare fields between current and previous version
+                const prev = res.data[0];
+                console.log('[RevisionDiffs] Previous version:', prev);
+                console.log('[RevisionDiffs] Current version_no:', selectedDebtor.version_no);
+
                 const diffs = [];
-                const keys = Object.keys(selectedDebtor || {}).filter((k) => k !== 'id' && k !== 'created_at');
+                const keys = Object.keys(selectedDebtor || {}).filter((k) => 
+                    k !== 'id' && k !== 'created_at' && k !== 'updated_at' && k !== 'archived_at'
+                );
+                
+                console.log('[RevisionDiffs] Keys to compare:', keys);
+                
                 for (const k of keys) {
                     const oldVal = prev[k];
                     const newVal = selectedDebtor[k];
@@ -589,12 +610,18 @@ export default function DebtorReview() {
                         diffs.push({ key: k, old: oldStr || '-', new: newStr || '-' });
                     }
                 }
-                if (mounted) setRevisionDiffs(diffs);
+                
+                console.log('[RevisionDiffs] Final diffs array:', diffs);
+                if (mounted) {
+                    setRevisionDiffs(diffs);
+                    console.log('[RevisionDiffs] setRevisionDiffs called with:', diffs);
+                }
             } catch (e) {
-                console.error('Failed to load previous revision:', e);
+                console.error('[RevisionDiffs] Exception caught:', e);
                 if (mounted) setRevisionDiffs([]);
             }
         };
+        
         fetchRevisionDiffs();
         return () => {
             mounted = false;
@@ -681,9 +708,9 @@ export default function DebtorReview() {
             cell: (row) => <StatusBadge status={row.status} />,
         },
         {
-            header: "Actions",
+            header: "action",
             cell: (row) => (
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                     <Button
                         variant="outline"
                         size="sm"
@@ -691,55 +718,13 @@ export default function DebtorReview() {
                             setSelectedDebtor(row);
                             setShowDetailDialog(true);
                         }}
+                        title="View detail"
                     >
                         <Eye className="w-4 h-4" />
                     </Button>
-
-                    {/* actions dalam tabel */}
-                    {/* {row.status === "APPROVED_BRINS" && isCheckerTugure && (
-                        <Button
-                            size="sm"
-                            className="bg-teal-500 hover:bg-teal-600 text-white"
-                            onClick={() => handleCheck(false, row)}
-                            disabled={processing}
-                            title="Check & Move to CHECKED_TUGURE"
-                        >
-                            <Check className="w-4 h-4" />
-                        </Button>
-                    )}
-                    
-                    {row.status === "CHECKED_TUGURE" && isApproverTugure && (
-                        <>
-                            <Button
-                                size="sm"
-                                className="bg-green-500 hover:bg-green-600 text-white"
-                                onClick={() => {
-                                    setSelectedDebtor(row);
-                                    setApprovalAction("approve");
-                                    setShowApprovalDialog(true);
-                                }}
-                                disabled={processing}
-                                title="Approve"
-                            >
-                                <CheckCircle2 className="w-4 h-4" />
-                            </Button>
-                            <Button
-                                size="sm"
-                                className="bg-orange-500 hover:bg-orange-600 text-white"
-                                onClick={() => {
-                                    setSelectedDebtor(row);
-                                    setApprovalAction("revision");
-                                    setShowApprovalDialog(true);
-                                }}
-                                disabled={processing}
-                                title="Request Revision"
-                            >
-                                <Pen className="w-4 h-4" />
-                            </Button>
-                        </>
-                    )} */}
                 </div>
             ),
+            width: "80px",
         },
     ];
 
@@ -981,16 +966,16 @@ export default function DebtorReview() {
                             )}
                         </div>
                         {/* Revision Diffs Section */}
-                        {String(selectedDebtor?.status || '').trim().toUpperCase() === 'REVISION' && revisionDiffs.length > 0 && (
+                        {(selectedDebtor?.version_no || 0) > 1 && revisionDiffs && revisionDiffs.length > 0 && (
                             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                 <div className="flex items-center gap-2 mb-3">
                                     <History className="w-5 h-5 text-blue-600" />
                                     <h3 className="font-semibold text-blue-900">Revision Changes</h3>
                                 </div>
                                 <div className="space-y-2">
-                                    {revisionDiffs.slice(0, 10).map((diff, idx) => (
+                                    {revisionDiffs.slice(0, 15).map((diff, idx) => (
                                         <div key={idx} className="flex items-start gap-3 text-sm">
-                                            <span className="font-mono text-xs bg-white px-2 py-1 rounded text-gray-700 flex-shrink-0 w-24">
+                                            <span className="font-mono text-xs bg-white px-2 py-1 rounded text-gray-700 flex-shrink-0 min-w-32">
                                                 {diff.key}
                                             </span>
                                             <div className="flex-1">
@@ -999,9 +984,9 @@ export default function DebtorReview() {
                                             </div>
                                         </div>
                                     ))}
-                                    {revisionDiffs.length > 10 && (
+                                    {revisionDiffs.length > 15 && (
                                         <p className="text-xs text-gray-500 mt-2">
-                                            ...and {revisionDiffs.length - 10} more changes
+                                            ...and {revisionDiffs.length - 15} more changes
                                         </p>
                                     )}
                                 </div>

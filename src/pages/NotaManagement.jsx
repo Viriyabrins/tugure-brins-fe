@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,12 +95,7 @@ const defaultFilterDnCn = {
 };
 
 const normalizeRole = (role = "") => String(role).trim().toLowerCase();
-const TUGURE_ACTION_ROLES = ["checker-tugure-role", "approver-tugure-role"];
 const BRINS_ACTION_ROLES = ["maker-brins-role", "checker-brins-role", "approver-brins-role"];
-const hasTugureActionRole = (roles = []) =>
-    (Array.isArray(roles) ? roles : [])
-        .map(normalizeRole)
-        .some((role) => TUGURE_ACTION_ROLES.includes(role));
 
 const isBrinsRole = (roles = []) => 
     (Array.isArray(roles) ? roles : [])
@@ -150,7 +145,13 @@ export default function NotaManagement() {
     const [showNotaStatusDialog, setShowNotaStatusDialog] = useState(false);
     const [selectedNotaForStatus, setSelectedNotaForStatus] = useState(null);
     const [newNotaStatus, setNewNotaStatus] = useState("PAID");
-    const canManageNotaActions = hasTugureActionRole(tokenRoles);
+    const canManageNotaActions = isBrinsRole(tokenRoles);
+
+    // Nota pagination state
+    const notaPageSize = 10;
+    const [notaPage, setNotaPage] = useState(1);
+    const [totalNotas, setTotalNotas] = useState(0);
+    const isFirstNotaPageEffect = useRef(true);
 
     useEffect(() => {
         loadUser();
@@ -165,23 +166,51 @@ export default function NotaManagement() {
                 const roles = keycloakService.getRoles();
                 const actor = keycloakService.getAuditActor();
                 setAuditActor(actor);
-                setTokenRoles(Array.isArray(roles) ? roles : []);
+                // Handle roles as BOTH string and array
+                const rolesArray = Array.isArray(roles) 
+                    ? roles 
+                    : typeof roles === 'string' 
+                        ? [roles] 
+                        : [];
+                setTokenRoles(rolesArray);
                 const role =
                     actor?.user_role ||
-                    (Array.isArray(roles) && roles.length > 0
-                        ? normalizeRole(roles[0])
+                    (rolesArray && rolesArray.length > 0
+                        ? normalizeRole(rolesArray[0])
                         : "user");
                 setUser({ id: userInfo.id, email: userInfo.email, full_name: userInfo.name, role });
+                console.log("DEBUG - Raw roles from Keycloak:", roles);
+                console.log("DEBUG - rolesArray after normalization:", rolesArray);
+                console.log("DEBUG - isBrinsRole result:", isBrinsRole(rolesArray));
+                console.log("DEBUG - user role:", role);
             }
         } catch (error) {
             console.error("Failed to load user:", error);
         }
     };
 
+    const loadNotas = async (pageToLoad = notaPage, activeFilters = filters) => {
+        try {
+            const query = { page: pageToLoad, limit: notaPageSize };
+            if (activeFilters) query.q = JSON.stringify(activeFilters);
+            const result = await backend.listPaginated("Nota", query);
+            const data = Array.isArray(result.data) ? result.data : [];
+            setNotas(data);
+            setTotalNotas(Number(result.pagination?.total) || 0);
+            console.log("notas",data);
+            return data;
+        } catch (error) {
+            console.error("Error loading notas:", error);
+            setNotas([]);
+            setTotalNotas(0);
+            return [];
+        }
+    };
+
     const loadData = async () => {
         setLoading(true);
         try {
-            // Load all data using backend client
+            // Load notas with pagination, everything else in bulk
             const [
                 notaData,
                 batchData,
@@ -191,7 +220,7 @@ export default function NotaManagement() {
                 dnCnData,
                 debtorData,
             ] = await Promise.all([
-                backend.list("Nota"),
+                loadNotas(1, filters),
                 backend.list("Batch"),
                 backend.list("Contract"),
                 backend.list("Payment"),
@@ -316,8 +345,8 @@ export default function NotaManagement() {
                                 nota_type: "Batch",
                                 reference_id: batchId,
                                 amount: entry.batch.final_premium_amount || 0,
-                                // New notas should be issued immediately (Issued)
-                                status: "Issued",
+                                // New notas start as UNPAID
+                                status: "UNPAID",
                                 contract_id: entry.batch.contract_id,
                             })
                             .catch((err) => {
@@ -333,7 +362,7 @@ export default function NotaManagement() {
             if (notaCreationPromises.length > 0) {
                 await Promise.allSettled(notaCreationPromises);
                 // Reload notas after creation
-                const updatedNotas = await backend.list("Nota");
+                const updatedNotas = await loadNotas(1, filters);
                 nextNotas.splice(
                     0,
                     nextNotas.length,
@@ -358,19 +387,19 @@ export default function NotaManagement() {
                 await Promise.allSettled(updatePromises);
             }
 
-            // Update nota status to Issued where applicable
+            // Update nota status to UNPAID where applicable
             const notaUpdatePromises = [];
             nextNotas.forEach((nota) => {
                 const batchInfo = batchNotaMap[nota.reference_id];
                 if (
                     batchInfo &&
                     batchInfo.isFinal &&
-                    nota.status !== "Issued" &&
-                    nota.status !== "Nota Closed"
+                    nota.status !== "UNPAID" &&
+                    nota.status !== "PAID"
                 ) {
                     notaUpdatePromises.push(
                         backend
-                            .update("Nota", nota.id, { status: "Issued" })
+                            .update("Nota", nota.id, { status: "UNPAID" })
                             .then((updated) => {
                                 // Update in local array
                                 const idx = nextNotas.findIndex(
@@ -380,7 +409,7 @@ export default function NotaManagement() {
                             })
                             .catch((err) =>
                                 console.warn(
-                                    `Failed to update nota ${nota.id} to Issued:`,
+                                    `Failed to update nota ${nota.id} to UNPAID:`,
                                     err,
                                 ),
                             ),
@@ -402,6 +431,7 @@ export default function NotaManagement() {
         } catch (error) {
             console.error("Failed to load data:", error);
             setNotas([]);
+            setTotalNotas(0);
             setBatches([]);
             setContracts([]);
             setPayments([]);
@@ -412,58 +442,45 @@ export default function NotaManagement() {
         setLoading(false);
     };
 
+    // Nota pagination effects
+    useEffect(() => {
+        if (isFirstNotaPageEffect.current) { isFirstNotaPageEffect.current = false; return; }
+        loadNotas(notaPage, filters);
+    }, [notaPage]);
+
     const getNextStatus = (currentStatus) => {
-        const workflow = ["Draft", "Issued", "Confirmed", "Nota Closed"];
-        const currentIndex = workflow.indexOf(currentStatus);
+        // Normalize old status values to new ones
+        const normalizedStatus = normalizeNotaStatus(currentStatus);
+        const workflow = ["UNPAID", "PAID"];
+        const currentIndex = workflow.indexOf(normalizedStatus);
         return currentIndex >= 0 && currentIndex < workflow.length - 1
             ? workflow[currentIndex + 1]
             : null;
     };
 
+    const normalizeNotaStatus = (status) => {
+        if (!status) return "UNPAID";
+        const statusMap = {
+            "UNPAID": "UNPAID",
+            "PAID": "PAID"
+        };
+        return statusMap[status] || status;
+    };
+
     const getActionLabel = (status) => {
         const labels = {
-            // Draft no longer used as default for new notas; button should show "Issued"
-            Draft: "Issued",
-            // Issued -> Close Nota (previously Paid)
-            Issued: "Close Nota",
-            // Confirmed -> Mark Closed
-            Confirmed: "Mark Closed",
+            // UNPAID -> Mark PAID
+            UNPAID: "Mark PAID",
+            // PAID -> no further action
+            PAID: null,
         };
-        return labels[status] || "Issued";
+        return labels[status] || null;
     };
 
     // Note: handleGenerateNota removed - notas are now auto-created per batch
 
     const handleNotaAction = async () => {
         if (!selectedNota || !actionType) return;
-
-        // BLOCK: Cannot edit Nota after it reached Issued state (immutable)
-        if (selectedNota.is_immutable && selectedNota.status === "Issued") {
-            alert(
-                "❌ BLOCKED: Nota is IMMUTABLE after becoming Issued.\n\nNota amount cannot be changed. Use Exception for adjustments.",
-            );
-
-            try {
-                await backend.create("AuditLog", {
-                    action: "BLOCKED_NOTA_EDIT",
-                    module: "DEBTOR",
-                    entity_type: "Nota",
-                    entity_id: selectedNota.nota_number,
-                    old_value: "{}",
-                    new_value: JSON.stringify({
-                        blocked_reason: "is_immutable = TRUE",
-                    }),
-                    user_email: auditActor?.user_email || user?.email,
-                    user_role: auditActor?.user_role || user?.role,
-                    reason: "Attempted to edit immutable Nota",
-                });
-            } catch (auditError) {
-                console.warn("Failed to create audit log:", auditError);
-            }
-
-            setShowActionDialog(false);
-            return;
-        }
 
         setProcessing(true);
         try {
@@ -475,13 +492,9 @@ export default function NotaManagement() {
 
             const updateData = { status: nextStatus };
 
-            if (nextStatus === "Issued") {
-                updateData.issued_by = user?.email;
-                updateData.issued_date = new Date().toISOString();
-                updateData.is_immutable = true; // LOCK Nota amount
-            } else if (nextStatus === "Confirmed") {
-                updateData.confirmed_by = user?.email;
-                updateData.confirmed_date = new Date().toISOString();
+            if (nextStatus === "PAID") {
+                updateData.marked_paid_by = user?.email;
+                updateData.marked_paid_date = new Date().toISOString();
             }
 
             await backend.update(
@@ -490,22 +503,15 @@ export default function NotaManagement() {
                 updateData,
             );
 
-            const targetRole =
-                nextStatus === "Issued"
-                                        ? BRINS_ACTION_ROLES[0]
-                    : nextStatus === "Confirmed"
-                                            ? TUGURE_ACTION_ROLES[0]
-                      : "ALL";
-
             // Create notification using backend client
             try {
                 await backend.create("Notification", {
-                    title: `Nota ${nextStatus}`,
-                    message: `Nota ${selectedNota.nota_number} (${selectedNota.nota_type}) moved to ${nextStatus}${nextStatus === "Issued" ? " - Amount now IMMUTABLE" : ""}`,
-                    type: nextStatus === "Issued" ? "ACTION_REQUIRED" : "INFO",
+                    title: `Nota marked as PAID`,
+                    message: `Nota ${selectedNota.nota_number} (${selectedNota.nota_type}) has been marked as PAID.`,
+                    type: "INFO",
                     module: "DEBTOR",
                     reference_id: selectedNota.nota_number,
-                    target_role: targetRole,
+                    target_role: "ALL",
                 });
             } catch (notifError) {
                 console.warn("Failed to create notification:", notifError);
@@ -514,15 +520,12 @@ export default function NotaManagement() {
             // Create audit log using backend client
             try {
                 await backend.create("AuditLog", {
-                    action: `NOTA_${nextStatus.toUpperCase()}`,
+                    action: `NOTA_MARKED_PAID`,
                     module: "DEBTOR",
                     entity_type: "Nota",
                     entity_id: selectedNota.nota_number,
                     old_value: JSON.stringify({ status: selectedNota.status }),
-                    new_value: JSON.stringify({
-                        status: nextStatus,
-                        is_immutable: nextStatus === "Issued",
-                    }),
+                    new_value: JSON.stringify({ status: nextStatus }),
                     user_email: auditActor?.user_email || user?.email,
                     user_role: auditActor?.user_role || user?.role,
                     reason: remarks,
@@ -531,9 +534,7 @@ export default function NotaManagement() {
                 console.warn("Failed to create audit log:", auditError);
             }
 
-            setSuccessMessage(
-                `Nota moved to ${nextStatus} successfully${nextStatus === "Issued" ? " - Nota is now IMMUTABLE" : ""}`,
-            );
+            setSuccessMessage(`Nota marked as PAID successfully`);
             setShowActionDialog(false);
             setSelectedNota(null);
             setRemarks("");
@@ -551,19 +552,19 @@ export default function NotaManagement() {
         try {
             await backend.update("Nota", selectedNotaForStatus.nota_number, {
                 status: newNotaStatus,
-                confirmed_by: auditActor?.user_email || user?.email,
-                confirmed_date: new Date().toISOString(),
+                marked_paid_by: auditActor?.user_email || user?.email,
+                marked_paid_date: new Date().toISOString(),
             });
             
             // Reload notas
-            await loadData();
+            await loadNotas(notaPage, filters);
             setShowNotaStatusDialog(false);
             setSelectedNotaForStatus(null);
             setNewNotaStatus("PAID");
-            toast.success(`Nota status updated to ${newNotaStatus}`);
+            setSuccessMessage(`Nota status updated to ${newNotaStatus}`);
         } catch (error) {
             console.error("Failed to update nota status:", error);
-            toast.error("Failed to update nota status");
+            setSuccessMessage("");
         }
         setProcessing(false);
     };
@@ -722,10 +723,10 @@ export default function NotaManagement() {
                 reconciliation_status: reconStatus,
             });
 
-            // If MATCHED, auto mark Nota as closed
+            // If MATCHED, auto mark Nota as PAID
             if (reconStatus === "MATCHED") {
                 await backend.update("Nota", selectedRecon.nota_number, {
-                    status: "Nota Closed",
+                    status: "PAID",
                     paid_date: paymentDateISO,
                     payment_reference: paymentRef,
                 });
@@ -733,8 +734,8 @@ export default function NotaManagement() {
                 // Create notification using backend client
                 try {
                     await backend.create("Notification", {
-                        title: "Payment MATCHED - Nota Closed",
-                        message: `Nota ${selectedRecon.nota_number} fully paid. Amount: Rp ${newTotalPaid.toLocaleString("id-ID")}. Nota closed.`,
+                        title: "Payment MATCHED - Nota Marked PAID",
+                        message: `Nota ${selectedRecon.nota_number} fully paid. Amount: Rp ${newTotalPaid.toLocaleString("id-ID")}. Status marked as PAID.`,
                         type: "INFO",
                         module: "DEBTOR",
                         reference_id: selectedRecon.nota_number,
@@ -751,7 +752,7 @@ export default function NotaManagement() {
                         type: exceptionType !== "NONE" ? "WARNING" : "INFO",
                         module: "DEBTOR",
                         reference_id: selectedRecon.nota_number,
-                        target_role: TUGURE_ACTION_ROLES[0],
+                        target_role: "ALL",
                     });
                 } catch (notifError) {
                     console.warn("Failed to create notification:", notifError);
@@ -914,9 +915,9 @@ export default function NotaManagement() {
                         : -Math.abs(dnCnFormData.adjustment_amount),
                 reason_code: dnCnFormData.reason_code,
                 reason_description: dnCnFormData.reason_description,
-                status: "Draft",
-                drafted_by: user?.email,
-                drafted_date: new Date().toISOString(),
+                status: "UNPAID",
+                created_by: user?.email,
+                created_date: new Date().toISOString(),
                 currency: "IDR",
             });
 
@@ -994,10 +995,6 @@ export default function NotaManagement() {
             await backend.update("DebitCreditNote", dnCn.note_number, updates);
 
             // Create notification using backend client
-            const targetRole =
-                action === "approve"
-                    ? BRINS_ACTION_ROLES[0]
-                    : TUGURE_ACTION_ROLES[0];
             try {
                 await backend.create("Notification", {
                     title: `Exception ${statusMap[action]}`,
@@ -1005,7 +1002,7 @@ export default function NotaManagement() {
                     type: "ACTION_REQUIRED",
                     module: "RECONCILIATION",
                     reference_id: dnCn.note_number,
-                    target_role: targetRole,
+                    target_role: BRINS_ACTION_ROLES[0],
                 });
             } catch (notifError) {
                 console.warn("Failed to create notification:", notifError);
@@ -1075,12 +1072,12 @@ export default function NotaManagement() {
         setProcessing(true);
         try {
             await backend.update("Nota", nota.nota_number, {
-                status: "Nota Closed",
+                status: "PAID",
                 paid_date: new Date().toISOString(),
-                payment_reference: "Closed via Exception or MATCHED payment",
+                payment_reference: "Marked PAID via Exception or MATCHED payment",
             });
 
-            setSuccessMessage("Nota closed successfully");
+            setSuccessMessage("Nota marked as PAID successfully");
             loadData();
         } catch (error) {
             console.error("Close nota error:", error);
@@ -1097,6 +1094,26 @@ export default function NotaManagement() {
             return false;
         return true;
     });
+
+    // DEBUG: Log all notas to see their actual status values
+    useEffect(() => {
+        if (notas.length > 0) {
+            console.log("DEBUG - All notas from DB:", notas.map(n => ({
+                nota_number: n.nota_number,
+                status: n.status,
+                statusType: typeof n.status
+            })));
+            console.log("DEBUG - filters.status:", filters.status);
+            console.log("DEBUG - filteredNotas count:", filteredNotas.length);
+            if (filteredNotas.length > 0) {
+                console.log("DEBUG - First filtered nota:", {
+                    nota_number: filteredNotas[0].nota_number,
+                    status: filteredNotas[0].status,
+                    statusType: typeof filteredNotas[0].status
+                });
+            }
+        }
+    }, [notas, filteredNotas, filters]);
 
     // Reconciliation items with payment details (ALL NOTA TYPES)
     const reconciliationItems = notas.map((nota) => {
@@ -1137,7 +1154,7 @@ export default function NotaManagement() {
             difference: difference,
             reconciliation_status: nota.reconciliation_status,
             has_exception:
-                Math.abs(difference) > 1000 && nota.status !== "Nota Closed",
+                Math.abs(difference) > 1000 && nota.status !== "PAID",
             payment_count: relatedPayments.length,
             intent_count: relatedIntents.length,
         };
@@ -1231,7 +1248,7 @@ export default function NotaManagement() {
                         <GradientStatCard
                             title="Pending Confirmation"
                             value={
-                                notas.filter((n) => n.status === "Issued").length
+                                notas.filter((n) => n.status === "UNPAID").length
                             }
                             subtitle="Awaiting branch"
                             icon={Clock}
@@ -1302,13 +1319,8 @@ export default function NotaManagement() {
                                 label: "Status",
                                 options: [
                                     { value: "all", label: "All Status" },
-                                    { value: "Draft", label: "Draft" },
-                                    { value: "Issued", label: "Issued" },
-                                    { value: "Confirmed", label: "Confirmed" },
-                                    {
-                                        value: "Nota Closed",
-                                        label: "Nota Closed",
-                                    },
+                                    { value: "UNPAID", label: "UNPAID" },
+                                    { value: "PAID", label: "PAID" },
                                 ],
                             },
                         ]}
@@ -1330,12 +1342,6 @@ export default function NotaManagement() {
                                             >
                                                 {row.nota_type}
                                             </Badge>
-                                            {row.is_immutable && (
-                                                <Lock
-                                                    className="w-3 h-3 text-red-500"
-                                                    title="IMMUTABLE - cannot edit"
-                                                />
-                                            )}
                                         </div>
                                     </div>
                                 ),
@@ -1389,8 +1395,17 @@ export default function NotaManagement() {
                             },
                             {
                                 header: "Payment Action",
-                                cell: (row) => (
-                                    isBrinsRole(tokenRoles) && row.status === "UNPAID" ? (
+                                cell: (row) => {
+                                    const isBrins = isBrinsRole(tokenRoles);
+                                    const isUnpaid = row.status === "UNPAID";
+                                    console.log("DEBUG - PaymentAction cell render:", {
+                                        tokenRoles,
+                                        isBrins,
+                                        isUnpaid,
+                                        shouldShow: isBrins && isUnpaid,
+                                        rowStatus: row.status
+                                    });
+                                    return isBrins && isUnpaid ? (
                                         <Button
                                             size="sm"
                                             variant="outline"
@@ -1403,8 +1418,8 @@ export default function NotaManagement() {
                                         </Button>
                                     ) : (
                                         <span className="text-xs text-gray-500">View Only</span>
-                                    )
-                                ),
+                                    );
+                                },
                             },
                             {
                                 header: "Actions",
@@ -1421,40 +1436,6 @@ export default function NotaManagement() {
                                             <Eye className="w-4 h-4 mr-1" />
                                             View
                                         </Button>
-                                        {canManageNotaActions &&
-                                            row.status !== "Nota Closed" &&
-                                            getNextStatus(row.status) && (
-                                                <Button
-                                                    size="sm"
-                                                    className="bg-blue-600 hover:bg-blue-700 ml-3"
-                                                    onClick={() => {
-                                                        setSelectedNota(row);
-                                                        setActionType(
-                                                            getActionLabel(
-                                                                row.status,
-                                                            ),
-                                                        );
-                                                        setShowActionDialog(
-                                                            true,
-                                                        );
-                                                    }}
-                                                    disabled={
-                                                        row.is_immutable &&
-                                                        getActionLabel(
-                                                            row.status,
-                                                        ) === "Issued"
-                                                    }
-                                                >
-                                                    <ArrowRight className="w-4 h-4 mr-1" />
-                                                    {getActionLabel(row.status)}
-                                                </Button>
-                                            )}
-                                        {row.is_immutable &&
-                                            row.status !== "Nota Closed" && (
-                                                <span className="text-xs text-gray-500 italic">
-                                                    Proceed to Reconciliation
-                                                </span>
-                                            )}
                                     </div>
                                 ),
                             },
@@ -1462,6 +1443,15 @@ export default function NotaManagement() {
                         data={filteredNotas}
                         isLoading={loading}
                         emptyMessage="No notas found"
+                        onRowClick={() => {}}
+                        pagination={{
+                            from: totalNotas === 0 ? 0 : (notaPage - 1) * notaPageSize + 1,
+                            to: Math.min(totalNotas, notaPage * notaPageSize),
+                            total: totalNotas,
+                            page: notaPage,
+                            totalPages: Math.max(1, Math.ceil(totalNotas / notaPageSize)),
+                        }}
+                        onPageChange={(p) => setNotaPage(p)}
                     />
                 </TabsContent>
 
@@ -1544,13 +1534,8 @@ export default function NotaManagement() {
                                 label: "Status",
                                 options: [
                                     { value: "all", label: "All Status" },
-                                    { value: "Draft", label: "Draft" },
-                                    { value: "Issued", label: "Issued" },
-                                    { value: "Confirmed", label: "Confirmed" },
-                                    {
-                                        value: "Nota Closed",
-                                        label: "Nota Closed",
-                                    },
+                                    { value: "UNPAID", label: "UNPAID" },
+                                    { value: "PAID", label: "PAID" },
                                 ],
                             },
                             {
@@ -1672,7 +1657,7 @@ export default function NotaManagement() {
                                 cell: (row) => (
                                     <div className="flex gap-1 flex-wrap">
                                         {canManageNotaActions &&
-                                            row.status !== "Nota Closed" &&
+                                            row.status !== "PAID" &&
                                             row.reconciliation_status !==
                                                 "FINAL" && (
                                                 <Button
@@ -1848,13 +1833,8 @@ export default function NotaManagement() {
                                 label: "Recon Status",
                                 options: [
                                     { value: "all", label: "All Status" },
-                                    { value: "Draft", label: "Draft" },
-                                    { value: "Issued", label: "Issued" },
-                                    { value: "Confirmed", label: "Confirmed" },
-                                    {
-                                        value: "Nota Closed",
-                                        label: "Nota Closed",
-                                    },
+                                    { value: "UNPAID", label: "UNPAID" },
+                                    { value: "PAID", label: "PAID" },
                                 ],
                             },
                         ]}
@@ -1991,7 +1971,7 @@ export default function NotaManagement() {
                                                         row.nota_number &&
                                                     d.status === "Approved",
                                             )) &&
-                                            row.status !== "Nota Closed" && (
+                                            row.status !== "PAID" && (
                                                 <Button
                                                     size="sm"
                                                     className="bg-green-600"
@@ -2634,16 +2614,6 @@ export default function NotaManagement() {
                                             <StatusBadge
                                                 status={selectedNota.status}
                                             />
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Immutable:
-                                        </span>
-                                        <span className="ml-2 font-bold">
-                                            {selectedNota.is_immutable
-                                                ? "🔒 YES"
-                                                : "NO"}
                                         </span>
                                     </div>
                                     <div className="col-span-2">

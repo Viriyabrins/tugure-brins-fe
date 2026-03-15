@@ -308,6 +308,28 @@ export const backend = {
     }
   },
 
+  async checkUploadDuplicates(payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/debtors/check-duplicates`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }));
+
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+
   async processMasterContractApproval(contractId, payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/${encodeURIComponent(contractId)}/approval`;
     const res = await fetch(url, authFetchOptions({

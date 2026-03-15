@@ -43,6 +43,7 @@ import {
     ShieldCheck,
     Eye,
     ChevronLeft,
+    ChevronRight,
     History,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -489,9 +490,14 @@ export default function SubmitDebtor() {
     const [uploading, setUploading] = useState(false);
 
     // Upload dialog two-tab state
-    const [uploadTabActive, setUploadTabActive] = useState(1); // 1 = upload, 2 = preview
+    const [uploadTabActive, setUploadTabActive] = useState(1); // 1 = upload, 2 = preview, 3 = deduplication
     const [uploadPreviewData, setUploadPreviewData] = useState([]); // normalized debtor objects ready for DB
     const [uploadPreviewLoading, setUploadPreviewLoading] = useState(false);
+
+    // Duplicate detection state
+    const [fileDuplicates, setFileDuplicates] = useState([]); // array of duplicate groups from file
+    const [databaseDuplicates, setDatabaseDuplicates] = useState([]); // array of database conflicts
+    const [fileDuplicateResolutions, setFileDuplicateResolutions] = useState({}); // { "field:value": [rowIndices to exclude] }
 
     // Dialog state
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -785,7 +791,53 @@ export default function SubmitDebtor() {
                 }
             }
 
-            // Store preview data and switch to Tab 2
+            // === CHECK FOR DUPLICATES ===
+            // Call backend to detect file-level and database-level duplicates
+            const duplicateCheckResult = await backend.checkUploadDuplicates({
+                debtors: previewPayloads,
+            });
+
+            const fileDups = duplicateCheckResult?.fileDuplicates || [];
+            const dbDups = duplicateCheckResult?.databaseDuplicates || [];
+
+            // If database duplicates exist, reject upload entirely
+            if (dbDups && dbDups.length > 0) {
+                const dbDupMessages = dbDups
+                    .map((dup) => {
+                        const fieldLabel = dup.field === 'nomor_peserta'
+                            ? 'Nomor Peserta'
+                            : 'Policy No';
+                        return `Row ${dup.rowIndex + 2}: ${fieldLabel} "${dup.value}" already exists in database`;
+                    })
+                    .slice(0, 5);
+
+                const dbErrorMsg =
+                    `Upload rejected: ${dbDups.length} record(s) already exist in database.\n` +
+                    dbDupMessages.join('\n') +
+                    (dbDups.length > 5 ? `\n...and ${dbDups.length - 5} more` : '');
+
+                setErrorMessage(dbErrorMsg);
+                toast.error('Upload contains duplicates from database. Please verify your data.');
+                setUploadPreviewLoading(false);
+                return;
+            }
+
+            // If file duplicates exist, show deduplication UI (Tab 3)
+            if (fileDups && fileDups.length > 0) {
+                console.log('[FileDuplicates] Detected duplicates:', fileDups);
+                setFileDuplicates(fileDups);
+                setDatabaseDuplicates([]);
+                setUploadPreviewData(previewPayloads);
+                setFileDuplicateResolutions({}); // Reset resolutions
+                setUploadTabActive(3); // Show deduplication tab
+                setUploadPreviewLoading(false);
+                return;
+            }
+
+            // No duplicates found, proceed to preview (Tab 2)
+            setFileDuplicates([]);
+            setDatabaseDuplicates([]);
+            setFileDuplicateResolutions({});
             setUploadPreviewData(previewPayloads);
             setUploadTabActive(2);
         } catch (error) {
@@ -1965,38 +2017,80 @@ export default function SubmitDebtor() {
                         <DialogTitle>
                             {uploadTabActive === 1
                                 ? "Upload Debtors"
-                                : "Debtor Preview"}
+                                : uploadTabActive === 2
+                                ? "Debtor Preview"
+                                : "Resolve Duplicates"}
                         </DialogTitle>
                         <DialogDescription>
                             {uploadTabActive === 1
                                 ? "Upload CSV/XLS/XLSX file containing debtor information"
-                                : "Periksa data sebelum disimpan ke database"}
+                                : uploadTabActive === 2
+                                ? "Periksa data sebelum disimpan ke database"
+                                : "Select which duplicate rows to exclude from upload"}
                         </DialogDescription>
 
                         {/* Stepper */}
-                        <div className="flex mt-3">
+                        <div className="flex mt-3 gap-2">
                             <div
                                 className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
                                     uploadTabActive === 1
                                         ? "border-blue-600 text-blue-600 font-medium"
-                                        : "border-green-600 text-green-600"
+                                        : uploadTabActive > 1
+                                        ? "border-green-600 text-green-600"
+                                        : "border-gray-200 text-gray-400"
                                 }`}
                             >
                                 <div
                                     className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
                                         uploadTabActive === 1
                                             ? "bg-blue-600 text-white"
-                                            : "bg-green-600 text-white"
+                                            : uploadTabActive > 1
+                                            ? "bg-green-600 text-white"
+                                            : "bg-gray-200 text-gray-500"
                                     }`}
                                 >
                                     {uploadTabActive === 1 ? "1" : "✓"}
                                 </div>
-                                Upload Debtors
+                                Upload
                             </div>
                             <div
                                 className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
-                                    uploadTabActive === 2
+                                    uploadTabActive === 3
+                                        ? "border-yellow-500 text-yellow-600 font-medium"
+                                        : uploadTabActive === 2
                                         ? "border-blue-600 text-blue-600 font-medium"
+                                        : uploadTabActive > 2
+                                        ? "border-green-600 text-green-600"
+                                        : "border-gray-200 text-gray-400"
+                                }`}
+                            >
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        uploadTabActive === 3
+                                            ? "bg-yellow-500 text-white"
+                                            : uploadTabActive === 2
+                                            ? "bg-blue-600 text-white"
+                                            : uploadTabActive > 2
+                                            ? "bg-green-600 text-white"
+                                            : "bg-gray-200 text-gray-500"
+                                    }`}
+                                >
+                                    {uploadTabActive === 3
+                                        ? "2"
+                                        : uploadTabActive > 2
+                                        ? "✓"
+                                        : "2"}
+                                </div>
+                                {uploadTabActive === 3
+                                    ? "Resolve Duplicates"
+                                    : "Preview"}
+                            </div>
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    uploadTabActive > 2
+                                        ? uploadTabActive === 2
+                                            ? "border-blue-600 text-blue-600 font-medium"
+                                            : "border-gray-200 text-gray-400"
                                         : "border-gray-200 text-gray-400"
                                 }`}
                             >
@@ -2007,9 +2101,9 @@ export default function SubmitDebtor() {
                                             : "bg-gray-200 text-gray-500"
                                     }`}
                                 >
-                                    2
+                                    3
                                 </div>
-                                Debtor Preview
+                                Preview
                             </div>
                         </div>
                     </DialogHeader>
@@ -2367,6 +2461,164 @@ export default function SubmitDebtor() {
                                 )}
                             </>
                         )}
+
+                        {/* Tab 3: Deduplication */}
+                        {uploadTabActive === 3 && (
+                            <>
+                                <Alert className="bg-amber-50 border-amber-200">
+                                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                                    <AlertDescription className="text-amber-800">
+                                        <p className="font-medium mb-2">
+                                            Duplicate records detected in upload file
+                                        </p>
+                                        <p className="text-sm">
+                                            {fileDuplicates.length} duplicate group(s) found.
+                                            Select which rows to EXCLUDE from upload.
+                                        </p>
+                                    </AlertDescription>
+                                </Alert>
+
+                                {fileDuplicates.map((dupGroup, groupIdx) => {
+                                    const key = `${dupGroup.field}:${dupGroup.value}`;
+                                    const isExcluding =
+                                        fileDuplicateResolutions[key] || [];
+
+                                    return (
+                                        <div
+                                            key={groupIdx}
+                                            className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+                                        >
+                                            <p className="font-medium text-sm mb-3">
+                                                {dupGroup.field ===
+                                                "nomor_peserta"
+                                                    ? "Nomor Peserta"
+                                                    : "Policy No"}
+                                                : <span
+                                                    className="text-blue-600 font-semibold ml-2"
+                                                >
+                                                    {dupGroup.value}
+                                                </span>
+                                            </p>
+
+                                            <div className="space-y-2 ml-4">
+                                                <p className="text-xs text-gray-600 mb-2">
+                                                    Found in{" "}
+                                                    <span className="font-medium">
+                                                        {
+                                                            dupGroup
+                                                                .rowIndices
+                                                                .length
+                                                        }
+                                                    </span>{" "}
+                                                    row(s). Select which to{" "}
+                                                    <span className="font-medium">
+                                                        EXCLUDE
+                                                    </span>
+                                                    :
+                                                </p>
+
+                                                {dupGroup.rowIndices.map(
+                                                    (rowIdx) => {
+                                                        const row =
+                                                            uploadPreviewData[
+                                                                rowIdx
+                                                            ];
+                                                        const isExcluded =
+                                                            isExcluding.includes(
+                                                                rowIdx
+                                                            );
+
+                                                        return (
+                                                            <div
+                                                                key={rowIdx}
+                                                                className="flex items-start gap-3 p-2 bg-white rounded border border-gray-200"
+                                                            >
+                                                                <Checkbox
+                                                                    checked={
+                                                                        isExcluded
+                                                                    }
+                                                                    onCheckedChange={(
+                                                                        checked
+                                                                    ) => {
+                                                                        const newExcluding =
+                                                                            isExcluding.filter(
+                                                                                (
+                                                                                    idx
+                                                                                ) =>
+                                                                                    idx !==
+                                                                                    rowIdx
+                                                                            );
+                                                                        if (
+                                                                            checked
+                                                                        ) {
+                                                                            newExcluding.push(
+                                                                                rowIdx
+                                                                            );
+                                                                        }
+                                                                        setFileDuplicateResolutions(
+                                                                            {
+                                                                                ...fileDuplicateResolutions,
+                                                                                [key]: newExcluding,
+                                                                            }
+                                                                        );
+                                                                    }}
+                                                                    id={`${key}-${rowIdx}`}
+                                                                />
+                                                                <label
+                                                                    htmlFor={`${key}-${rowIdx}`}
+                                                                    className="flex-1 text-sm cursor-pointer"
+                                                                >
+                                                                    <p className="font-medium text-gray-700">
+                                                                        Row{" "}
+                                                                        {
+                                                                            rowIdx +
+                                                                            2
+                                                                        }
+                                                                    </p>
+                                                                    <p className="text-xs text-gray-500 mt-1">
+                                                                        {row
+                                                                            ?.nama_peserta ||
+                                                                            "N/A"}{" "}
+                                                                        |{" "}
+                                                                        {row
+                                                                            ?.plafon
+                                                                            ? formatRupiahAdaptive(
+                                                                                  row.plafon
+                                                                              )
+                                                                            : "N/A"}
+                                                                    </p>
+                                                                </label>
+                                                            </div>
+                                                        );
+                                                    }
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200 mt-4">
+                                    <p className="text-sm text-blue-800">
+                                        <span className="font-medium">
+                                            Summary:
+                                        </span>{" "}
+                                        {uploadPreviewData.length} total rows
+                                        →{" "}
+                                        {
+                                            uploadPreviewData.length -
+                                            Object.values(
+                                                fileDuplicateResolutions
+                                            ).flat().length
+                                        }{" "}
+                                        rows to upload (
+                                        {Object.values(
+                                            fileDuplicateResolutions
+                                        ).flat().length}{" "}
+                                        excluded)
+                                    </p>
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     {canShowActionButtons && (
@@ -2437,6 +2689,47 @@ export default function SubmitDebtor() {
                                                 Confirm Upload
                                             </>
                                         )}
+                                    </Button>
+                                </>
+                            )}
+                            {uploadTabActive === 3 && (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            setUploadTabActive(1);
+                                            setErrorMessage("");
+                                        }}
+                                        disabled={uploadPreviewLoading}
+                                    >
+                                        <ChevronLeft className="w-4 h-4 mr-2" />
+                                        Back to Upload
+                                    </Button>
+                                    <Button
+                                        onClick={() => {
+                                            // Filter uploadPreviewData to remove excluded rows
+                                            const rowsToExclude = new Set(
+                                                Object.values(
+                                                    fileDuplicateResolutions
+                                                ).flat()
+                                            );
+                                            const filteredData =
+                                                uploadPreviewData.filter(
+                                                    (row, idx) =>
+                                                        !rowsToExclude.has(idx)
+                                                );
+
+                                            setUploadPreviewData(
+                                                filteredData
+                                            );
+                                            setFileDuplicates([]);
+                                            setFileDuplicateResolutions({});
+                                            setUploadTabActive(2); // Go to preview
+                                        }}
+                                        disabled={uploadPreviewLoading}
+                                    >
+                                        <ChevronRight className="w-4 h-4 mr-2" />
+                                        Apply & Continue to Preview
                                     </Button>
                                 </>
                             )}

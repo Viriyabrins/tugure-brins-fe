@@ -462,7 +462,7 @@ export default function DebtorReview() {
                     const notaNumber = `NOTA-${contractId}-${Date.now()}`;
                     await backend.create("Nota", {
                         nota_number: notaNumber,
-                        nota_type: "INVOICE",
+                        nota_type: "Batch",
                         reference_id: batchId,
                         contract_id: contractId,
                         amount: totalNetPremi,

@@ -1087,15 +1087,211 @@ export default function NotaManagement() {
         setProcessing(false);
     };
 
-    const filteredNotas = notas.filter((n) => {
+    const activeCategoryNotas = notas.filter(n => {
+        if (activeTab === "notas") return n.nota_type === "Batch" || n.nota_type === "INVOICE";
+        if (activeTab === "claim") return n.nota_type === "Claim";
+        return true;
+    });
+
+    const filteredNotas = activeCategoryNotas.filter((n) => {
         if (filters.contract !== "all" && n.contract_id !== filters.contract)
-            return false;
-        if (filters.notaType !== "all" && n.nota_type !== filters.notaType)
             return false;
         if (filters.status !== "all" && n.status !== filters.status)
             return false;
         return true;
     });
+
+    const renderNotaTabContent = () => (
+        <>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <GradientStatCard
+                    title="Total Notas"
+                    value={activeCategoryNotas.length}
+                    subtitle={`${activeCategoryNotas.length} ${activeTab === "claim" ? "claim" : "batch"} notas`}
+                    icon={FileText}
+                    gradient="from-blue-500 to-blue-600"
+                />
+                <GradientStatCard
+                    title="Pending Confirmation"
+                    value={
+                        activeCategoryNotas.filter((n) => n.status === "UNPAID").length
+                    }
+                    subtitle="Awaiting branch"
+                    icon={Clock}
+                    gradient="from-orange-500 to-orange-600"
+                />
+                <GradientStatCard
+                    title="Total Amount"
+                    value={formatRupiahAdaptive(
+                        activeCategoryNotas.reduce(
+                            (sum, n) => sum + getNotaAmount(n),
+                            0,
+                        ),
+                    )}
+                    subtitle={`All ${activeTab === "claim" ? "claim" : "batch"} notas`}
+                    icon={DollarSign}
+                    gradient="from-green-500 to-green-600"
+                />
+                <GradientStatCard
+                    title="Closed Notas"
+                    value={
+                        activeCategoryNotas.filter((n) => n.status === "Nota Closed").length
+                    }
+                    subtitle={formatRupiahAdaptive(
+                        activeCategoryNotas
+                            .filter((n) => n.status === "Nota Closed")
+                            .reduce(
+                                (sum, n) => sum + getNotaAmount(n),
+                                0,
+                            ),
+                    )}
+                    icon={CheckCircle2}
+                    gradient="from-purple-500 to-purple-600"
+                />
+            </div>
+
+            <FilterTab
+                filters={filters}
+                onFilterChange={setFilters}
+                defaultFilters={{
+                    contract: "all",
+                    status: "all"
+                }}
+                filterConfig={[
+                    {
+                        key: "contract",
+                        label: "Contract",
+                        options: [
+                            { value: "all", label: "All Contracts" },
+                            ...contracts.map((c) => ({
+                                value: c.id,
+                                label: c.contract_number,
+                            })),
+                        ],
+                    },
+                    {
+                        key: "status",
+                        label: "Status",
+                        options: [
+                            { value: "all", label: "All Status" },
+                            { value: "UNPAID", label: "UNPAID" },
+                            { value: "PAID", label: "PAID" },
+                        ],
+                    },
+                ]}
+            />
+
+            <DataTable
+                columns={[
+                    {
+                        header: "Nota Number",
+                        cell: (row) => (
+                            <div>
+                                <p className="font-medium font-mono">
+                                    {row.nota_number}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <Badge variant="outline" className="text-xs">
+                                        {row.nota_type}
+                                    </Badge>
+                                </div>
+                            </div>
+                        ),
+                    },
+                    {
+                        header: "Reference",
+                        cell: (row) => (
+                            <span className="text-sm">
+                                {row.reference_id}
+                            </span>
+                        ),
+                    },
+                    {
+                        header: "Amount",
+                        cell: (row) => (
+                            <span className="font-bold">
+                                {formatRupiahAdaptive(getNotaAmount(row))}
+                            </span>
+                        ),
+                    },
+                    {
+                        header: "Payment Status",
+                        cell: (row) => (
+                            <div className="flex items-center gap-2">
+                                {row.status === "PAID" ? (
+                                    <Badge variant="default" className="bg-green-600">PAID</Badge>
+                                ) : (
+                                    <Badge variant="outline" className="text-orange-600 border-orange-300">UNPAID</Badge>
+                                )}
+                            </div>
+                        ),
+                    },
+                    {
+                        header: "Payment Action",
+                        cell: (row) => {
+                            const isBrins = isBrinsRole(tokenRoles);
+                            const isUnpaid = row.status === "UNPAID";
+                            return isBrins && isUnpaid ? (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                        setSelectedNotaForStatus(row);
+                                        setShowNotaStatusDialog(true);
+                                    }}
+                                >
+                                    Mark Paid
+                                </Button>
+                            ) : (
+                                <span className="text-xs text-gray-500">View Only</span>
+                            );
+                        },
+                    },
+                    {
+                        header: "Actions",
+                        cell: (row) => (
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        setSelectedNota(row);
+                                        setShowViewDialog(true);
+                                    }}
+                                >
+                                    <Eye className="w-4 h-4 mr-1" />
+                                    View
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDownloadPDF(row);
+                                    }}
+                                >
+                                    <Download className="w-4 h-4 mr-1" />
+                                    PDF
+                                </Button>
+                            </div>
+                        ),
+                    },
+                ]}
+                data={filteredNotas}
+                isLoading={loading}
+                emptyMessage={`No ${activeTab === 'claim' ? 'claim' : 'batch'} notas found`}
+                onRowClick={() => {}}
+                pagination={{
+                    from: totalNotas === 0 ? 0 : (notaPage - 1) * notaPageSize + 1,
+                    to: Math.min(totalNotas, notaPage * notaPageSize),
+                    total: totalNotas,
+                    page: notaPage,
+                    totalPages: Math.max(1, Math.ceil(totalNotas / notaPageSize)),
+                }}
+                onPageChange={(p) => setNotaPage(p)}
+            />
+        </>
+    );
 
     // DEBUG: Log all notas to see their actual status values
     useEffect(() => {
@@ -1290,554 +1486,20 @@ export default function NotaManagement() {
             )}
 
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full max-w-3xl grid-cols-3">
+                <TabsList className="grid w-full max-w-4xl grid-cols-3">
                     <TabsTrigger value="notas">Premi</TabsTrigger>
-                    <TabsTrigger value="reconciliation">
-                        Claim
-                    </TabsTrigger>
+                    <TabsTrigger value="claim">Claim</TabsTrigger>
                     <TabsTrigger value="dncn">Subrogation</TabsTrigger>
                 </TabsList>
 
-                {/* NOTAS TAB */}
+                {/* NOTAS (PREMI) TAB */}
                 <TabsContent value="notas" className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <GradientStatCard
-                            title="Total Notas"
-                            value={notas.length}
-                            subtitle={`${notas.filter((n) => n.nota_type === "Batch").length} batch / ${notas.filter((n) => n.nota_type === "Claim").length} claim`}
-                            icon={FileText}
-                            gradient="from-blue-500 to-blue-600"
-                        />
-                        <GradientStatCard
-                            title="Pending Confirmation"
-                            value={
-                                notas.filter((n) => n.status === "UNPAID").length
-                            }
-                            subtitle="Awaiting branch"
-                            icon={Clock}
-                            gradient="from-orange-500 to-orange-600"
-                        />
-                        <GradientStatCard
-                            title="Total Amount"
-                            value={formatRupiahAdaptive(
-                                notas.reduce(
-                                    (sum, n) => sum + getNotaAmount(n),
-                                    0,
-                                ),
-                            )}
-                            subtitle="All notas"
-                            icon={DollarSign}
-                            gradient="from-green-500 to-green-600"
-                        />
-                        <GradientStatCard
-                            title="Closed Notas"
-                            value={
-                                notas.filter((n) => n.status === "Nota Closed")
-                                    .length
-                            }
-                            subtitle={formatRupiahAdaptive(
-                                notas
-                                    .filter((n) => n.status === "Nota Closed")
-                                    .reduce(
-                                        (sum, n) => sum + getNotaAmount(n),
-                                        0,
-                                    ),
-                            )}
-                            icon={CheckCircle2}
-                            gradient="from-purple-500 to-purple-600"
-                        />
-                    </div>
-
-                    <FilterTab
-                        filters={filters}
-                        onFilterChange={setFilters}
-                        defaultFilters={defaultFilter}
-                        filterConfig={[
-                            {
-                                key: "contract",
-                                label: "Contract",
-                                options: [
-                                    { value: "all", label: "All Contracts" },
-                                    ...contracts.map((c) => ({
-                                        value: c.id,
-                                        label: c.contract_number,
-                                    })),
-                                ],
-                            },
-                            {
-                                key: "notaType",
-                                label: "Nota Type",
-                                options: [
-                                    { value: "all", label: "All Types" },
-                                    { value: "Batch", label: "Batch" },
-                                    { value: "Claim", label: "Claim" },
-                                    {
-                                        value: "Subrogation",
-                                        label: "Subrogation",
-                                    },
-                                ],
-                            },
-                            {
-                                key: "status",
-                                label: "Status",
-                                options: [
-                                    { value: "all", label: "All Status" },
-                                    { value: "UNPAID", label: "UNPAID" },
-                                    { value: "PAID", label: "PAID" },
-                                ],
-                            },
-                        ]}
-                    />
-
-                    <DataTable
-                        columns={[
-                            {
-                                header: "Nota Number",
-                                cell: (row) => (
-                                    <div>
-                                        <p className="font-medium font-mono">
-                                            {row.nota_number}
-                                        </p>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <Badge
-                                                variant="outline"
-                                                className="text-xs"
-                                            >
-                                                {row.nota_type}
-                                            </Badge>
-                                        </div>
-                                    </div>
-                                ),
-                            },
-                            {
-                                header: "Reference",
-                                cell: (row) => (
-                                    <span className="text-sm">
-                                        {row.reference_id}
-                                    </span>
-                                ),
-                            },
-                            {
-                                header: "Amount",
-                                cell: (row) => (
-                                    <span className="font-bold">
-                                        {formatRupiahAdaptive(
-                                            getNotaAmount(row),
-                                        )}
-                                    </span>
-                                ),
-                            },
-                            // {
-                            //     header: "Status",
-                            //     cell: (row) => (
-                            //         <StatusBadge status={row.status} />
-                            //     ),
-                            // },
-                            // {
-                            //     header: "Recon Status",
-                            //     cell: (row) =>
-                            //         row.reconciliation_status ? (
-                            //             <StatusBadge
-                            //                 status={row.reconciliation_status}
-                            //             />
-                            //         ) : (
-                            //             "-"
-                            //         ),
-                            // },
-                            {
-                                header: "Payment Status",
-                                cell: (row) => (
-                                    <div className="flex items-center gap-2">
-                                        {row.status === "PAID" ? (
-                                            <Badge variant="default" className="bg-green-600">PAID</Badge>
-                                        ) : (
-                                            <Badge variant="outline" className="text-orange-600 border-orange-300">UNPAID</Badge>
-                                        )}
-                                    </div>
-                                ),
-                            },
-                            {
-                                header: "Payment Action",
-                                cell: (row) => {
-                                    const isBrins = isBrinsRole(tokenRoles);
-                                    const isUnpaid = row.status === "UNPAID";
-                                    console.log("DEBUG - PaymentAction cell render:", {
-                                        tokenRoles,
-                                        isBrins,
-                                        isUnpaid,
-                                        shouldShow: isBrins && isUnpaid,
-                                        rowStatus: row.status
-                                    });
-                                    return isBrins && isUnpaid ? (
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => {
-                                                setSelectedNotaForStatus(row);
-                                                setShowNotaStatusDialog(true);
-                                            }}
-                                        >
-                                            Mark Paid
-                                        </Button>
-                                    ) : (
-                                        <span className="text-xs text-gray-500">View Only</span>
-                                    );
-                                },
-                            },
-                            {
-                                header: "Actions",
-                                cell: (row) => (
-                                    <div className="flex gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => {
-                                                setSelectedNota(row);
-                                                setShowViewDialog(true);
-                                            }}
-                                        >
-                                            <Eye className="w-4 h-4 mr-1" />
-                                            View
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleDownloadPDF(row);
-                                            }}
-                                        >
-                                            <Download className="w-4 h-4 mr-1" />
-                                            PDF
-                                        </Button>
-                                    </div>
-                                ),
-                            },
-                        ]}
-                        data={filteredNotas}
-                        isLoading={loading}
-                        emptyMessage="No notas found"
-                        onRowClick={() => {}}
-                        pagination={{
-                            from: totalNotas === 0 ? 0 : (notaPage - 1) * notaPageSize + 1,
-                            to: Math.min(totalNotas, notaPage * notaPageSize),
-                            total: totalNotas,
-                            page: notaPage,
-                            totalPages: Math.max(1, Math.ceil(totalNotas / notaPageSize)),
-                        }}
-                        onPageChange={(p) => setNotaPage(p)}
-                    />
+                    {renderNotaTabContent()}
                 </TabsContent>
 
-                {/* RECONCILIATION TAB */}
-                <TabsContent value="reconciliation" className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <GradientStatCard
-                            title="Closed Notas"
-                            value={
-                                notas.filter((n) => n.status === "Nota Closed")
-                                    .length
-                            }
-                            subtitle={formatRupiahAdaptive(
-                                notas
-                                    .filter((n) => n.status === "Nota Closed")
-                                    .reduce(
-                                        (sum, n) => sum + getNotaAmount(n),
-                                        0,
-                                    ),
-                            )}
-                            icon={CheckCircle2}
-                            gradient="from-purple-500 to-purple-600"
-                        />
-                        <GradientStatCard
-                            title="Total Paid"
-                            value={formatRupiahAdaptive(
-                                reconciliationItems.reduce(
-                                    (sum, r) =>
-                                        sum + toNumber(r.total_actual_paid),
-                                    0,
-                                ),
-                            )}
-                            subtitle="Actual payments"
-                            icon={CheckCircle2}
-                            gradient="from-green-500 to-green-600"
-                        />
-                        <GradientStatCard
-                            title="Difference"
-                            value={formatRupiahAdaptive(
-                                reconciliationItems.reduce(
-                                    (sum, r) =>
-                                        sum +
-                                        ((toNumber(r.amount) || 0) -
-                                            (toNumber(r.total_actual_paid) ||
-                                                0)),
-                                    0,
-                                ),
-                            )}
-                            subtitle="To reconcile"
-                            icon={AlertTriangle}
-                            gradient="from-orange-500 to-orange-600"
-                        />
-                        <GradientStatCard
-                            title="Total Exceptions"
-                            value={exceptionItems.length}
-                            subtitle={`${filteredExceptions.length} visible`}
-                            icon={FileText}
-                            gradient="from-red-500 to-red-600"
-                        />
-                    </div>
-
-                    <FilterTab
-                        filters={reconFilters}
-                        onFilterChange={setReconFilters}
-                        defaultFilters={defaultFilterRecon}
-                        filterConfig={[
-                            {
-                                key: "contract",
-                                label: "Contract",
-                                options: [
-                                    { value: "all", label: "All Contracts" },
-                                    ...contracts.map((c) => ({
-                                        value: c.id,
-                                        label: c.contract_number,
-                                    })),
-                                ],
-                            },
-                            {
-                                key: "status",
-                                label: "Status",
-                                options: [
-                                    { value: "all", label: "All Status" },
-                                    { value: "UNPAID", label: "UNPAID" },
-                                    { value: "PAID", label: "PAID" },
-                                ],
-                            },
-                            {
-                                key: "hasException",
-                                label: "Exception Status",
-                                options: [
-                                    { value: "all", label: "All" },
-                                    { value: "yes", label: "Has Exception" },
-                                    { value: "no", label: "No Exception" },
-                                ],
-                            },
-                        ]}
-                    />
-
-                    <DataTable
-                        columns={[
-                            {
-                                header: "Nota",
-                                cell: (row) => (
-                                    <div>
-                                        <div className="font-medium font-mono">
-                                            {row.nota_number}
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <Badge
-                                                variant="outline"
-                                                className="text-xs"
-                                            >
-                                                {row.nota_type}
-                                            </Badge>
-                                            <span className="text-xs text-gray-500">
-                                                {row.reference_id}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ),
-                            },
-                            {
-                                header: "Nota Amount",
-                                cell: (row) => (
-                                    <div>
-                                        <div className="font-bold text-blue-600"></div>
-                                        {formatRupiahAdaptive(
-                                            getNotaAmount(row),
-                                        )}
-                                    </div>
-                                ),
-                            },
-                            {
-                                header: "Total Planned",
-                                cell: (row) => (
-                                    <div>
-                                        <div className="text-gray-600">
-                                            {formatRupiahAdaptive(
-                                                row.total_planned,
-                                            )}
-                                        </div>
-                                        <div className="text-xs text-gray-400">
-                                            {row.intent_count} intent(s)
-                                        </div>
-                                    </div>
-                                ),
-                            },
-                            {
-                                header: "Total Actual Paid",
-                                cell: (row) => (
-                                    <div>
-                                        <div className="text-green-600 font-bold">
-                                            {formatRupiahAdaptive(
-                                                row.total_actual_paid,
-                                            )}
-                                        </div>
-                                        <div className="text-xs text-gray-400">
-                                            {row.payment_count} payment(s)
-                                        </div>
-                                    </div>
-                                ),
-                            },
-                            {
-                                header: "Difference",
-                                cell: (row) => {
-                                    const diff =
-                                        (row.amount || 0) -
-                                        (row.total_actual_paid || 0);
-                                    return (
-                                        <div className="flex items-center gap-2">
-                                            <span
-                                                className={
-                                                    Math.abs(diff) > 1000
-                                                        ? "text-red-600 font-bold"
-                                                        : "text-green-600"
-                                                }
-                                            >
-                                                {formatRupiahAdaptive(diff)}
-                                            </span>
-                                            {Math.abs(diff) > 1000 && (
-                                                <AlertTriangle className="w-4 h-4 text-orange-500" />
-                                            )}
-                                        </div>
-                                    );
-                                },
-                            },
-                            {
-                                header: "Recon Status",
-                                cell: (row) => (
-                                    <StatusBadge
-                                        status={row.reconciliation_status}
-                                    />
-                                ),
-                            },
-                            {
-                                header: "Nota Status",
-                                cell: (row) => (
-                                    <StatusBadge status={row.status} />
-                                ),
-                            },
-                            {
-                                header: "Actions",
-                                cell: (row) => (
-                                    <div className="flex gap-1 flex-wrap">
-                                        {canManageNotaActions &&
-                                            row.status !== "PAID" &&
-                                            row.reconciliation_status !==
-                                                "FINAL" && (
-                                                <Button
-                                                    size="sm"
-                                                    className="bg-blue-600"
-                                                    onClick={() => {
-                                                        setSelectedRecon(row);
-                                                        setPaymentFormData({
-                                                            actual_paid_amount:
-                                                                "",
-                                                            payment_date:
-                                                                new Date()
-                                                                    .toISOString()
-                                                                    .split(
-                                                                        "T",
-                                                                    )[0],
-                                                            bank_reference: "",
-                                                        });
-                                                        setShowPaymentDialog(
-                                                            true,
-                                                        );
-                                                    }}
-                                                >
-                                                    Record Payment
-                                                </Button>
-                                            )}
-
-                                        {canManageNotaActions &&
-                                            row.reconciliation_status !==
-                                                "FINAL" &&
-                                            row.total_actual_paid > 0 && (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() =>
-                                                        handleMarkReconFinal(
-                                                            row,
-                                                        )
-                                                    }
-                                                >
-                                                    Mark FINAL
-                                                </Button>
-                                            )}
-
-                                        {canManageNotaActions &&
-                                            row.has_exception &&
-                                            row.reconciliation_status ===
-                                                "FINAL" && (
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="text-orange-600 border-orange-300"
-                                                    onClick={() => {
-                                                        setSelectedNota(row);
-                                                        const diff =
-                                                            (row.amount || 0) -
-                                                            (row.total_actual_paid ||
-                                                                0);
-                                                        setDnCnFormData({
-                                                            note_type:
-                                                                diff > 0
-                                                                    ? "Debit Note"
-                                                                    : "Credit Note",
-                                                            adjustment_amount:
-                                                                Math.abs(diff),
-                                                            reason_code:
-                                                                "Payment Difference",
-                                                            reason_description: `${diff > 0 ? "Underpayment" : "Overpayment"} of Rp ${Math.abs(diff).toLocaleString()}`,
-                                                        });
-                                                        setShowDnCnDialog(true);
-                                                    }}
-                                                >
-                                                    <Plus className="w-4 h-4 mr-1" />
-                                                    Exception
-                                                </Button>
-                                            )}
-
-                                        {canManageNotaActions &&
-                                            (row.reconciliation_status ===
-                                            "MATCHED" ||
-                                            dnCnRecords.some(
-                                                (d) =>
-                                                    d.original_nota_id ===
-                                                        row.nota_number &&
-                                                    d.status === "Approved",
-                                            )) &&
-                                            row.status !== "Nota Closed" && (
-                                                <Button
-                                                    size="sm"
-                                                    className="bg-green-600"
-                                                    onClick={() =>
-                                                        handleCloseNota(row)
-                                                    }
-                                                >
-                                                    <CheckCircle2 className="w-4 h-4 mr-1" />
-                                                    Close Nota
-                                                </Button>
-                                            )}
-                                    </div>
-                                ),
-                            },
-                        ]}
-                        data={filteredRecon}
-                        isLoading={loading}
-                        emptyMessage="No reconciliation items"
-                    />
+                {/* CLAIM TAB */}
+                <TabsContent value="claim" className="space-y-6">
+                    {renderNotaTabContent()}
                 </TabsContent>
 
                 {/* Exception TAB */}

@@ -640,7 +640,7 @@ export default function ClaimSubmit() {
             }
 
             const hasCompletedPayment = batchNotas.some(
-                (n) => n.status === "Nota Closed",
+                (n) => n.status === "PAID",
             );
 
             if (!hasCompletedPayment && batchNotas.length > 0) {

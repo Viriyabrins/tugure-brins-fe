@@ -76,7 +76,7 @@ const HEADER_ALIAS_MAP = {
     policyno: "policy_no",
 };
 
-const REQUIRED_UPLOAD_COLUMNS = ["nomor_peserta", "nama_peserta"];
+const REQUIRED_UPLOAD_COLUMNS = ["batch_id", "nomor_peserta", "nama_peserta"];
 const NUMERIC_UPLOAD_COLUMNS = [
     "plafon",
     "nominal_premi",
@@ -462,7 +462,7 @@ const buildDebtorPayload = (row, borderoId, batchId, contractId) => {
         kolektabilitas: toInteger(row.kolektabilitas),
         policy_no: toNullableString(row.policy_no),
         contract_id: contractId,
-        batch_id: batchId,
+        batch_id: toNullableString(row.batch_id) || batchId,
         version_no: 1,
         status: "SUBMITTED",
         is_locked: false,
@@ -732,21 +732,41 @@ export default function SubmitDebtor() {
                 }
             }
 
-            // Generate or retrieve batch ID
+            // Extract or retrieve batch ID
             let batchId;
             let borderoId;
             let period;
 
             if (batchMode === "new") {
-                const now = new Date();
-                const year = now.getFullYear();
-                const month = String(now.getMonth() + 1).padStart(2, "0");
-                const randomNum =
-                    Math.floor(Math.random() * 900000) + 100000;
-                batchId = `BATCH-${year}-${month}-${randomNum}`;
+                // Read batch_id from the uploaded file
+                batchId = toNullableString(normalizedRows[0]?.batch_id);
 
-                const now2 = new Date();
-                period = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, "0")}`;
+                if (!batchId) {
+                    const missingMsg = "BATCH_ID is required in all rows. Please add a BATCH_ID column to your upload file.";
+                    setErrorMessage(missingMsg);
+                    toast.error(missingMsg);
+                    setUploadPreviewLoading(false);
+                    return;
+                }
+
+                // Validate all rows share the same batch_id
+                const mismatchedRow = normalizedRows.find(
+                    (r) => toNullableString(r.batch_id) !== batchId
+                );
+                if (mismatchedRow) {
+                    const mismatchMsg = `All rows must have the same BATCH_ID. Found "${toNullableString(mismatchedRow.batch_id)}" but expected "${batchId}".`;
+                    setErrorMessage(mismatchMsg);
+                    toast.error(mismatchMsg);
+                    setUploadPreviewLoading(false);
+                    return;
+                }
+
+                // Derive period from batch_id (BATCH-YYYY-MM-XXXXXX → YYYY-MM)
+                const periodMatch = batchId.match(/^BATCH-(\d{4})-(\d{2})-/);
+                period = periodMatch ? `${periodMatch[1]}-${periodMatch[2]}` : (() => {
+                    const now = new Date();
+                    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+                })();
                 borderoId = `BRD-${batchId.replace("BATCH-", "")}`;
             } else {
                 // Revision mode: use existing batch and bordero
@@ -1175,6 +1195,7 @@ export default function SubmitDebtor() {
     // Download template
     const handleDownloadTemplate = () => {
         const headers = [
+            "BATCH_ID",
             "COVER_ID", "PROGRAM_ID", "NOMOR_REKENING_PINJAMAN", "NOMOR_PESERTA",
             "LOAN_TYPE", "CIF_REKENING_PINJAMAN", "JENIS_PENGAJUAN_DESC",
             "JENIS_COVERING_DESC", "TANGGAL_MULAI_COVERING", "TANGGAL_AKHIR_COVERING",
@@ -1186,11 +1207,11 @@ export default function SubmitDebtor() {
         ];
 
         const sampleData = [
-            ["1111301", "501", "002101000888123", "0000B.00021.2026.01.00001.1.1", "DL", "HEC7001", "New", "Conditional Automatic Cover", "01/01/2026", "01/01/2027", 500000000, 12500000, 5312500, 1460937, 3851563, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Budi Santoso", "Jl. Thamrin No. 10", "PK-001", "2026-01-05", "2026-01-06", "2026-01-06", 1, "BRISURF_COV_00501_002101000888123_01", 0, 1],
-            ["1111302", "501", "002101000888456", "0000C.00021.2026.01.00002.1.1", "DL", "HEC7002", "New", "Conditional Automatic Cover", "05/01/2026", "05/01/2027", 250000000, 6250000, 2656250, 730468, 1925782, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Siti Aminah", "Jl. Sudirman Kav 25", "PK-002", "2026-01-10", "2026-01-11", "2026-01-11", 1, "BRISURF_COV_00501_002101000888456_01", 0, 1],
-            ["1111303", "501", "004501502999789", "0000D.00045.2026.02.00001.1.1", "DL", "HEC7003", "New", "Conditional Automatic Cover", "12/02/2026", "12/02/2027", 750000000, 18750000, 7968750, 2191406, 5777344, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Andi Wijaya", "Jl. Asia Afrika No. 5", "PK-003", "2026-02-15", "2026-02-16", "2026-02-16", 1, "BRISURF_COV_00501_004501502999789_02", 0, 1],
-            ["1111304", "501", "004501502999000", "0000E.00045.2026.02.00002.1.1", "DL", "HEC7004", "New", "Conditional Automatic Cover", "20/02/2026", "20/02/2027", 100000000, 2500000, 1062500, 292187, 770313, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Dewi Lestari", "Jl. Braga No. 12", "PK-004", "2026-02-22", "2026-02-23", "2026-02-23", 1, "BRISURF_COV_00501_004501502999000_02", 0, 1],
-            ["1111305", "501", "009901000777321", "0000F.00099.2026.03.00001.1.1", "DL", "HEC7005", "New", "Conditional Automatic Cover", "01/03/2026", "01/03/2027", 300000000, 7500000, 3187500, 876562, 2310938, 119000, "0099", "KCP MEDAN", "KC Medan", "Sumatera Utara", "Ahmad Fauzi", "Jl. Gatot Subroto No. 88", "PK-005", "2026-03-05", "2026-03-06", "2026-03-06", 1, "BRISURF_COV_00501_009901000777321_03", 0, 1]
+            ["BATCH-2026-03-999001", "1111301", "501", "002101000888123", "0000B.00021.2026.01.00001.1.1", "DL", "HEC7001", "New", "Conditional Automatic Cover", "01/01/2026", "01/01/2027", 500000000, 12500000, 5312500, 1460937, 3851563, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Budi Santoso", "Jl. Thamrin No. 10", "PK-001", "2026-01-05", "2026-01-06", "2026-01-06", 1, "BRISURF_COV_00501_002101000888123_01", 0, 1],
+            ["BATCH-2026-03-999001", "1111302", "501", "002101000888456", "0000C.00021.2026.01.00002.1.1", "DL", "HEC7002", "New", "Conditional Automatic Cover", "05/01/2026", "05/01/2027", 250000000, 6250000, 2656250, 730468, 1925782, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Siti Aminah", "Jl. Sudirman Kav 25", "PK-002", "2026-01-10", "2026-01-11", "2026-01-11", 1, "BRISURF_COV_00501_002101000888456_01", 0, 1],
+            ["BATCH-2026-03-999001", "1111303", "501", "004501502999789", "0000D.00045.2026.02.00001.1.1", "DL", "HEC7003", "New", "Conditional Automatic Cover", "12/02/2026", "12/02/2027", 750000000, 18750000, 7968750, 2191406, 5777344, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Andi Wijaya", "Jl. Asia Afrika No. 5", "PK-003", "2026-02-15", "2026-02-16", "2026-02-16", 1, "BRISURF_COV_00501_004501502999789_02", 0, 1],
+            ["BATCH-2026-03-999001", "1111304", "501", "004501502999000", "0000E.00045.2026.02.00002.1.1", "DL", "HEC7004", "New", "Conditional Automatic Cover", "20/02/2026", "20/02/2027", 100000000, 2500000, 1062500, 292187, 770313, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Dewi Lestari", "Jl. Braga No. 12", "PK-004", "2026-02-22", "2026-02-23", "2026-02-23", 1, "BRISURF_COV_00501_004501502999000_02", 0, 1],
+            ["BATCH-2026-03-999001", "1111305", "501", "009901000777321", "0000F.00099.2026.03.00001.1.1", "DL", "HEC7005", "New", "Conditional Automatic Cover", "01/03/2026", "01/03/2027", 300000000, 7500000, 3187500, 876562, 2310938, 119000, "0099", "KCP MEDAN", "KC Medan", "Sumatera Utara", "Ahmad Fauzi", "Jl. Gatot Subroto No. 88", "PK-005", "2026-03-05", "2026-03-06", "2026-03-06", 1, "BRISURF_COV_00501_009901000777321_03", 0, 1]
         ];
 
         const data = [headers, ...sampleData];
@@ -1210,6 +1231,7 @@ export default function SubmitDebtor() {
         if (!uploadPreviewData || uploadPreviewData.length === 0) return [];
         
         const allowedHeaders = [
+            "BATCH_ID",
             "COVER_ID", "PROGRAM_ID", "NOMOR_REKENING_PINJAMAN", "NOMOR_PESERTA",
             "LOAN_TYPE", "CIF_REKENING_PINJAMAN", "JENIS_PENGAJUAN_DESC",
             "JENIS_COVERING_DESC", "TANGGAL_MULAI_COVERING", "TANGGAL_AKHIR_COVERING",

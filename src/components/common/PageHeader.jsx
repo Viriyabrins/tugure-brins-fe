@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import { getUserRoles } from "@/lib/keycloak";
 
 export default function PageHeader({ 
   title, 
@@ -11,6 +12,15 @@ export default function PageHeader({
   actions,
   breadcrumbs 
 }) {
+  const roles = Array.isArray(getUserRoles && getUserRoles()) ? getUserRoles() : [];
+  const isBrinsUser = Array.isArray(roles) && roles.some((r) => String(r || "").toLowerCase().includes("brins"));
+
+  const transformLabel = (text) => {
+    if (!text || !isBrinsUser || typeof text !== 'string') return text;
+    return String(text)
+      .replace(/\bClaims\b/gi, (m) => (m[0] === m[0].toUpperCase() ? 'Recoveries' : 'recoveries'))
+      .replace(/\bClaim\b/gi, (m) => (m[0] === m[0].toUpperCase() ? 'Recovery' : 'recovery'));
+  };
   return (
     <div className="mb-6">
       {breadcrumbs && (
@@ -23,10 +33,10 @@ export default function PageHeader({
                   to={createPageUrl(crumb.url)} 
                   className="hover:text-gray-900 transition-colors"
                 >
-                  {crumb.label}
+                  {transformLabel(crumb.label)}
                 </Link>
               ) : (
-                <span className="text-gray-900">{crumb.label}</span>
+                <span className="text-gray-900">{transformLabel(crumb.label)}</span>
               )}
             </React.Fragment>
           ))}
@@ -43,9 +53,9 @@ export default function PageHeader({
             </Link>
           )}
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{transformLabel(title)}</h1>
             {subtitle && (
-              <p className="text-gray-500 mt-1">{subtitle}</p>
+              <p className="text-gray-500 mt-1">{transformLabel(subtitle)}</p>
             )}
           </div>
         </div>

@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { getUserRoles } from '@/lib/keycloak';
 
 export default function DataTable({ 
   columns, 
@@ -20,6 +21,15 @@ export default function DataTable({
   onPageChange,
   emptyMessage = "No data available"
 }) {
+  const roles = Array.isArray(getUserRoles && getUserRoles()) ? getUserRoles() : [];
+  const isBrinsUser = Array.isArray(roles) && roles.some((r) => String(r || "").toLowerCase().includes("brins"));
+
+  const transformLabel = (text) => {
+    if (!text || !isBrinsUser || typeof text !== 'string') return text;
+    return String(text)
+      .replace(/\bClaims\b/gi, (m) => (m[0] === m[0].toUpperCase() ? 'Recoveries' : 'recoveries'))
+      .replace(/\bClaim\b/gi, (m) => (m[0] === m[0].toUpperCase() ? 'Recovery' : 'recovery'));
+  };
   if (isLoading) {
     return (
       <div className="bg-white rounded-xl border overflow-hidden">
@@ -28,7 +38,7 @@ export default function DataTable({
             <TableRow className="bg-gray-50">
               {columns.map((col, i) => (
                 <TableHead key={i} className="font-semibold text-gray-700">
-                  {col.header}
+                  {typeof col.header === 'string' ? transformLabel(col.header) : col.header}
                 </TableHead>
               ))}
             </TableRow>
@@ -61,7 +71,7 @@ export default function DataTable({
                   className="font-semibold text-gray-700 whitespace-nowrap"
                   style={{ width: col.width }}
                 >
-                  {col.header}
+                  {typeof col.header === 'string' ? transformLabel(col.header) : col.header}
                 </TableHead>
               ))}
             </TableRow>
@@ -70,7 +80,7 @@ export default function DataTable({
             {data.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={columns.length} className="text-center py-12 text-gray-500">
-                  {emptyMessage}
+                  {typeof emptyMessage === 'string' ? transformLabel(emptyMessage) : emptyMessage}
                 </TableCell>
               </TableRow>
             ) : (

@@ -1,4 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend,
+    ResponsiveContainer,
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +41,7 @@ import {
     Plus,
     DollarSign,
     Clock,
+    TrendingUp,
 } from "lucide-react";
 import { backend } from "@/api/backendClient";
 import { formatRupiahAdaptive } from "@/utils/currency";
@@ -194,10 +205,13 @@ export default function ClaimSubmit() {
     const [activeTab, setActiveTab] = useState("claims");
     const [uploadFile, setUploadFile] = useState(null);
     const [parsedClaims, setParsedClaims] = useState([]);
+    const [uploadTabActive, setUploadTabActive] = useState(1); // 1 = upload, 2 = preview
+    const [previewValidationError, setPreviewValidationError] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
     const [claimPage, setClaimPage] = useState(1);
     const [totalClaims, setTotalClaims] = useState(0);
     const claimPageSize = 10;
+    const [allClaimsForTrend, setAllClaimsForTrend] = useState([]);
     const canShowActionButtons = userRoles.some((role) => {
         const normalizedRole = String(role || "").trim().toLowerCase();
         return (
@@ -205,6 +219,11 @@ export default function ClaimSubmit() {
             normalizedRole === "checker-brins-role"
         );
     });
+
+    // Determine if current user belongs to Brins tenant (any role with 'brins' in name)
+    const isBrinsUser = Array.isArray(userRoles) && userRoles.some((role) =>
+        String(role || "").toLowerCase().includes("brins"),
+    );
 
     useEffect(() => {
         loadUser();
@@ -256,12 +275,14 @@ export default function ClaimSubmit() {
                 debtorData,
                 batchData,
                 contractData,
+                allClaimData,
             ] = await Promise.all([
                 backend.listPaginated("Claim", { page: 1, limit: claimPageSize, q: JSON.stringify(filters) }),
                 backend.list("Subrogation"),
                 backend.list("Debtor"),
                 backend.list("Batch"),
                 backend.list("Contract"),
+                backend.list("Claim"),
             ]);
 
             // Pastikan data adalah array
@@ -275,6 +296,7 @@ export default function ClaimSubmit() {
             setDebtors(Array.isArray(debtorData) ? debtorData : []);
             setBatches(Array.isArray(batchData) ? batchData : []);
             setContracts(Array.isArray(contractData) ? contractData : []);
+            setAllClaimsForTrend(Array.isArray(allClaimData) ? allClaimData : []);
         } catch (error) {
             console.error("Failed to load data:", error);
             setErrorMessage("Failed to load data. Please refresh the page.");
@@ -573,7 +595,7 @@ export default function ClaimSubmit() {
                 );
             } else {
                 setSuccessMessage(
-                    `Parsed ${parsed.length} claims - all validated`,
+                    `Parsed ${parsed.length} ${isBrinsUser ? 'recoveries' : 'claims'} - all validated`,
                 );
             }
         } catch (error) {
@@ -589,7 +611,7 @@ export default function ClaimSubmit() {
             parsedClaims.length === 0 ||
             !selectedBatch
         ) {
-            setErrorMessage("No valid claims to upload");
+            setErrorMessage(isBrinsUser ? "No valid recoveries to upload" : "No valid claims to upload");
             return;
         }
 
@@ -623,7 +645,7 @@ export default function ClaimSubmit() {
 
             if (!hasCompletedPayment && batchNotas.length > 0) {
                 setErrorMessage(
-                    `❌ BLOCKED: Claim submission not allowed. Nota must be PAID first.`,
+                    `❌ BLOCKED: ${isBrinsUser ? 'Recovery' : 'Claim'} submission not allowed. Nota must be PAID first.`,
                 );
 
                 try {
@@ -739,8 +761,8 @@ export default function ClaimSubmit() {
             if (uploaded > 0) {
                 try {
                     await backend.create("Notification", {
-                        title: "Bulk Claim Upload",
-                        message: `${uploaded} claims uploaded for batch ${batch.batch_id}`,
+                        title: isBrinsUser ? "Bulk Recovery Upload" : "Bulk Claim Upload",
+                        message: `${uploaded} ${isBrinsUser ? 'recoveries' : 'claims'} uploaded for batch ${batch.batch_id}`,
                         type: "INFO",
                         module: "CLAIM",
                         reference_id: batch.batch_id,
@@ -758,8 +780,8 @@ export default function ClaimSubmit() {
                             action_by: user?.email,
                             batch_id: batch.batch_id,
                         },
-                        fallbackSubject: "New Claims Submitted",
-                        fallbackBody: `${uploaded} claims have been submitted by ${user?.email} for batch ${batch.batch_id} and await checking.`,
+                        fallbackSubject: isBrinsUser ? "New Recoveries Submitted" : "New Claims Submitted",
+                        fallbackBody: `${uploaded} ${isBrinsUser ? 'recoveries' : 'claims'} have been submitted by ${user?.email} for batch ${batch.batch_id} and await checking.`,
                     }).catch(e => console.error("Background email fail:", e));
                 } catch (notifError) {
                     console.error("Failed to create notification:", notifError);
@@ -768,10 +790,10 @@ export default function ClaimSubmit() {
 
             if (errors.length > 0) {
                 setErrorMessage(
-                    `Uploaded ${uploaded} claims, but ${errors.length} failed: ${errors.join("; ")}`,
+                    `Uploaded ${uploaded} ${isBrinsUser ? 'recoveries' : 'claims'}, but ${errors.length} failed: ${errors.join("; ")}`,
                 );
             } else {
-                setSuccessMessage(`✓ Successfully uploaded ${uploaded} claims`);
+                setSuccessMessage(`✓ Successfully uploaded ${uploaded} ${isBrinsUser ? 'recoveries' : 'claims'}`);
             }
 
             setShowUploadDialog(false);
@@ -784,7 +806,7 @@ export default function ClaimSubmit() {
             }, 1000);
         } catch (error) {
             console.error("Upload error:", error);
-            setErrorMessage("Failed to upload claims: " + error.message);
+            setErrorMessage("Failed to upload " + (isBrinsUser ? "recoveries: " : "claims: ") + error.message);
         }
         setProcessing(false);
     };
@@ -823,11 +845,11 @@ export default function ClaimSubmit() {
     return (
         <div className="space-y-6">
             <PageHeader
-                title="Claim Submission"
-                subtitle="Submit reinsurance claims per batch"
+                title={isBrinsUser ? "Recovery Submission" : "Claim Submission"}
+                subtitle={isBrinsUser ? "Submit recoveries per batch" : "Submit reinsurance claims per batch"}
                 breadcrumbs={[
                     { label: "Dashboard", url: "Dashboard" },
-                    { label: "Claim Submit" },
+                    { label: isBrinsUser ? "Recovery Submit" : "Claim Submit" },
                 ]}
                 actions={
                     canShowActionButtons ? (
@@ -915,7 +937,7 @@ export default function ClaimSubmit() {
             {/* Gradient Card */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <GradientStatCard
-                    title="Total Claims"
+                    title={isBrinsUser ? "Total Recoveries" : "Total Claims"}
                     value={claims.length}
                     subtitle={formatRupiahAdaptive(
                         claims.reduce(
@@ -927,7 +949,7 @@ export default function ClaimSubmit() {
                     gradient="from-blue-500 to-blue-600"
                 />
                 <GradientStatCard
-                    title="Submitted Claims"
+                    title={isBrinsUser ? "Submitted Recoveries" : "Submitted Claims"}
                     value={claims.filter((c) => c.status === "SUBMITTED").length}
                     subtitle="Pending check"
                     icon={Clock}
@@ -988,9 +1010,9 @@ export default function ClaimSubmit() {
                     },
                     {
                         key: "claimStatus",
-                        label: "Claim Status",
+                        label: isBrinsUser ? "Recovery Status" : "Claim Status",
                         options: [
-                            { value: "all", label: "    All Claim Status" },
+                            { value: "all", label: isBrinsUser ? "    All Recovery Status" : "    All Claim Status" },
                             { value: "SUBMITTED", label: "Submitted" },
                             { value: "CHECKED", label: "Checked" },
                             { value: "APPROVED", label: "Approved" },
@@ -1014,11 +1036,15 @@ export default function ClaimSubmit() {
                 <TabsList>
                     <TabsTrigger value="claims">
                         <FileText className="w-4 h-4 mr-2" />
-                        Claims ({claims.length})
+                        {isBrinsUser ? "Recoveries" : "Claims"} ({claims.length})
                     </TabsTrigger>
                     <TabsTrigger value="subrogation">
                         <DollarSign className="w-4 h-4 mr-2" />
                         Subrogation ({subrogations.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="trend">
+                        <TrendingUp className="w-4 h-4 mr-2" />
+                        Trend Analysis
                     </TabsTrigger>
                 </TabsList>
 
@@ -1027,7 +1053,7 @@ export default function ClaimSubmit() {
                         columns={columns}
                         data={claims}
                         isLoading={loading}
-                        emptyMessage="No claims submitted"
+                        emptyMessage={isBrinsUser ? "No recoveries submitted" : "No claims submitted"}
                         pagination={{
                             from: totalClaims === 0 ? 0 : (claimPage - 1) * claimPageSize + 1,
                             to: Math.min(totalClaims, claimPage * claimPageSize),
@@ -1099,91 +1125,400 @@ export default function ClaimSubmit() {
                         emptyMessage="No subrogation records"
                     />
                 </TabsContent>
+
+                <TabsContent value="trend" className="mt-4">
+                    {(() => {
+                        const batchMap = {};
+                        batches.forEach((b) => {
+                            batchMap[b.batch_id] = {
+                                batch_month: b.batch_month,
+                                batch_year: b.batch_year,
+                            };
+                        });
+                        const monthMap = {};
+                        allClaimsForTrend.forEach((claim) => {
+                            const bInfo = batchMap[claim.batch_id];
+                            if (!bInfo || !bInfo.batch_month || !bInfo.batch_year) return;
+                            const key = `${bInfo.batch_year}-${String(bInfo.batch_month).padStart(2, "0")}`;
+                            if (!monthMap[key]) {
+                                const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                                monthMap[key] = {
+                                    sortKey: key,
+                                    label: `${monthNames[(bInfo.batch_month - 1) % 12]} ${bInfo.batch_year}`,
+                                    nilai_klaim: 0,
+                                    share_tugure_amount: 0,
+                                };
+                            }
+                            monthMap[key].nilai_klaim += Number(claim.nilai_klaim) || 0;
+                            monthMap[key].share_tugure_amount += Number(claim.share_tugure_amount) || 0;
+                        });
+                        const trendData = Object.values(monthMap).sort((a, b) =>
+                            a.sortKey.localeCompare(b.sortKey)
+                        );
+
+                        const toB = (v) => (v / 1_000_000_000).toFixed(2);
+
+                        const CustomTooltip = ({ active, payload, label }) => {
+                            if (!active || !payload || !payload.length) return null;
+                            return (
+                                <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
+                                    <p className="font-semibold text-gray-700 mb-1">{label}</p>
+                                    {payload.map((entry) => (
+                                        <p key={entry.dataKey} style={{ color: entry.color }}>
+                                            {entry.name}:{" "}
+                                            <span className="font-medium">
+                                                {formatRupiahAdaptive(entry.value * 1_000_000_000)}
+                                            </span>
+                                        </p>
+                                    ))}
+                                </div>
+                            );
+                        };
+
+                        return (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <TrendingUp className="w-5 h-5 text-teal-600" />
+                                        Trend Analysis
+                                    </CardTitle>
+                                    <p className="text-sm text-gray-500">
+                                        {isBrinsUser ? "Recovery" : "Claim"} value trend by batch period
+                                    </p>
+                                </CardHeader>
+                                <CardContent>
+                                    {trendData.length === 0 ? (
+                                        <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+                                            No data available for trend analysis
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex gap-6 mb-4 flex-wrap">
+                                                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+                                                    <p className="text-xs text-gray-500">Total {isBrinsUser ? "Recovery" : "Claim"} Value</p>
+                                                    <p className="text-lg font-semibold text-green-700">
+                                                        {formatRupiahAdaptive(
+                                                            allClaimsForTrend.reduce((s, c) => s + (Number(c.nilai_klaim) || 0), 0)
+                                                        )}
+                                                    </p>
+                                                </div>
+                                                <div className="bg-teal-50 border border-teal-200 rounded-lg px-4 py-2">
+                                                    <p className="text-xs text-gray-500">Total Share Tugure Amount</p>
+                                                    <p className="text-lg font-semibold text-teal-700">
+                                                        {formatRupiahAdaptive(
+                                                            allClaimsForTrend.reduce((s, c) => s + (Number(c.share_tugure_amount) || 0), 0)
+                                                        )}
+                                                    </p>
+                                                </div>
+                                                <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+                                                    <p className="text-xs text-gray-500">Periods</p>
+                                                    <p className="text-lg font-semibold text-gray-700">{trendData.length}</p>
+                                                </div>
+                                            </div>
+                                            <div className="h-80">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <LineChart
+                                                        data={trendData.map((d) => ({
+                                                            ...d,
+                                                            nilai_klaim_b: parseFloat(toB(d.nilai_klaim)),
+                                                            share_tugure_b: parseFloat(toB(d.share_tugure_amount)),
+                                                        }))}
+                                                        margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
+                                                    >
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                                                        <XAxis
+                                                            dataKey="label"
+                                                            tick={{ fontSize: 12 }}
+                                                            stroke="#6B7280"
+                                                        />
+                                                        <YAxis
+                                                            tick={{ fontSize: 12 }}
+                                                            stroke="#6B7280"
+                                                            tickFormatter={(v) => `${v}B`}
+                                                            label={{
+                                                                value: "IDR (Billion)",
+                                                                angle: -90,
+                                                                position: "insideLeft",
+                                                                offset: 10,
+                                                                style: { fontSize: 11, fill: "#6B7280" },
+                                                            }}
+                                                        />
+                                                        <Tooltip content={CustomTooltip} />
+                                                        <Legend />
+                                                        <Line
+                                                            type="monotone"
+                                                            dataKey="nilai_klaim_b"
+                                                            stroke="#1D4E32"
+                                                            strokeWidth={3}
+                                                            name={isBrinsUser ? "Recovery Value (Annual)" : "Nilai Klaim (Annual)"}
+                                                            dot={{ fill: "#1D4E32", r: 5 }}
+                                                            activeDot={{ r: 7 }}
+                                                        />
+                                                        <Line
+                                                            type="monotone"
+                                                            dataKey="share_tugure_b"
+                                                            stroke="#0D9488"
+                                                            strokeWidth={3}
+                                                            name="Share Tugure Amount (Annual)"
+                                                            dot={{ fill: "#0D9488", r: 5 }}
+                                                            activeDot={{ r: 7 }}
+                                                        />
+                                                    </LineChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        </>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        );
+                    })()}
+                </TabsContent>
             </Tabs>
 
-            {/* Upload Dialog */}
-            <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Bulk Upload Claims</DialogTitle>
+            {/* Upload Dialog (two-step: Upload -> Preview) */}
+            <Dialog
+                open={showUploadDialog}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setShowUploadDialog(false);
+                        setParsedClaims([]);
+                        setSelectedBatch("");
+                        setUploadFile(null);
+                        setUploadTabActive(1);
+                        setPreviewValidationError("");
+                        setErrorMessage("");
+                        setSuccessMessage("");
+                    }
+                }}
+            >
+                <DialogContent
+                    className="max-w-4xl w-full"
+                    style={{
+                        maxHeight: "90vh",
+                        display: "flex",
+                        flexDirection: "column",
+                        overflow: "hidden",
+                    }}
+                >
+                    <DialogHeader className="shrink-0">
+                        <DialogTitle>
+                            {uploadTabActive === 1
+                                ? (isBrinsUser ? "Upload Recoveries" : "Upload Claims")
+                                : (isBrinsUser ? "Recovery Preview" : "Claim Preview")}
+                        </DialogTitle>
                         <DialogDescription>
-                            Select batch and upload CSV/Excel file
+                            {uploadTabActive === 1
+                                ? "Pilih batch lalu upload file CSV/Excel. Preview terlebih dahulu sebelum submit."
+                                : (isBrinsUser ? "Periksa data sebelum mengunggah recovery ke sistem." : "Periksa data sebelum mengunggah klaim ke sistem.")}
                         </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <Label>Select Batch *</Label>
-                            <Select
-                                value={selectedBatch}
-                                onValueChange={setSelectedBatch}
+
+                        {/* Stepper */}
+                        <div className="flex mt-3">
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    uploadTabActive === 1
+                                        ? "border-blue-600 text-blue-600 font-medium"
+                                        : "border-green-600 text-green-600"
+                                }`}
                             >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select batch" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {Array.isArray(batches) &&
-                                        batches.map((b) => (
-                                            <SelectItem key={b.id} value={b.id}>
-                                                {b.batch_id} (
-                                                {b.batch_month || ""}/
-                                                {b.batch_year || ""})
-                                            </SelectItem>
-                                        ))}
-                                </SelectContent>
-                            </Select>
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        uploadTabActive === 1
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-green-600 text-white"
+                                    }`}
+                                >
+                                    {uploadTabActive === 1 ? "1" : "✓"}
+                                </div>
+                                Upload {isBrinsUser ? "Recoveries" : "Claims"}
+                            </div>
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    uploadTabActive === 2
+                                        ? "border-blue-600 text-blue-600 font-medium"
+                                        : "border-gray-200 text-gray-400"
+                                }`}
+                            >
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        uploadTabActive === 2
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-200 text-gray-500"
+                                    }`}
+                                >
+                                    2
+                                </div>
+                                {isBrinsUser ? "Recovery Preview" : "Claim Preview"}
+                            </div>
                         </div>
-                        <div>
-                            <Label>Upload File</Label>
-                            <Input
-                                type="file"
-                                accept=".csv,.xlsx,.xls"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                        setUploadFile(file);
-                                        handleFileUpload(file);
-                                    }
-                                }}
-                                disabled={!selectedBatch}
-                            />
-                        </div>
-                        {parsedClaims.length > 0 && (
-                            <Alert className="bg-green-50 border-green-200">
-                                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                                <AlertDescription className="text-green-700">
-                                    Parsed {parsedClaims.length} claims
-                                </AlertDescription>
-                            </Alert>
+                    </DialogHeader>
+
+                    <div className="py-4 space-y-4 overflow-y-auto flex-1 min-h-0 pr-1">
+                        {/* Tab 1: Upload */}
+                        {uploadTabActive === 1 && (
+                            <>
+                                <div>
+                                    <Label>Select Batch *</Label>
+                                    <Select
+                                        value={selectedBatch}
+                                        onValueChange={(v) => {
+                                            setSelectedBatch(v);
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select batch" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {Array.isArray(batches) &&
+                                                batches.map((b) => (
+                                                    <SelectItem key={b.id} value={b.id}>
+                                                        {b.batch_id} ({b.batch_month || ""}/{b.batch_year || ""})
+                                                    </SelectItem>
+                                                ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div>
+                                    <Label>Upload File</Label>
+                                    <Input
+                                        type="file"
+                                        accept=".csv,.xlsx,.xls"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                setUploadFile(file);
+                                                // clear previous preview
+                                                setParsedClaims([]);
+                                                setValidationRemarks([]);
+                                                setPreviewValidationError("");
+                                                setSuccessMessage("");
+                                                setErrorMessage("");
+                                            }
+                                        }}
+                                        disabled={!selectedBatch}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Excel atau CSV format</p>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Tab 2: Preview */}
+                        {uploadTabActive === 2 && (
+                            <>
+                                <div className="flex gap-3 flex-wrap">
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">Total Rows</p>
+                                        <p className="text-xl font-medium">{parsedClaims.length}</p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">Batch</p>
+                                        <p className="text-sm font-medium mt-1">{selectedBatch}</p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">File</p>
+                                        <p className="text-sm font-medium mt-1">{uploadFile?.name}</p>
+                                    </div>
+                                </div>
+
+                                {validationRemarks.length > 0 ? (
+                                    <Alert className="bg-red-50 border-red-200">
+                                        <AlertCircle className="h-4 w-4 text-red-600" />
+                                        <AlertDescription className="text-red-700">
+                                            {validationRemarks.length} validation issue(s) found. Please fix the file and re-upload or use Re-upload Revised Only.
+                                        </AlertDescription>
+                                    </Alert>
+                                ) : (
+                                    <Alert className="bg-blue-50 border-blue-200">
+                                        <AlertCircle className="h-4 w-4 text-blue-600" />
+                                        <AlertDescription className="text-blue-700">
+                                            Below is a preview of claims that will be uploaded. Review before confirming.
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
+
+                                <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "340px", border: "1px solid #e5e7eb", borderRadius: "8px", width: "100%" }}>
+                                    <table className="text-xs" style={{ minWidth: "max-content", borderCollapse: "collapse" }}>
+                                        <thead className="bg-gray-50 sticky top-0 z-10">
+                                            <tr>
+                                                {["#","nomor_peserta","policy_no","nama_tertanggung","nomor_sertifikat","nilai_klaim","share_tugure_percentage","share_tugure_amount","validation_remarks"].map((k) => (
+                                                    <th key={k} className="text-left p-2 font-medium text-gray-500 border-b whitespace-nowrap" style={{ minWidth: k === "#" ? "36px" : "140px" }}>
+                                                        {k === "#" ? "#" : k.replace(/_/g, " ")}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {parsedClaims.map((row, i) => (
+                                                <tr key={i} className="hover:bg-gray-50 border-b border-gray-100">
+                                                    <td className="p-2 text-gray-400 whitespace-nowrap">{i+1}</td>
+                                                    <td className="p-2 whitespace-nowrap">{row.nomor_peserta ?? "-"}</td>
+                                                    <td className="p-2 whitespace-nowrap">{row.policy_no ?? "-"}</td>
+                                                    <td className="p-2 whitespace-nowrap">{row.nama_tertanggung ?? "-"}</td>
+                                                    <td className="p-2 whitespace-nowrap">{row.nomor_sertifikat ?? "-"}</td>
+                                                    <td className="p-2 whitespace-nowrap">Rp {(Number(row.nilai_klaim) || 0).toLocaleString("id-ID")}</td>
+                                                    <td className="p-2 whitespace-nowrap">{row.share_tugure_percentage ?? "-"}</td>
+                                                    <td className="p-2 whitespace-nowrap">{row.share_tugure_amount ?? "-"}</td>
+                                                    <td className="p-2 whitespace-nowrap">{row.validation_remarks ?? "-"}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
                         )}
                     </div>
-                    {canShowActionButtons && (
-                        <DialogFooter>
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowUploadDialog(false);
+                                setParsedClaims([]);
+                                setSelectedBatch("");
+                                setUploadFile(null);
+                                setUploadTabActive(1);
+                                setPreviewValidationError("");
+                            }}
+                        >
+                            Cancel
+                        </Button>
+
+                        {uploadTabActive === 2 && (
+                            <Button variant="outline" onClick={() => setUploadTabActive(1)}>← Back</Button>
+                        )}
+
+                        {uploadTabActive === 1 && (
                             <Button
-                                variant="outline"
-                                onClick={() => {
-                                    setShowUploadDialog(false);
-                                    setParsedClaims([]);
-                                    setSelectedBatch("");
+                                onClick={async () => {
+                                    if (!uploadFile || !selectedBatch) return setErrorMessage("Select batch and file first");
+                                    await handleFileUpload(uploadFile);
+                                    // After parsing and validation, show preview
+                                    setUploadTabActive(2);
+                                    // If there are validation issues, reflect into previewValidationError
+                                    if (validationRemarks.length > 0) {
+                                        setPreviewValidationError(`${validationRemarks.length} validation issue(s) found`);
+                                    } else {
+                                        setPreviewValidationError("");
+                                    }
                                 }}
+                                disabled={processing || !uploadFile || !selectedBatch}
                             >
-                                Cancel
+                                {processing ? "Processing..." : "Preview Data →"}
                             </Button>
-                            <Button
-                                onClick={handleBulkUpload}
-                                disabled={processing || parsedClaims.length === 0}
-                                className="bg-blue-600"
-                            >
-                                {processing ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Uploading...
-                                    </>
-                                ) : (
-                                    `Upload ${parsedClaims.length} Claims`
-                                )}
-                            </Button>
-                        </DialogFooter>
-                    )}
+                        )}
+
+                        {uploadTabActive === 2 && (
+                            <div className={`inline-block ${processing || (validationRemarks.length > 0) ? "hover:cursor-not-allowed" : ""}`}>
+                                <Button
+                                    onClick={handleBulkUpload}
+                                    disabled={processing || validationRemarks.length > 0}
+                                    className={`bg-green-600 text-white ${processing || validationRemarks.length > 0 ? "opacity-60" : "hover:bg-green-700"}`}
+                                >
+                                    {processing ? "Uploading..." : uploadFile ? `Upload ${parsedClaims.length} Claims` : "Upload"}
+                                </Button>
+                            </div>
+                        )}
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 

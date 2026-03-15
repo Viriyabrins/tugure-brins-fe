@@ -52,6 +52,7 @@ export default function Layout({ children, currentPageName }) {
   };
 
   const tokenRoles = extractTokenRoles();
+  const isBrinsUser = Array.isArray(tokenRoles) && tokenRoles.some((r) => String(r || "").toLowerCase().includes("brins"));
   const displayRole = tokenRoles.length > 0 ? tokenRoles.join(', ') : (user?.role?.toUpperCase() || 'USER');
 
   useEffect(() => {
@@ -97,7 +98,7 @@ export default function Layout({ children, currentPageName }) {
       { name: 'Debtor Review', icon: FileCheck, path: 'DebtorReview', accesses: ['tugure review'] },
       { name: 'Nota Management', icon: FileText, path: 'NotaManagement', accesses: ['tugure review'] },
       // { name: 'Payment Intent', icon: DollarSign, path: 'PaymentIntent', accesses: ['brins operation'] },
-      { name: 'Claim Submit', icon: FileText, path: 'ClaimSubmit', accesses: ['brins operation'] },
+      { name: isBrinsUser ? 'Recovery Submit' : 'Claim Submit', icon: FileText, path: 'ClaimSubmit', accesses: ['brins operation'] },
       // { name: 'Document Claim', icon: FileCheck, path: 'DocumentClaim', roles: ['BRINS'] },
       { name: 'Claim Review', icon: FileText, path: 'ClaimReview', accesses: ['tugure review'] }
     ],

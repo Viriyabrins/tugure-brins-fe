@@ -207,11 +207,16 @@ export default function ClaimSubmit() {
     const [parsedClaims, setParsedClaims] = useState([]);
     const [uploadTabActive, setUploadTabActive] = useState(1); // 1 = upload, 2 = preview
     const [previewValidationError, setPreviewValidationError] = useState("");
+    const [showValidationDetails, setShowValidationDetails] = useState(false);
+    // Subrogation create preview step: 1 = edit, 2 = preview
+    const [subrogationTabActive, setSubrogationTabActive] = useState(1);
+    const [subrogationPreviewError, setSubrogationPreviewError] = useState("");
     const [filters, setFilters] = useState(defaultFilter);
     const [claimPage, setClaimPage] = useState(1);
     const [totalClaims, setTotalClaims] = useState(0);
     const claimPageSize = 10;
     const [allClaimsForTrend, setAllClaimsForTrend] = useState([]);
+    const [notas, setNotas] = useState([]);
     const canShowActionButtons = userRoles.some((role) => {
         const normalizedRole = String(role || "").trim().toLowerCase();
         return (
@@ -220,10 +225,13 @@ export default function ClaimSubmit() {
         );
     });
 
-    // Determine if current user belongs to Brins tenant (any role with 'brins' in name)
-    const isBrinsUser = Array.isArray(userRoles) && userRoles.some((role) =>
-        String(role || "").toLowerCase().includes("brins"),
-    );
+    // Determine user tenant: prefer 'tugure' roles. If any role contains 'tugure',
+    // treat user as Tugure. Otherwise, if any role contains 'brins', treat as Brins.
+    const _normalizedRoles = Array.isArray(userRoles)
+        ? userRoles.map((r) => String(r || "").trim().toLowerCase())
+        : [];
+    const isTugureUser = _normalizedRoles.some((r) => r.includes("tugure"));
+    const isBrinsUser = !isTugureUser && _normalizedRoles.some((r) => r.includes("brins"));
 
     useEffect(() => {
         loadUser();
@@ -276,6 +284,7 @@ export default function ClaimSubmit() {
                 batchData,
                 contractData,
                 allClaimData,
+                notaData,
             ] = await Promise.all([
                 backend.listPaginated("Claim", { page: 1, limit: claimPageSize, q: JSON.stringify(filters) }),
                 backend.list("Subrogation"),
@@ -283,6 +292,7 @@ export default function ClaimSubmit() {
                 backend.list("Batch"),
                 backend.list("Contract"),
                 backend.list("Claim"),
+                backend.list("Nota"),
             ]);
 
             // Pastikan data adalah array
@@ -297,6 +307,7 @@ export default function ClaimSubmit() {
             setBatches(Array.isArray(batchData) ? batchData : []);
             setContracts(Array.isArray(contractData) ? contractData : []);
             setAllClaimsForTrend(Array.isArray(allClaimData) ? allClaimData : []);
+            setNotas(Array.isArray(notaData) ? notaData : []);
         } catch (error) {
             console.error("Failed to load data:", error);
             setErrorMessage("Failed to load data. Please refresh the page.");
@@ -307,6 +318,7 @@ export default function ClaimSubmit() {
             setDebtors([]);
             setBatches([]);
             setContracts([]);
+            setNotas([]);
         } finally {
             setLoading(false);
         }
@@ -535,21 +547,14 @@ export default function ClaimSubmit() {
                             String(row.policy_no || "").trim(),
                 );
 
+                // New validation rules per request:
+                // 1) Only verify that (nomor_peserta + policy_no) exists in the selected batch.
+                // 2) Duplicate checks are handled after parsing (within-file and within selected batch).
                 let rowRemarks = [];
                 if (!debtor) {
                     rowRemarks.push(
-                        "Debtor not found in batch (match by nomor peserta & policy no)",
+                        "Debtor not found in batch (match by participant number & policy number)",
                     );
-                } else {
-                    if (debtor.status !== "APPROVED") {
-                        rowRemarks.push("Debtor not approved");
-                    }
-                    if (
-                        Number(row.nilai_klaim) >
-                        (parseFloat(debtor.plafon) || 0)
-                    ) {
-                        rowRemarks.push(`Exceeds plafond (${debtor.plafon})`);
-                    }
                 }
 
                 if (rowRemarks.length > 0) {
@@ -561,6 +566,7 @@ export default function ClaimSubmit() {
                 }
 
                 parsed.push({
+                    excelRow: row.excelRow,
                     policy_no: row.policy_no,
                     nomor_sertifikat: row.nomor_sertifikat,
                     nama_tertanggung: row.nama_tertanggung,
@@ -586,17 +592,104 @@ export default function ClaimSubmit() {
                 });
             }
 
+            // Duplicate validation: within uploaded file and within the selected batch only
+            try {
+                // Normalize key: policy_no + nomor_peserta
+                const keyOf = (r) => `${String(r.policy_no || "").trim().toLowerCase()}||${String(r.nomor_peserta || "").trim().toLowerCase()}`;
+
+                // 1) within-file duplicates
+                const fileMap = {};
+                for (const p of parsed) {
+                    const k = keyOf(p);
+                    if (!fileMap[k]) fileMap[k] = [];
+                    fileMap[k].push(p);
+                }
+
+                for (const k of Object.keys(fileMap)) {
+                    const group = fileMap[k];
+                    if (group.length > 1) {
+                        for (const item of group) {
+                            validationErrors.push({
+                                row: item.excelRow,
+                                participant: item.nomor_peserta || "Unknown",
+                                issues: ["Duplicate in uploaded file (policy number & participant)"],
+                            });
+                            item.validation_remarks = [item.validation_remarks, "Duplicate in uploaded file (policy number & participant)"].filter(Boolean).join("; ");
+                        }
+                    }
+                }
+
+                // 2) duplicates against existing claims within the same batch
+                let existingClaims = [];
+                try {
+                    const claimResult = await backend.listPaginated("Claim", { limit: 9999 });
+                    existingClaims = claimResult?.data || [];
+                } catch (_) {
+                    existingClaims = [];
+                }
+
+                const existingKeys = new Set(
+                    existingClaims
+                        .filter((c) => c.batch_id === batch.batch_id)
+                        .map((c) => keyOf(c)),
+                );
+
+                for (const item of parsed) {
+                    const k = keyOf(item);
+                    if (existingKeys.has(k)) {
+                        validationErrors.push({
+                            row: item.excelRow,
+                            participant: item.nomor_peserta || "Unknown",
+                            issues: ["Duplicate with existing claim in selected batch (policy number & participant)"],
+                        });
+                        item.validation_remarks = [item.validation_remarks, "Duplicate with existing claim in selected batch (policy number & participant)"].filter(Boolean).join("; ");
+                    }
+                }
+            } catch (dupErr) {
+                console.warn("Duplicate check failed:", dupErr);
+            }
+
             setParsedClaims(parsed);
             setValidationRemarks(validationErrors);
 
+            // Build a dynamic, English summary message for the preview alert
+            const buildPreviewValidationMessage = (errors) => {
+                if (!Array.isArray(errors) || errors.length === 0) return "";
+                const counts = { debtorNotFound: 0, duplicateInFile: 0, duplicateInBatch: 0, other: 0 };
+                const otherSamples = {};
+
+                for (const e of errors) {
+                    for (const issue of e.issues) {
+                        const txt = String(issue || "").toLowerCase();
+                        if (txt.includes("debtor not found")) counts.debtorNotFound++;
+                        else if (txt.includes("duplicate in uploaded file")) counts.duplicateInFile++;
+                        else if (txt.includes("duplicate with existing claim")) counts.duplicateInBatch++;
+                        else {
+                            counts.other++;
+                            otherSamples[issue] = (otherSamples[issue] || 0) + 1;
+                        }
+                    }
+                }
+
+                const parts = [];
+                if (counts.debtorNotFound) parts.push(`${counts.debtorNotFound} rows where policy number or participant ID do not match any debtor in the selected batch`);
+                if (counts.duplicateInFile) parts.push(`${counts.duplicateInFile} rows duplicated inside the uploaded file (policy number & participant)`);
+                if (counts.duplicateInBatch) parts.push(`${counts.duplicateInBatch} rows duplicate with existing claims in the selected batch`);
+                if (counts.other) parts.push(`${counts.other} rows with other issues`);
+
+                const joined = parts.join("; ");
+                return `Found ${errors.length} rows with validation issues: ${joined}. Please fix the source file and re-upload, or click Back to adjust the upload. Click 'View details' for row-level information.`;
+            };
+
+            const summaryMsg = buildPreviewValidationMessage(validationErrors);
             if (validationErrors.length > 0) {
-                setErrorMessage(
-                    `${validationErrors.length} validation issues found`,
-                );
+                setErrorMessage(`${validationErrors.length} validation issues found`);
+                setPreviewValidationError(summaryMsg);
             } else {
                 setSuccessMessage(
                     `Parsed ${parsed.length} ${isBrinsUser ? 'recoveries' : 'claims'} - all validated`,
                 );
+                setPreviewValidationError("");
             }
         } catch (error) {
             console.error("Parse error:", error);
@@ -896,43 +989,7 @@ export default function ClaimSubmit() {
                 </Alert>
             )}
 
-            {validationRemarks.length > 0 && (
-                <Card className="border-orange-300 bg-orange-50">
-                    <CardHeader>
-                        <CardTitle className="text-orange-700">
-                            Validation Issues
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                            {validationRemarks.map((remark, idx) => (
-                                <Alert
-                                    key={idx}
-                                    className="bg-orange-100 border-orange-300"
-                                >
-                                    <AlertCircle className="h-4 w-4 text-orange-600" />
-                                    <AlertDescription className="text-orange-800">
-                                        <strong>
-                                            Row {remark.row} (
-                                            {remark.participant}):
-                                        </strong>{" "}
-                                        {remark.issues.join(", ")}
-                                    </AlertDescription>
-                                </Alert>
-                            ))}
-                        </div>
-                        {canShowActionButtons && (
-                            <Button
-                                className="mt-3 bg-orange-600"
-                                size="sm"
-                                onClick={() => setShowRevisionDialog(true)}
-                            >
-                                Re-upload Revised Only
-                            </Button>
-                        )}
-                    </CardContent>
-                </Card>
-            )}
+            {/* Validation issues are shown in the upload preview dialog only. */}
 
             {/* Gradient Card */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1234,9 +1291,9 @@ export default function ClaimSubmit() {
                                                         <YAxis
                                                             tick={{ fontSize: 12 }}
                                                             stroke="#6B7280"
-                                                            tickFormatter={(v) => `${v}B`}
+                                                            tickFormatter={(v) => formatRupiahAdaptive(v * 1_000_000_000)}
                                                             label={{
-                                                                value: "IDR (Billion)",
+                                                                value: "IDR",
                                                                 angle: -90,
                                                                 position: "insideLeft",
                                                                 offset: 10,
@@ -1424,7 +1481,10 @@ export default function ClaimSubmit() {
                                     <Alert className="bg-red-50 border-red-200">
                                         <AlertCircle className="h-4 w-4 text-red-600" />
                                         <AlertDescription className="text-red-700">
-                                            {validationRemarks.length} validation issue(s) found. Please fix the file and re-upload or use Re-upload Revised Only.
+                                            {previewValidationError || `Found ${validationRemarks.length} rows with validation issues. Please fix the source file and re-upload, or click "Back" to adjust the upload.`}
+                                            <div className="mt-2">
+                                                <Button variant="outline" size="sm" onClick={() => setShowValidationDetails(true)}>View details</Button>
+                                            </div>
                                         </AlertDescription>
                                     </Alert>
                                 ) : (
@@ -1440,7 +1500,7 @@ export default function ClaimSubmit() {
                                     <table className="text-xs" style={{ minWidth: "max-content", borderCollapse: "collapse" }}>
                                         <thead className="bg-gray-50 sticky top-0 z-10">
                                             <tr>
-                                                {["#","nomor_peserta","policy_no","nama_tertanggung","nomor_sertifikat","nilai_klaim","share_tugure_percentage","share_tugure_amount","validation_remarks"].map((k) => (
+                                                {["#","nomor_peserta","policy_no","nama_tertanggung","nomor_sertifikat","nilai_klaim","share_tugure_percentage","share_tugure_amount"].map((k) => (
                                                     <th key={k} className="text-left p-2 font-medium text-gray-500 border-b whitespace-nowrap" style={{ minWidth: k === "#" ? "36px" : "140px" }}>
                                                         {k === "#" ? "#" : k.replace(/_/g, " ")}
                                                     </th>
@@ -1458,12 +1518,34 @@ export default function ClaimSubmit() {
                                                     <td className="p-2 whitespace-nowrap">Rp {(Number(row.nilai_klaim) || 0).toLocaleString("id-ID")}</td>
                                                     <td className="p-2 whitespace-nowrap">{row.share_tugure_percentage ?? "-"}</td>
                                                     <td className="p-2 whitespace-nowrap">{row.share_tugure_amount ?? "-"}</td>
-                                                    <td className="p-2 whitespace-nowrap">{row.validation_remarks ?? "-"}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
                                 </div>
+                                {showValidationDetails && validationRemarks.length > 0 && (
+                                    <div className="mt-3 p-3 border rounded bg-white" style={{ maxHeight: "220px", overflowY: "auto" }}>
+                                        <p className="text-sm font-medium mb-2">Validation details (row, participant, issues)</p>
+                                        <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+                                            <thead>
+                                                <tr className="text-left text-gray-500">
+                                                    <th className="p-2" style={{ width: "64px" }}>Row</th>
+                                                    <th className="p-2" style={{ minWidth: "160px" }}>Participant</th>
+                                                    <th className="p-2">Issues</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {validationRemarks.map((v, idx) => (
+                                                    <tr key={idx} className="border-t border-gray-100">
+                                                        <td className="p-2 whitespace-nowrap">{v.row}</td>
+                                                        <td className="p-2 whitespace-nowrap">{v.participant}</td>
+                                                        <td className="p-2">{Array.isArray(v.issues) ? v.issues.join("; ") : String(v.issues)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>
@@ -1494,12 +1576,6 @@ export default function ClaimSubmit() {
                                     await handleFileUpload(uploadFile);
                                     // After parsing and validation, show preview
                                     setUploadTabActive(2);
-                                    // If there are validation issues, reflect into previewValidationError
-                                    if (validationRemarks.length > 0) {
-                                        setPreviewValidationError(`${validationRemarks.length} validation issue(s) found`);
-                                    } else {
-                                        setPreviewValidationError("");
-                                    }
                                 }}
                                 disabled={processing || !uploadFile || !selectedBatch}
                             >
@@ -1567,138 +1643,279 @@ export default function ClaimSubmit() {
             {/* Subrogation Dialog */}
             <Dialog
                 open={showSubrogationDialog}
-                onOpenChange={setShowSubrogationDialog}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setShowSubrogationDialog(false);
+                        setSubrogationTabActive(1);
+                        setSelectedClaim("");
+                        setRecoveryAmount("");
+                        setRecoveryDate("");
+                        setSubrogationRemarks("");
+                        setSubrogationPreviewError("");
+                    }
+                }}
             >
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Create Subrogation</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <Label>Select Claim</Label>
-                            <Select
-                                value={selectedClaim}
-                                onValueChange={setSelectedClaim}
+                        <DialogDescription>
+                            Create a manual subrogation entry and preview before saving.
+                        </DialogDescription>
+
+                        <div className="flex mt-3">
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    subrogationTabActive === 1
+                                        ? "border-blue-600 text-blue-600 font-medium"
+                                        : "border-gray-200 text-gray-400"
+                                }`}
                             >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select paid claim" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {Array.isArray(claims) &&
-                                        claims
-                                            .filter((c) => c.status === "Paid")
-                                            .map((c) => (
-                                                <SelectItem
-                                                    key={c.id}
-                                                    value={c.id}
-                                                >
-                                                    {c.claim_no} -{" "}
-                                                    {c.nama_tertanggung}
-                                                </SelectItem>
-                                            ))}
-                                </SelectContent>
-                            </Select>
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        subrogationTabActive === 1
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-200 text-gray-500"
+                                    }`}
+                                >
+                                    {subrogationTabActive === 1 ? "1" : "✓"}
+                                </div>
+                                Create Subrogation
+                            </div>
+                            <div
+                                className={`flex items-center gap-2 flex-1 pb-3 text-sm border-b-2 transition-all duration-300 ${
+                                    subrogationTabActive === 2
+                                        ? "border-blue-600 text-blue-600 font-medium"
+                                        : "border-gray-200 text-gray-400"
+                                }`}
+                            >
+                                <div
+                                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium transition-all duration-300 ${
+                                        subrogationTabActive === 2
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-200 text-gray-500"
+                                    }`}
+                                >
+                                    2
+                                </div>
+                                Preview Subrogation
+                            </div>
                         </div>
-                        <div>
-                            <Label>Recovery Amount</Label>
-                            <Input
-                                type="number"
-                                value={recoveryAmount}
-                                onChange={(e) =>
-                                    setRecoveryAmount(e.target.value)
-                                }
-                            />
-                        </div>
-                        <div>
-                            <Label>Recovery Date</Label>
-                            <Input
-                                type="date"
-                                value={recoveryDate}
-                                onChange={(e) =>
-                                    setRecoveryDate(e.target.value)
-                                }
-                            />
-                        </div>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        {/* Step 1: Edit form */}
+                        {subrogationTabActive === 1 && (
+                            <>
+                                <div>
+                                    <Label>Select Claim</Label>
+                                    <Select
+                                        value={selectedClaim}
+                                        onValueChange={(v) => {
+                                            setSelectedClaim(v);
+                                            const nota = notas.find(
+                                                (n) =>
+                                                    n.nota_type === "Claim" &&
+                                                    n.reference_id === v &&
+                                                    n.status === "PAID"
+                                            );
+                                            setRecoveryAmount(nota ? String(nota.amount) : "");
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select paid claim" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {Array.isArray(claims) &&
+                                                claims
+                                                    .filter((c) =>
+                                                        notas.some(
+                                                            (n) =>
+                                                                n.nota_type === "Claim" &&
+                                                                n.reference_id === c.claim_no &&
+                                                                n.status === "PAID"
+                                                        )
+                                                    )
+                                                    .map((c) => (
+                                                        <SelectItem
+                                                            key={c.claim_no}
+                                                            value={c.claim_no}
+                                                        >
+                                                            {c.claim_no} - {c.nama_tertanggung}
+                                                        </SelectItem>
+                                                    ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div>
+                                    <Label>Recovery Amount</Label>
+                                    <Input
+                                        type="text"
+                                        value={recoveryAmount ? formatRupiahAdaptive(toNumber(recoveryAmount)) : ""}
+                                        onChange={(e) => {
+                                            const parsed = toNumber(e.target.value);
+                                            setRecoveryAmount(parsed ? String(parsed) : "");
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Recovery Date</Label>
+                                    <Input
+                                        type="date"
+                                        value={recoveryDate}
+                                        onChange={(e) =>
+                                            setRecoveryDate(e.target.value)
+                                        }
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Remarks</Label>
+                                    <Input
+                                        value={subrogationRemarks}
+                                        onChange={(e) => setSubrogationRemarks(e.target.value)}
+                                        placeholder="Optional notes"
+                                    />
+                                </div>
+                            </>
+                        )}
+
+                        {/* Step 2: Preview */}
+                        {subrogationTabActive === 2 && (
+                            <>
+                                {subrogationPreviewError ? (
+                                    <Alert variant="destructive">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertDescription>{subrogationPreviewError}</AlertDescription>
+                                    </Alert>
+                                ) : (
+                                    <Alert className="bg-blue-50 border-blue-200">
+                                        <AlertCircle className="h-4 w-4 text-blue-600" />
+                                        <AlertDescription className="text-blue-700">
+                                            Review the subrogation details below then confirm to create.
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
+
+                                <div className="flex gap-3 flex-wrap">
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">Claim</p>
+                                        <p className="text-sm font-medium mt-1">{selectedClaim || '-'}</p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">Debtor</p>
+                                        <p className="text-sm font-medium mt-1">{(claims.find(c => c.claim_no === selectedClaim)?.nama_tertanggung) || '-'}</p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">Recovery Amount</p>
+                                        <p className="text-sm font-medium mt-1">{formatRupiahAdaptive(toNumber(recoveryAmount) || 0)}</p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">Recovery Date</p>
+                                        <p className="text-sm font-medium mt-1">{recoveryDate ? new Date(recoveryDate).toLocaleDateString('id-ID') : '-'}</p>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-4 py-2">
+                                        <p className="text-xs text-gray-500">Remarks</p>
+                                        <p className="text-sm font-medium mt-1">{subrogationRemarks || '-'}</p>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
+
                     {canShowActionButtons && (
                         <DialogFooter>
                             <Button
                                 variant="outline"
-                                onClick={() => setShowSubrogationDialog(false)}
+                                onClick={() => {
+                                    setShowSubrogationDialog(false);
+                                    setSubrogationTabActive(1);
+                                    setSubrogationPreviewError("");
+                                }}
                             >
                                 Cancel
                             </Button>
-                            <Button
-                                onClick={async () => {
-                                    if (!selectedClaim || !recoveryAmount) return;
 
-                                    try {
-                                        const claim = claims.find(
-                                            (c) => c.claim_no === selectedClaim,
-                                        );
+                            {subrogationTabActive === 2 && (
+                                <Button variant="outline" onClick={() => setSubrogationTabActive(1)}>← Back</Button>
+                            )}
 
-                                        const subrogationId = `SUB-${Date.now()}`;
+                            {subrogationTabActive === 1 && (
+                                <Button
+                                    onClick={() => {
+                                        // validate then show preview
+                                        setSubrogationPreviewError("");
+                                        if (!selectedClaim) return setSubrogationPreviewError("Select a paid claim first");
+                                        if (!recoveryAmount || toNumber(recoveryAmount) <= 0) return setSubrogationPreviewError("Enter a valid recovery amount");
+                                        setSubrogationTabActive(2);
+                                    }}
+                                >
+                                    Preview Data →
+                                </Button>
+                            )}
 
-                                        await backend.create("Subrogation", {
-                                            subrogation_id: subrogationId,
-                                            claim_id: claim.claim_no,
-                                            debtor_id: claim.debtor_id,
-                                            recovery_amount:
-                                                parseFloat(recoveryAmount),
-                                            recovery_date:
-                                                formatDateToISO(recoveryDate),
-                                            status: "Draft",
-                                            remarks: subrogationRemarks,
-                                        });
+                            {subrogationTabActive === 2 && (
+                                <div className={`inline-block ${processing ? "hover:cursor-not-allowed" : ""}`}>
+                                    <Button
+                                        onClick={async () => {
+                                            if (!selectedClaim || !recoveryAmount) return;
+                                            setProcessing(true);
+                                            try {
+                                                const claim = claims.find((c) => c.claim_no === selectedClaim);
+                                                const subrogationId = `SUB-${Date.now()}`;
 
-                                        // Create audit log
-                                        await backend.create("AuditLog", {
-                                            action: "SUBROGATION_CREATED",
-                                            module: "SUBROGATION",
-                                            entity_type: "Subrogation",
-                                            entity_id: subrogationId,
-                                            old_value: "{}",
-                                            new_value: JSON.stringify({
-                                                claim_id: claim.claim_no,
-                                                recovery_amount: recoveryAmount,
-                                            }),
-                                            user_email: user?.email,
-                                            user_role: user?.role,
-                                            reason: "Manual subrogation creation",
-                                        });
+                                                await backend.create("Subrogation", {
+                                                    subrogation_id: subrogationId,
+                                                    claim_id: claim.claim_no,
+                                                    debtor_id: claim.debtor_id,
+                                                    recovery_amount: toNumber(recoveryAmount),
+                                                    recovery_date: formatDateToISO(recoveryDate),
+                                                    status: "Draft",
+                                                    remarks: subrogationRemarks,
+                                                });
 
-                                        // Create notification
-                                        await backend.create("Notification", {
-                                            title: "New Subrogation Created",
-                                            message: `Subrogation ${subrogationId} created for claim ${claim.claim_no}`,
-                                            type: "INFO",
-                                            module: "SUBROGATION",
-                                            reference_id: subrogationId,
-                                            target_role: "TUGURE",
-                                        });
+                                                // audit + notification
+                                                await backend.create("AuditLog", {
+                                                    action: "SUBROGATION_CREATED",
+                                                    module: "SUBROGATION",
+                                                    entity_type: "Subrogation",
+                                                    entity_id: subrogationId,
+                                                    old_value: "{}",
+                                                    new_value: JSON.stringify({ claim_id: claim.claim_no, recovery_amount: recoveryAmount }),
+                                                    user_email: user?.email,
+                                                    user_role: user?.role,
+                                                    reason: "Manual subrogation creation",
+                                                });
 
-                                        setSuccessMessage("Subrogation created");
-                                        setShowSubrogationDialog(false);
-                                        setSelectedClaim("");
-                                        setRecoveryAmount("");
-                                        setRecoveryDate("");
-                                        setSubrogationRemarks("");
-                                        loadData();
-                                    } catch (error) {
-                                        console.error(
-                                            "Failed to create subrogation:",
-                                            error,
-                                        );
-                                        setErrorMessage(
-                                            "Failed to create subrogation: " +
-                                                error.message,
-                                        );
-                                    }
-                                }}
-                                disabled={!selectedClaim || !recoveryAmount}
-                            >
-                                Create
-                            </Button>
+                                                await backend.create("Notification", {
+                                                    title: "New Subrogation Created",
+                                                    message: `Subrogation ${subrogationId} created for claim ${claim.claim_no}`,
+                                                    type: "INFO",
+                                                    module: "SUBROGATION",
+                                                    reference_id: subrogationId,
+                                                    target_role: "TUGURE",
+                                                });
+
+                                                setSuccessMessage("Subrogation created");
+                                                setShowSubrogationDialog(false);
+                                                setSelectedClaim("");
+                                                setRecoveryAmount("");
+                                                setRecoveryDate("");
+                                                setSubrogationRemarks("");
+                                                setSubrogationTabActive(1);
+                                                setSubrogationPreviewError("");
+                                                loadData();
+                                            } catch (error) {
+                                                console.error("Failed to create subrogation:", error);
+                                                setErrorMessage("Failed to create subrogation: " + error.message);
+                                            }
+                                            setProcessing(false);
+                                        }}
+                                        disabled={processing}
+                                        className={`bg-green-600 text-white ${processing ? "opacity-60" : "hover:bg-green-700"}`}
+                                    >
+                                        {processing ? "Creating..." : "Create"}
+                                    </Button>
+                                </div>
+                            )}
                         </DialogFooter>
                     )}
                 </DialogContent>

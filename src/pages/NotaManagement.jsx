@@ -148,6 +148,7 @@ export default function NotaManagement() {
     const [selectedNotaForStatus, setSelectedNotaForStatus] = useState(null);
     const [newNotaStatus, setNewNotaStatus] = useState("PAID");
     const canManageNotaActions = isBrinsRole(tokenRoles);
+    const [subrogations, setSubrogations] = useState([]);
 
     // Nota pagination state
     const notaPageSize = 10;
@@ -221,6 +222,7 @@ export default function NotaManagement() {
                 paymentIntentData,
                 dnCnData,
                 debtorData,
+                subrogationData,
             ] = await Promise.all([
                 loadNotas(1, filters),
                 backend.list("Batch"),
@@ -229,6 +231,7 @@ export default function NotaManagement() {
                 backend.list("PaymentIntent"),
                 backend.list("DebitCreditNote"),
                 backend.list("Debtor"),
+                backend.list("Subrogation"),
             ]);
 
             const nextNotas = Array.isArray(notaData) ? notaData : [];
@@ -242,6 +245,7 @@ export default function NotaManagement() {
                 : [];
             const nextDnCnRecords = Array.isArray(dnCnData) ? dnCnData : [];
             const nextDebtors = Array.isArray(debtorData) ? debtorData : [];
+            setSubrogations(Array.isArray(subrogationData) ? subrogationData : []);
 
             const batchReviewSync = rawBatches.map((batch) => {
                 const batchDebtors = nextDebtors.filter(
@@ -1090,6 +1094,7 @@ export default function NotaManagement() {
     const activeCategoryNotas = notas.filter(n => {
         if (activeTab === "notas") return n.nota_type === "Batch" || n.nota_type === "INVOICE";
         if (activeTab === "claim") return n.nota_type === "Claim";
+        if (activeTab === "subrogation") return n.nota_type === "Subrogation";
         return true;
     });
 
@@ -1107,7 +1112,7 @@ export default function NotaManagement() {
                 <GradientStatCard
                     title="Total Notas"
                     value={activeCategoryNotas.length}
-                    subtitle={`${activeCategoryNotas.length} ${activeTab === "claim" ? "claim" : "batch"} notas`}
+                    subtitle={`${activeCategoryNotas.length} ${activeTab === "claim" ? "claim" : activeTab === "subrogation" ? "subrogation" : "batch"} notas`}
                     icon={FileText}
                     gradient="from-blue-500 to-blue-600"
                 />
@@ -1128,7 +1133,7 @@ export default function NotaManagement() {
                             0,
                         ),
                     )}
-                    subtitle={`All ${activeTab === "claim" ? "claim" : "batch"} notas`}
+                    subtitle={`All ${activeTab === "claim" ? "claim" : activeTab === "subrogation" ? "subrogation" : "batch"} notas`}
                     icon={DollarSign}
                     gradient="from-green-500 to-green-600"
                 />
@@ -1279,7 +1284,7 @@ export default function NotaManagement() {
                 ]}
                 data={filteredNotas}
                 isLoading={loading}
-                emptyMessage={`No ${activeTab === 'claim' ? 'claim' : 'batch'} notas found`}
+                emptyMessage={`No ${activeTab === 'claim' ? 'claim' : activeTab === 'subrogation' ? 'subrogation' : 'batch'} notas found`}
                 onRowClick={() => {}}
                 pagination={{
                     from: totalNotas === 0 ? 0 : (notaPage - 1) * notaPageSize + 1,
@@ -1489,7 +1494,8 @@ export default function NotaManagement() {
                 <TabsList className="grid w-full max-w-4xl grid-cols-3">
                     <TabsTrigger value="notas">Premi</TabsTrigger>
                     <TabsTrigger value="claim">Claim</TabsTrigger>
-                    <TabsTrigger value="dncn">Subrogation</TabsTrigger>
+                    <TabsTrigger value="subrogation">Subrogation</TabsTrigger>
+                    {/* <TabsTrigger value="exception">Exception</TabsTrigger> */}
                 </TabsList>
 
                 {/* NOTAS (PREMI) TAB */}
@@ -1502,8 +1508,13 @@ export default function NotaManagement() {
                     {renderNotaTabContent()}
                 </TabsContent>
 
+                {/* SUBROGATION TAB */}
+                <TabsContent value="subrogation" className="space-y-6">
+                    {renderNotaTabContent()}
+                </TabsContent>
+
                 {/* Exception TAB */}
-                <TabsContent value="dncn" className="space-y-6">
+                <TabsContent value="exception" className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <GradientStatCard
                             title="Total Exceptions"

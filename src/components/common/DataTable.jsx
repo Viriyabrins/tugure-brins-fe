@@ -22,7 +22,11 @@ export default function DataTable({
   emptyMessage = "No data available"
 }) {
   const roles = Array.isArray(getUserRoles && getUserRoles()) ? getUserRoles() : [];
-  const isBrinsUser = Array.isArray(roles) && roles.some((r) => String(r || "").toLowerCase().includes("brins"));
+  const _normalizedRoles = Array.isArray(roles)
+    ? roles.map((r) => String(r || "").trim().toLowerCase())
+    : [];
+  const isTugureUser = _normalizedRoles.some((r) => r.includes("tugure"));
+  const isBrinsUser = !isTugureUser && _normalizedRoles.some((r) => r.includes("brins"));
 
   const transformLabel = (text) => {
     if (!text || !isBrinsUser || typeof text !== 'string') return text;

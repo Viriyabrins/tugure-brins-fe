@@ -52,7 +52,11 @@ export default function Layout({ children, currentPageName }) {
   };
 
   const tokenRoles = extractTokenRoles();
-  const isBrinsUser = Array.isArray(tokenRoles) && tokenRoles.some((r) => String(r || "").toLowerCase().includes("brins"));
+  const _normalizedRoles = Array.isArray(tokenRoles)
+    ? tokenRoles.map((r) => String(r || "").trim().toLowerCase())
+    : [];
+  const isTugureUser = _normalizedRoles.some((r) => r.includes("tugure"));
+  const isBrinsUser = !isTugureUser && _normalizedRoles.some((r) => r.includes("brins"));
   const displayRole = tokenRoles.length > 0 ? tokenRoles.join(', ') : (user?.role?.toUpperCase() || 'USER');
 
   useEffect(() => {

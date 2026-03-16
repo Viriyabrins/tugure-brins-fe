@@ -39,14 +39,17 @@ export const KeycloakProvider = ({ children }) => {
                 if (!t) return null;
 
                 // Derive role: check for known client/realm roles
-                const roles = getUserRoles();
+                const roles = getUserRoles() || [];
+                const normalizedRoles = Array.isArray(roles)
+                    ? roles.map((r) => String(r || "").trim().toLowerCase())
+                    : [];
                 let role = "USER";
-                if (roles.includes("admin") || roles.includes("ADMIN"))
-                    role = "admin";
-                else if (roles.includes("BRINS") || roles.includes("brins"))
-                    role = "BRINS";
-                else if (roles.includes("TUGURE") || roles.includes("tugure"))
+                if (normalizedRoles.includes("admin")) role = "admin";
+                // Prefer TUGURE when both TUGURE and BRINS exist on token
+                else if (normalizedRoles.some((r) => r.includes("tugure")))
                     role = "TUGURE";
+                else if (normalizedRoles.some((r) => r.includes("brins")))
+                    role = "BRINS";
 
                 return {
                     id: t.sub,

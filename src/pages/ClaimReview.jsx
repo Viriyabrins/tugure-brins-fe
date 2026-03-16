@@ -98,6 +98,13 @@ export default function ClaimReview() {
     const canCheck = canCheckClaim(tokenRoles);
     const canApprove = canApproveClaim(tokenRoles);
 
+    // Subrogation action states
+    const [selectedSubrogation, setSelectedSubrogation] = useState(null);
+    const [showSubrogationActionDialog, setShowSubrogationActionDialog] = useState(false);
+    const [subrogationActionType, setSubrogationActionType] = useState("");
+    const [subrogationRemarks, setSubrogationRemarks] = useState("");
+    const [subrogationProcessing, setSubrogationProcessing] = useState(false);
+
     useEffect(() => {
         loadUser();
         loadData();
@@ -416,6 +423,104 @@ export default function ClaimReview() {
         setProcessing(false);
     };
 
+    const handleSubrogationAction = async () => {
+        if (!selectedSubrogation || !subrogationActionType) return;
+        setSubrogationProcessing(true);
+        try {
+            const subId = selectedSubrogation.subrogation_id || selectedSubrogation.id;
+            const updateData = {
+                reviewed_by: user?.email,
+                review_date: new Date().toISOString(),
+            };
+
+            if (subrogationActionType === "check") {
+                updateData.status = "CHECKED";
+                updateData.checked_by = user?.email;
+                updateData.checked_date = new Date().toISOString();
+            } else if (subrogationActionType === "approve") {
+                updateData.status = "APPROVED";
+                updateData.approved_by = user?.email;
+                updateData.approved_date = new Date().toISOString();
+                updateData.invoiced_by = user?.email;
+                updateData.invoiced_date = new Date().toISOString();
+
+                // Get contract_id from associated claim
+                const associatedClaim = claims.find(
+                    (c) => c.claim_no === selectedSubrogation.claim_id,
+                );
+                const contractId = associatedClaim?.contract_id || "";
+
+                // Generate Nota Subrogation with unique SBR prefix
+                const notaNumber = `NOTA-SBR-${subId}-${Date.now()}`;
+                await backend.create("Nota", {
+                    nota_number: notaNumber,
+                    nota_type: "Subrogation",
+                    reference_id: subId,
+                    contract_id: contractId,
+                    amount: selectedSubrogation.recovery_amount || 0,
+                    currency: "IDR",
+                    status: "UNPAID",
+                    issued_by: auditActor?.user_email || user?.email,
+                    issued_date: new Date().toISOString(),
+                    is_immutable: false,
+                    total_actual_paid: 0,
+                    reconciliation_status: "PENDING",
+                });
+
+                try {
+                    await backend.create("Notification", {
+                        title: "Subrogation Nota Generated",
+                        message: `Nota ${notaNumber} created for Subrogation ${subId}. Remarks: ${subrogationRemarks || "-"}`,
+                        type: "ACTION_REQUIRED",
+                        module: "SUBROGATION",
+                        reference_id: subId,
+                        target_role: "maker-brins-role",
+                    });
+                } catch (notifError) {
+                    console.warn("Failed to create notification:", notifError);
+                }
+            } else if (subrogationActionType === "revise") {
+                updateData.status = "REVISION";
+                updateData.remarks = subrogationRemarks;
+            }
+
+            if (subrogationRemarks && subrogationActionType !== "revise") {
+                updateData.remarks = subrogationRemarks;
+            }
+
+            await backend.update("Subrogation", subId, updateData);
+
+            try {
+                await backend.create("AuditLog", {
+                    action: `SUBROGATION_${subrogationActionType.toUpperCase()}`,
+                    module: "SUBROGATION",
+                    entity_type: "Subrogation",
+                    entity_id: subId,
+                    old_value: JSON.stringify({ status: selectedSubrogation.status }),
+                    new_value: JSON.stringify({ status: updateData.status }),
+                    user_email: auditActor?.user_email || user?.email,
+                    user_role: auditActor?.user_role || user?.role,
+                    reason: subrogationRemarks,
+                });
+            } catch (auditError) {
+                console.warn("Failed to create audit log:", auditError);
+            }
+
+            setSuccessMessage(
+                `Subrogation ${subrogationActionType}d successfully${subrogationActionType === "approve" ? " - Nota Subrogation created" : ""}`
+            );
+            setShowSubrogationActionDialog(false);
+            setSelectedSubrogation(null);
+            setSubrogationRemarks("");
+            setSubrogationActionType("");
+            loadData();
+        } catch (error) {
+            console.error("Subrogation action error:", error);
+            setSuccessMessage("");
+        }
+        setSubrogationProcessing(false);
+    };
+
     const pendingClaims = claims.filter(
         (c) => c.status === "SUBMITTED" || c.status === "CHECKED",
     );
@@ -483,20 +588,68 @@ export default function ClaimReview() {
         },
         {
             header: "Actions",
-            cell: (row) => (
-                <div className="flex gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                            setSelectedClaim(row);
-                            setShowViewDialog(true);
-                        }}
-                    >
-                        <Eye className="w-4 h-4" />
-                    </Button>
-                </div>
-            ),
+            cell: (row) => {
+                return (
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                setSelectedClaim(row);
+                                setShowViewDialog(true);
+                            }}
+                        >
+                            <Eye className="w-4 h-4" />
+                        </Button>
+
+                        {canCheck && row.status === "SUBMITTED" && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                    setSelectedClaim(row);
+                                    setActionType("check");
+                                    setShowActionDialog(true);
+                                }}
+                            >
+                                <Check className="w-4 h-4 mr-1" />
+                                Check
+                            </Button>
+                        )}
+
+                        {canApprove && row.status === "CHECKED" && (
+                            <>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-green-600 border-green-300"
+                                    onClick={() => {
+                                        setSelectedClaim(row);
+                                        setActionType("approve");
+                                        setShowActionDialog(true);
+                                    }}
+                                >
+                                    <ShieldCheck className="w-4 h-4 mr-1" />
+                                    Approve
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-orange-600 border-orange-300"
+                                    onClick={() => {
+                                        setSelectedClaim(row);
+                                        setActionType("revise");
+                                        setShowActionDialog(true);
+                                    }}
+                                >
+                                    <Pen className="w-4 h-4 mr-1" />
+                                    Revise
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                );
+            },
         },
     ];
 
@@ -728,7 +881,7 @@ export default function ClaimReview() {
                     </TabsList>
 
                     {/* Bulk Actions */}
-                        <div className="flex flex-wrap gap-2">
+                        {/* <div className="flex flex-wrap gap-2">
                             {canCheck && (
                                 <Button
                                     variant="outline"
@@ -736,7 +889,6 @@ export default function ClaimReview() {
                                     onClick={() => handleClaimAction("bulk_check")}
                                 >
                                     <Check className="w-4 h-4 mr-2" />
-                                    {/* Check {selectedClaims.length > 0 ? `(${selectedClaims.length})` : ""} */}
                                     Check {claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length > 0 ? `(${claims.filter(c => selectedClaims.includes(c.id) && c.status === "SUBMITTED").length})` : ""}
                                 </Button>
                             )}
@@ -766,7 +918,7 @@ export default function ClaimReview() {
                                     </Button>
                                 </>
                             )}
-                        </div>
+                        </div> */}
                 </div>
 
                 <TabsContent value="review">
@@ -810,17 +962,16 @@ export default function ClaimReview() {
                             },
                             { header: "Claim ID", accessorKey: "claim_id" },
                             {
-                                header: "Recovery",
-                                cell: () =>
-                                    formatRupiahAdaptive(
-                                        subrogations.reduce(
-                                            (s, sub) =>
-                                                s +
-                                                (Number(sub.recovery_amount) ||
-                                                    0),
-                                            0,
-                                        ),
-                                    ),
+                                header: "Recovery Amount",
+                                cell: (row) =>
+                                    formatRupiahAdaptive(Number(row.recovery_amount) || 0),
+                            },
+                            {
+                                header: "Recovery Date",
+                                cell: (row) =>
+                                    row.recovery_date
+                                        ? new Date(row.recovery_date).toLocaleDateString("id-ID")
+                                        : "-",
                             },
                             {
                                 header: "Status",
@@ -828,15 +979,69 @@ export default function ClaimReview() {
                                     <StatusBadge status={row.status} />
                                 ),
                             },
+                            {
+                                header: "Actions",
+                                cell: (row) => (
+                                    <div className="flex gap-2">
+                                        {canCheck && row.status === "Draft" && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                    setSelectedSubrogation(row);
+                                                    setSubrogationActionType("check");
+                                                    setShowSubrogationActionDialog(true);
+                                                }}
+                                            >
+                                                <Check className="w-4 h-4 mr-1" />
+                                                Check
+                                            </Button>
+                                        )}
+                                        {canApprove && row.status === "CHECKED" && (
+                                            <>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="text-green-600 border-green-300"
+                                                    onClick={() => {
+                                                        setSelectedSubrogation(row);
+                                                        setSubrogationActionType("approve");
+                                                        setShowSubrogationActionDialog(true);
+                                                    }}
+                                                >
+                                                    <ShieldCheck className="w-4 h-4 mr-1" />
+                                                    Approve
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="text-orange-600 border-orange-300"
+                                                    onClick={() => {
+                                                        setSelectedSubrogation(row);
+                                                        setSubrogationActionType("revise");
+                                                        setShowSubrogationActionDialog(true);
+                                                    }}
+                                                >
+                                                    <Pen className="w-4 h-4 mr-1" />
+                                                    Revise
+                                                </Button>
+                                            </>
+                                        )}
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                                setSelectedSubrogation(row);
+                                                setShowSubrogationActionDialog(false);
+                                            }}
+                                        >
+                                            <Eye className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                ),
+                            },
                         ]}
-                        data={subrogations.filter((s) => {
-                            if (
-                                filters.subrogationStatus !== "all" &&
-                                s.status !== filters.subrogationStatus
-                            )
-                                return false;
-                            return true;
-                        })}
+                        data={subrogations}
                         isLoading={loading}
                         emptyMessage="No subrogations"
                     />
@@ -975,6 +1180,94 @@ export default function ClaimReview() {
                     <DialogFooter>
                         <Button onClick={() => setShowViewDialog(false)}>
                             Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Subrogation Action Dialog */}
+            <Dialog open={showSubrogationActionDialog} onOpenChange={(open) => {
+                setShowSubrogationActionDialog(open);
+                if (!open) { setSubrogationRemarks(""); setSubrogationActionType(""); }
+            }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            {subrogationActionType === "check" && "Check Subrogation"}
+                            {subrogationActionType === "approve" && "Approve Subrogation & Generate Nota"}
+                            {subrogationActionType === "revise" && "Request Revision"}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {selectedSubrogation?.subrogation_id}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        {subrogationActionType === "approve" && (
+                            <Alert className="bg-green-50 border-green-200">
+                                <Plus className="h-4 w-4 text-green-600" />
+                                <AlertDescription className="text-green-700">
+                                    <strong>Generating Nota Subrogation:</strong>
+                                    <br />• Nota Type: Subrogation
+                                    <br />• Nota Number: NOTA-SBR-{selectedSubrogation?.subrogation_id}-...
+                                    <br />• Status: UNPAID
+                                    <br />• Akan tampil di tab Subrogation pada Nota Management
+                                </AlertDescription>
+                            </Alert>
+                        )}
+                        {selectedSubrogation && (
+                            <div className="p-4 bg-gray-50 rounded-lg">
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <span className="text-gray-500">Subrogation ID:</span>
+                                        <span className="ml-2 font-medium">{selectedSubrogation.subrogation_id}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Claim ID:</span>
+                                        <span className="ml-2 font-medium">{selectedSubrogation.claim_id}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Recovery Amount:</span>
+                                        <span className="ml-2 font-bold text-green-600">
+                                            {formatRupiahAdaptive(Number(selectedSubrogation.recovery_amount) || 0)}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500">Current Status:</span>
+                                        <span className="ml-2"><StatusBadge status={selectedSubrogation.status} /></span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <div>
+                            <Label>Remarks</Label>
+                            <Textarea
+                                value={subrogationRemarks}
+                                onChange={(e) => setSubrogationRemarks(e.target.value)}
+                                rows={3}
+                                placeholder="Enter remarks..."
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowSubrogationActionDialog(false);
+                                setSubrogationRemarks("");
+                                setSubrogationActionType("");
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSubrogationAction}
+                            disabled={subrogationProcessing}
+                            className={subrogationActionType === "approve" ? "bg-green-600" : "bg-blue-600"}
+                        >
+                            {subrogationProcessing ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : null}
+                            {subrogationActionType === "approve" ? "Approve & Generate Nota" : "Confirm"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

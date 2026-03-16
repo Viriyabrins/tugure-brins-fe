@@ -103,11 +103,36 @@ export default function DebtorReview() {
     const [showApprovalSummaryDialog, setShowApprovalSummaryDialog] = useState(false);
     const [approvalSummaryDebtors, setApprovalSummaryDebtors] = useState([]);
 
+    // Batch picker dialog state
+    const [showBatchPickerDialog, setShowBatchPickerDialog] = useState(false);
+    const [uniqueBatches, setUniqueBatches] = useState([]);
+    const [selectedBatchForAction, setSelectedBatchForAction] = useState(null);
+
+    // Scope selection dialog state
+    const [showScopeDialog, setShowScopeDialog] = useState(false);
+    const [actionScope, setActionScope] = useState("selected"); // "selected" or "whole-batch"
+
+    // Progress modal state
+    const [showProgressModal, setShowProgressModal] = useState(false);
+    const [jobId, setJobId] = useState(null);
+    const [jobStatus, setJobStatus] = useState(null);
+    const [pollingInterval, setPollingInterval] = useState(null);
+
     useEffect(() => {
         loadUser();
         // load contracts/batches and initial page of debtors
         loadData();
     }, []);
+
+    // Cleanup polling interval on unmount or modal close
+    useEffect(() => {
+        return () => {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+        };
+    }, [pollingInterval]);
+
     const canManageDebtorActions = hasTugureActionRole(tokenRoles);
     const isCheckerTugure = hasRole(tokenRoles, "checker-tugure-role");
     const isApproverTugure = hasRole(tokenRoles, "approver-tugure-role");
@@ -236,6 +261,91 @@ export default function DebtorReview() {
         } catch (e) {
             console.warn("Failed to load status counts", e);
         }
+    };
+
+    // Helper: Extract unique batch IDs from selectedDebtors
+    const getUniqueBatchesFromSelection = () => {
+        const selectedSet = new Set(selectedDebtors);
+        const batches = debtors
+            .filter((d) => selectedSet.has(d.id))
+            .map((d) => d.batch_id)
+            .filter(Boolean);
+        return [...new Set(batches)];
+    };
+
+    // Helper: Handle action button click
+    // Shows batch picker if multiple batches, else scope picker
+    const handleActionButtonClick = (action) => {
+        const uniqueBatches = getUniqueBatchesFromSelection();
+
+        if (uniqueBatches.length === 0) {
+            toast.error("Please select debtors first");
+            return;
+        }
+
+        setApprovalAction(action);
+
+        // If multiple batches, show batch picker
+        if (uniqueBatches.length > 1) {
+            setUniqueBatches(uniqueBatches);
+            setShowBatchPickerDialog(true);
+        } else {
+            // Single batch - go straight to scope dialog
+            setSelectedBatchForAction(uniqueBatches[0]);
+            setActionScope("selected"); // default to selected
+            setShowScopeDialog(true);
+        }
+    };
+
+    // Helper: Handle batch selection
+    const handleBatchSelect = (batchId) => {
+        setSelectedBatchForAction(batchId);
+        setShowBatchPickerDialog(false);
+        setActionScope("selected");
+        setShowScopeDialog(true);
+    };
+
+    // Helper: Poll job status
+    const startPolling = (newJobId) => {
+        setJobId(newJobId);
+        let count = 0;
+
+        const interval = setInterval(async () => {
+            try {
+                const status = await backend.getDebtorJobStatus(newJobId);
+                setJobStatus(status);
+
+                if (status.status === "COMPLETED" || status.status === "FAILED") {
+                    clearInterval(interval);
+                    setPollingInterval(null);
+
+                    if (status.status === "COMPLETED") {
+                        toast.success(
+                            `Action completed: ${status.processedCount} success, ${status.failedCount} failed`
+                        );
+                    } else {
+                        toast.error(`Action failed: ${status.message}`);
+                    }
+
+                    setTimeout(() => {
+                        setShowProgressModal(false);
+                        loadData();
+                    }, 1500);
+                }
+            } catch (error) {
+                console.error("Polling error:", error);
+            }
+
+            count++;
+            if (count > 300) {
+                // Stop after 2.5 minutes
+                clearInterval(interval);
+                setPollingInterval(null);
+                toast.error("Job polling timeout");
+            }
+        }, 500); // Poll every 500ms
+
+        setPollingInterval(interval);
     };
 
     const handleCheck = async (isBulk = false, debtorArg = null) => {
@@ -519,6 +629,48 @@ export default function DebtorReview() {
         } catch (error) {
             console.error("Approval error:", error);
             toast.error("Failed to process approval");
+        }
+        setProcessing(false);
+    };
+
+    // Execute approval for whole batch (async with real-time progress)
+    const executeApprovalWholeBatch = async () => {
+        if (!selectedBatchForAction || !approvalAction) {
+            toast.error("Invalid action or batch");
+            return;
+        }
+
+        setProcessing(true);
+        const action = approvalAction.replace("bulk_", "");
+
+        try {
+            // Build filters for the backend to query matching debtors
+            const backendFilters = {
+                batch_id: selectedBatchForAction,
+                ...filters, // Include active filters from the UI
+            };
+
+            // Call backend to start bulk action job
+            const response = await backend.startBulkDebtorAction({
+                action,
+                filters: backendFilters,
+                remarks: approvalRemarks,
+                batchId: selectedBatchForAction,
+            });
+
+            if (response && response.jobId) {
+                // Open progress modal and start polling
+                setShowProgressModal(true);
+                setApprovalRemarks("");
+                setSelectedDebtor(null);
+                setSelectedDebtors([]);
+                startPolling(response.jobId);
+            } else {
+                toast.error("Failed to start bulk action job");
+            }
+        } catch (error) {
+            console.error("Bulk action error:", error);
+            toast.error(`Failed to start bulk action: ${error.message}`);
         }
         setProcessing(false);
     };
@@ -860,8 +1012,8 @@ export default function DebtorReview() {
                     {isCheckerTugure && (
                         <Button
                             // variant="outline"
-                            onClick={() => handleCheck(true)}
-                            disabled={processing}
+                            onClick={() => handleActionButtonClick("bulk_check")}
+                            disabled={processing || showBatchPickerDialog || showScopeDialog}
                         >
                             <Check className="w-4 h-4 mr-2" />
                             Check ({selectedDebtors.length})
@@ -870,10 +1022,8 @@ export default function DebtorReview() {
                     {isApproverTugure && (
                         <Button
                             variant="outline"
-                            onClick={() => {
-                                setApprovalAction("bulk_approve");
-                                setShowApprovalDialog(true);
-                            }}
+                            onClick={() => handleActionButtonClick("bulk_approve")}
+                            disabled={processing || showBatchPickerDialog || showScopeDialog}
                         >
                             <ShieldCheck className="w-4 h-4 mr-2" />
                             Approve ({selectedDebtors.length})
@@ -882,10 +1032,8 @@ export default function DebtorReview() {
                     {isApproverTugure && (
                         <Button
                             variant="outline"
-                            onClick={() => {
-                                setApprovalAction("bulk_revision");
-                                setShowApprovalDialog(true);
-                            }}
+                            onClick={() => handleActionButtonClick("bulk_revision")}
+                            disabled={processing || showBatchPickerDialog || showScopeDialog}
                         >
                             <Pen className="w-4 h-4 mr-2" />
                             Revision ({selectedDebtors.length})
@@ -1218,6 +1366,256 @@ export default function DebtorReview() {
                             )}
                         </Button>
                     </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Batch Picker Dialog */}
+            <Dialog open={showBatchPickerDialog} onOpenChange={setShowBatchPickerDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Select Batch</DialogTitle>
+                        <DialogDescription>
+                            Multiple batches found in your selection. Which batch do you want to apply this action to?
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                        {uniqueBatches.map((batchId) => {
+                            const count = selectedDebtors.filter(
+                                (id) =>
+                                    debtors.find((d) => d.id === id)?.batch_id === batchId
+                            ).length;
+                            return (
+                                <Button
+                                    key={batchId}
+                                    variant="outline"
+                                    className="w-full justify-start"
+                                    onClick={() => handleBatchSelect(batchId)}
+                                >
+                                    <span className="font-mono">{batchId}</span>
+                                    <span className="ml-auto text-xs text-gray-500">
+                                        {count} selected
+                                    </span>
+                                </Button>
+                            );
+                        })}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Scope Selection Dialog */}
+            <Dialog open={showScopeDialog} onOpenChange={setShowScopeDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Select Action Scope</DialogTitle>
+                        <DialogDescription>
+                            {selectedBatchForAction && (
+                                <>
+                                    Apply action to which debtors in batch{" "}
+                                    <span className="font-mono font-semibold">
+                                        {selectedBatchForAction}
+                                    </span>
+                                    ?
+                                </>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {/* Option A: Selected rows only */}
+                        <label className="flex items-start gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50">
+                            <input
+                                type="radio"
+                                name="scope"
+                                value="selected"
+                                checked={actionScope === "selected"}
+                                onChange={(e) => setActionScope(e.target.value)}
+                                className="mt-1"
+                            />
+                            <div>
+                                <p className="font-medium">
+                                    {selectedDebtors.length} selected row(s)
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                    Apply action only to debtors selected on current page
+                                </p>
+                            </div>
+                        </label>
+
+                        {/* Option B: Whole batch */}
+                        <label className="flex items-start gap-3 p-4 border rounded-lg border-blue-200 bg-blue-50 cursor-pointer">
+                            <input
+                                type="radio"
+                                name="scope"
+                                value="whole-batch"
+                                checked={actionScope === "whole-batch"}
+                                onChange={(e) => setActionScope(e.target.value)}
+                                className="mt-1"
+                            />
+                            <div>
+                                <p className="font-medium text-blue-900">
+                                    Entire batch ({totalDebtors} debtor(s))
+                                </p>
+                                <p className="text-xs text-blue-700">
+                                    Apply action to all debtors in this batch with real-time
+                                    progress tracking
+                                </p>
+                            </div>
+                        </label>
+
+                        {/* Show only for non-check actions */}
+                        {!approvalAction.includes("check") && (
+                            <div>
+                                <label className="text-sm font-medium">Remarks *</label>
+                                <Textarea
+                                    value={approvalRemarks}
+                                    onChange={(e) => setApprovalRemarks(e.target.value)}
+                                    placeholder={
+                                        approvalAction.includes("approval")
+                                            ? "Enter approval notes..."
+                                            : "Enter revision reason..."
+                                    }
+                                    rows={3}
+                                />
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowScopeDialog(false)}
+                            disabled={processing}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                setShowScopeDialog(false);
+                                if (actionScope === "selected") {
+                                    // Use existing logic for page-based actions
+                                    if (approvalAction === "bulk_check") {
+                                        handleCheck(true);
+                                    } else if (approvalAction === "bulk_approve") {
+                                        setApprovalAction("bulk_approve");
+                                        setShowApprovalDialog(true);
+                                    } else if (approvalAction === "bulk_revision") {
+                                        setApprovalAction("bulk_revision");
+                                        setShowApprovalDialog(true);
+                                    }
+                                } else {
+                                    // Whole batch action - trigger via executeApprovalWholeB batch
+                                    executeApprovalWholeBatch();
+                                }
+                            }}
+                            disabled={
+                                processing ||
+                                (!approvalAction.includes("check") &&
+                                    !approvalRemarks.trim())
+                            }
+                        >
+                            {processing ? "Processing..." : "Proceed"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Progress Modal */}
+            <Dialog open={showProgressModal} onOpenChange={setShowProgressModal}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Bulk Action Progress</DialogTitle>
+                        <DialogDescription>
+                            {approvalAction}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {jobStatus && (
+                        <div className="space-y-4">
+                            {/* Progress Stats */}
+                            <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg">
+                                <div>
+                                    <p className="text-xs text-gray-600">Processed</p>
+                                    <p className="text-2xl font-bold text-blue-600">
+                                        {jobStatus.processedCount || 0}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">Total</p>
+                                    <p className="text-2xl font-bold text-gray-700">
+                                        {jobStatus.totalCount}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">Progress</p>
+                                    <p className="text-2xl font-bold text-green-600">
+                                        {jobStatus.percentage}%
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="space-y-2">
+                                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                    <div
+                                        className="bg-green-600 h-full transition-all duration-300"
+                                        style={{
+                                            width: `${jobStatus.percentage || 0}%`,
+                                        }}
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-600 text-center">
+                                    {jobStatus.message}
+                                </p>
+                            </div>
+
+                            {/* Errors if any */}
+                            {jobStatus.errors && jobStatus.errors.length > 0 && (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                    <p className="text-sm font-medium text-red-700 mb-2">
+                                        Errors ({jobStatus.errors.length}):
+                                    </p>
+                                    <div className="max-h-32 overflow-y-auto space-y-1">
+                                        {jobStatus.errors.slice(0, 10).map((err, idx) => (
+                                            <div
+                                                key={idx}
+                                                className="text-xs text-red-600"
+                                            >
+                                                <span className="font-mono">
+                                                    {err.debtorId || err.error}
+                                                </span>
+                                                : {err.error || err.nama}
+                                            </div>
+                                        ))}
+                                        {jobStatus.errors.length > 10 && (
+                                            <p className="text-xs text-red-500">
+                                                ...and {jobStatus.errors.length - 10} more
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Status badge */}
+                            <div className="flex justify-center">
+                                {jobStatus.status === "PROCESSING" && (
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Processing...
+                                    </div>
+                                )}
+                                {jobStatus.status === "COMPLETED" && (
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        Completed
+                                    </div>
+                                )}
+                                {jobStatus.status === "FAILED" && (
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-full text-sm font-medium">
+                                        <X className="w-4 h-4" />
+                                        Failed
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
         </div>

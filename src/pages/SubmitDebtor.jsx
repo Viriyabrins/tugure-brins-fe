@@ -510,6 +510,22 @@ export default function SubmitDebtor() {
     const [actionNote, setActionNote] = useState("");
     const [revisionDiffs, setRevisionDiffs] = useState([]);
 
+    // Batch picker dialog state
+    const [showBatchPickerDialog, setShowBatchPickerDialog] = useState(false);
+    const [uniqueBatches, setUniqueBatches] = useState([]);
+    const [selectedBatchForAction, setSelectedBatchForAction] = useState(null);
+
+    // Scope selection dialog state
+    const [showScopeDialog, setShowScopeDialog] = useState(false);
+    const [actionScope, setActionScope] = useState("selected"); // "selected" or "whole-batch"
+    const [pendingAction, setPendingAction] = useState(null); // e.g., "check" or "approve"
+
+    // Progress modal state
+    const [showProgressModal, setShowProgressModal] = useState(false);
+    const [jobId, setJobId] = useState(null);
+    const [jobStatus, setJobStatus] = useState(null);
+    const [pollingInterval, setPollingInterval] = useState(null);
+
     // Message state
     const [successMessage, setSuccessMessage] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
@@ -848,6 +864,125 @@ export default function SubmitDebtor() {
         } finally {
             setUploadPreviewLoading(false);
         }
+    };
+
+    // Helpers for bulk whole-batch actions (batch picker, scope, start job, poll)
+    const getUniqueBatchesFromSelection = (selection = []) => {
+        const batches = selection
+            .map((id) => debtors.find((d) => d.id === id))
+            .filter(Boolean)
+            .map((d) => d.batch_id)
+            .filter(Boolean);
+        return Array.from(new Set(batches));
+    };
+
+    const handleActionButtonClick = (action) => {
+        // action: "check" or "approve"
+        if (!selectedDebtors || selectedDebtors.length === 0) {
+            toast.error("Please select debtors to perform this action");
+            return;
+        }
+
+        const batchesInSelection = getUniqueBatchesFromSelection(selectedDebtors);
+        if (batchesInSelection.length === 0) {
+            toast.error("Selected debtors do not belong to any batch");
+            return;
+        }
+
+        setPendingAction(action);
+        if (batchesInSelection.length === 1) {
+            setSelectedBatchForAction(batchesInSelection[0]);
+            setShowScopeDialog(true);
+        } else {
+            setUniqueBatches(batchesInSelection);
+            setShowBatchPickerDialog(true);
+        }
+    };
+
+    const handleBatchSelect = (batchId) => {
+        setSelectedBatchForAction(batchId);
+        setShowBatchPickerDialog(false);
+        // next: ask for scope
+        setShowScopeDialog(true);
+    };
+
+    const handleScopeConfirm = async () => {
+        // actionScope: 'selected' or 'whole-batch'
+        setShowScopeDialog(false);
+        if (actionScope === "selected") {
+            // fall back to existing single-page operations
+            if (pendingAction === "check") return handleCheckerBrinsCheck();
+            if (pendingAction === "approve") return handleApproverBrinsApprove();
+            return;
+        }
+
+        // Start backend job for whole-batch action
+        try {
+            setShowProgressModal(true);
+            setJobStatus(null);
+            setJobId(null);
+            const payload = {
+                action: pendingAction === "check" ? "check" : "approve",
+                batch_id: selectedBatchForAction,
+                contract_id: selectedContract,
+                initiated_by: auditActor?.user_email || user?.email,
+            };
+
+            const res = await backend.startBulkDebtorAction(payload);
+            const newJobId = res?.jobId || res?.id || null;
+            if (!newJobId) throw new Error("Failed to start background job");
+            setJobId(newJobId);
+            // start polling
+            startPolling(newJobId);
+        } catch (e) {
+            console.error("Failed to start whole-batch job", e);
+            toast.error("Failed to start job: " + (e.message || ""));
+            setShowProgressModal(false);
+        }
+    };
+
+    const startPolling = (jid) => {
+        // clear any previous polling
+        if (pollingInterval) clearInterval(pollingInterval);
+        const intervalId = setInterval(async () => {
+            try {
+                const status = await backend.getDebtorJobStatus(jid);
+                setJobStatus(status);
+                if (status?.status === "completed" || status?.status === "failed") {
+                    clearInterval(intervalId);
+                    setPollingInterval(null);
+                    handleJobCompletion(status);
+                }
+            } catch (e) {
+                console.warn("Polling error", e);
+            }
+        }, 500);
+        setPollingInterval(intervalId);
+    };
+
+    const handleJobCompletion = async (status) => {
+        setJobStatus(status);
+        setShowProgressModal(false);
+        setJobId(null);
+        setPendingAction(null);
+        // Refresh table to reflect changes
+        await loadDebtors();
+        if (status?.status === "completed") {
+            toast.success(`Batch action completed: ${status?.processedCount || 0} processed`);
+        } else {
+            toast.error(`Batch action failed: ${status?.message || 'See logs'}`);
+        }
+    };
+
+    const closeProgressModal = () => {
+        setShowProgressModal(false);
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            setPollingInterval(null);
+        }
+        setJobId(null);
+        setJobStatus(null);
+        setPendingAction(null);
     };
 
     // === CHECKER BRINS: SUBMITTED → CHECKED_BRINS ===
@@ -1208,7 +1343,7 @@ export default function SubmitDebtor() {
     const handleDownloadTemplate = () => {
         const headers = [
             "BATCH_ID",
-            "COVER_ID", "PROGRAM_ID", "NOMOR_REKENING_PINJAMAN", "NOMOR_PESERTA",
+            "COVER_ID", "PROGRAM_ID", "NOMOR_REKENING_PINJAMAN", "NOMOR_PESERTA", "POLICY_NO",
             "LOAN_TYPE", "CIF_REKENING_PINJAMAN", "JENIS_PENGAJUAN_DESC",
             "JENIS_COVERING_DESC", "TANGGAL_MULAI_COVERING", "TANGGAL_AKHIR_COVERING",
             "PLAFON", "NOMINAL_PREMI", "PREMIUM", "KOMISI", "NET_PREMI",
@@ -1218,13 +1353,53 @@ export default function SubmitDebtor() {
             "STATUS_AKTIF", "REMARK_PREMI", "FLAG_RESTRUK", "KOLEKTABILITAS"
         ];
 
-        const sampleData = [
-            ["BATCH-2026-03-999001", "1111301", "501", "002101000888123", "0000B.00021.2026.01.00001.1.1", "DL", "HEC7001", "New", "Conditional Automatic Cover", "01/01/2026", "01/01/2027", 500000000, 12500000, 5312500, 1460937, 3851563, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Budi Santoso", "Jl. Thamrin No. 10", "PK-001", "2026-01-05", "2026-01-06", "2026-01-06", 1, "BRISURF_COV_00501_002101000888123_01", 0, 1],
-            ["BATCH-2026-03-999001", "1111302", "501", "002101000888456", "0000C.00021.2026.01.00002.1.1", "DL", "HEC7002", "New", "Conditional Automatic Cover", "05/01/2026", "05/01/2027", 250000000, 6250000, 2656250, 730468, 1925782, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Siti Aminah", "Jl. Sudirman Kav 25", "PK-002", "2026-01-10", "2026-01-11", "2026-01-11", 1, "BRISURF_COV_00501_002101000888456_01", 0, 1],
-            ["BATCH-2026-03-999001", "1111303", "501", "004501502999789", "0000D.00045.2026.02.00001.1.1", "DL", "HEC7003", "New", "Conditional Automatic Cover", "12/02/2026", "12/02/2027", 750000000, 18750000, 7968750, 2191406, 5777344, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Andi Wijaya", "Jl. Asia Afrika No. 5", "PK-003", "2026-02-15", "2026-02-16", "2026-02-16", 1, "BRISURF_COV_00501_004501502999789_02", 0, 1],
-            ["BATCH-2026-03-999001", "1111304", "501", "004501502999000", "0000E.00045.2026.02.00002.1.1", "DL", "HEC7004", "New", "Conditional Automatic Cover", "20/02/2026", "20/02/2027", 100000000, 2500000, 1062500, 292187, 770313, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Dewi Lestari", "Jl. Braga No. 12", "PK-004", "2026-02-22", "2026-02-23", "2026-02-23", 1, "BRISURF_COV_00501_004501502999000_02", 0, 1],
-            ["BATCH-2026-03-999001", "1111305", "501", "009901000777321", "0000F.00099.2026.03.00001.1.1", "DL", "HEC7005", "New", "Conditional Automatic Cover", "01/03/2026", "01/03/2027", 300000000, 7500000, 3187500, 876562, 2310938, 119000, "0099", "KCP MEDAN", "KC Medan", "Sumatera Utara", "Ahmad Fauzi", "Jl. Gatot Subroto No. 88", "PK-005", "2026-03-05", "2026-03-06", "2026-03-06", 1, "BRISURF_COV_00501_009901000777321_03", 0, 1]
-        ];
+        // const sampleData = [
+        //     ["BATCH-2026-03-999001", "1111301", "501", "002101000888123", "0000B.00021.2026.01.00001.1.1", "DL", "HEC7001", "New", "Conditional Automatic Cover", "01/01/2026", "01/01/2027", 500000000, 12500000, 5312500, 1460937, 3851563, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Budi Santoso", "Jl. Thamrin No. 10", "PK-001", "2026-01-05", "2026-01-06", "2026-01-06", 1, "BRISURF_COV_00501_002101000888123_01", 0, 1],
+        //     ["BATCH-2026-03-999001", "1111302", "501", "002101000888456", "0000C.00021.2026.01.00002.1.1", "DL", "HEC7002", "New", "Conditional Automatic Cover", "05/01/2026", "05/01/2027", 250000000, 6250000, 2656250, 730468, 1925782, 119000, "0021", "KCP JAKARTA PUSAT", "KC Jakarta", "Jakarta", "Siti Aminah", "Jl. Sudirman Kav 25", "PK-002", "2026-01-10", "2026-01-11", "2026-01-11", 1, "BRISURF_COV_00501_002101000888456_01", 0, 1],
+        //     ["BATCH-2026-03-999001", "1111303", "501", "004501502999789", "0000D.00045.2026.02.00001.1.1", "DL", "HEC7003", "New", "Conditional Automatic Cover", "12/02/2026", "12/02/2027", 750000000, 18750000, 7968750, 2191406, 5777344, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Andi Wijaya", "Jl. Asia Afrika No. 5", "PK-003", "2026-02-15", "2026-02-16", "2026-02-16", 1, "BRISURF_COV_00501_004501502999789_02", 0, 1],
+        //     ["BATCH-2026-03-999001", "1111304", "501", "004501502999000", "0000E.00045.2026.02.00002.1.1", "DL", "HEC7004", "New", "Conditional Automatic Cover", "20/02/2026", "20/02/2027", 100000000, 2500000, 1062500, 292187, 770313, 119000, "0045", "KCP BANDUNG", "KC Bandung", "Jawa Barat", "Dewi Lestari", "Jl. Braga No. 12", "PK-004", "2026-02-22", "2026-02-23", "2026-02-23", 1, "BRISURF_COV_00501_004501502999000_02", 0, 1],
+        //     ["BATCH-2026-03-999001", "1111305", "501", "009901000777321", "0000F.00099.2026.03.00001.1.1", "DL", "HEC7005", "New", "Conditional Automatic Cover", "01/03/2026", "01/03/2027", 300000000, 7500000, 3187500, 876562, 2310938, 119000, "0099", "KCP MEDAN", "KC Medan", "Sumatera Utara", "Ahmad Fauzi", "Jl. Gatot Subroto No. 88", "PK-005", "2026-03-05", "2026-03-06", "2026-03-06", 1, "BRISURF_COV_00501_009901000777321_03", 0, 1]
+        // ];
+
+        const sampleData = Array.from({ length: 30 }, (_, i) => {
+            const index = i + 1;
+            const paddedIndex = index.toString().padStart(3, '0');
+            const paddedId = index.toString().padStart(5, '0');
+            return [
+                "BATCH-2026-03-999001", // BATCH_ID
+                `11113${paddedIndex}`, // COVER_ID
+                "501", // PROGRAM_ID
+                `002101000888${paddedIndex}`, // NOMOR_REKENING_PINJAMAN
+                `0000A.00021.2026.01.${paddedId}.1.1`, // NOMOR_PESERTA
+                `1118141023000${paddedIndex}`, // POLICY_NO
+                "DL", // LOAN_TYPE
+                `HEC70${paddedIndex}`, // CIF_REKENING_PINJAMAN
+                "New", // JENIS_PENGAJUAN_DESC
+                "Conditional Automatic Cover", // JENIS_COVERING_DESC
+                "01/01/2026", // TANGGAL_MULAI_COVERING
+                "01/01/2027", // TANGGAL_AKHIR_COVERING
+                500000000, // PLAFON
+                12500000, // NOMINAL_PREMI
+                5312500, // PREMIUM
+                1460937, // KOMISI
+                3851563, // NET_PREMI
+                119000, // NOMINAL_KOMISI_BROKER
+                "0021", // UNIT_CODE
+                "KCP JAKARTA PUSAT", // UNIT_DESC
+                "KC Jakarta", // BRANCH_DESC
+                "Jakarta", // REGION_DESC
+                `Debtor ${index}`, // NAMA_PESERTA
+                `Jl. Sudirman No. ${index}`, // ALAMAT_USAHA
+                `PK-${paddedIndex}`, // NOMOR_PERJANJIAN_KREDIT
+                "2026-01-05", // TANGGAL_TERIMA
+                "2026-01-06", // TANGGAL_VALIDASI
+                "2026-01-06", // TELLER_PREMIUM_DATE
+                1, // STATUS_AKTIF
+                `BRISURF_COV_00501_002101000888${paddedIndex}_01`, // REMARK_PREMI
+                0, // FLAG_RESTRUK
+                1 // KOLEKTABILITAS
+            ];
+        });
 
         const data = [headers, ...sampleData];
 
@@ -1948,8 +2123,8 @@ export default function SubmitDebtor() {
                 {isCheckerBrins && selectedDebtors.length > 0 && (
                     <Button
                         variant="outline"
-                        onClick={handleCheckerBrinsCheck}
-                        disabled={uploading}
+                        onClick={() => handleActionButtonClick("check")}
+                        disabled={uploading || showBatchPickerDialog || showScopeDialog}
                     >
                         {uploading ? (
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -1962,8 +2137,8 @@ export default function SubmitDebtor() {
                 {isApproverBrins && selectedDebtors.length > 0 && (
                     <Button
                         variant="outline"
-                        onClick={handleApproverBrinsApprove}
-                        disabled={uploading}
+                        onClick={() => handleActionButtonClick("approve")}
+                        disabled={uploading || showBatchPickerDialog || showScopeDialog}
                     >
                         {uploading ? (
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -1974,6 +2149,216 @@ export default function SubmitDebtor() {
                     </Button>
                 )}
             </div>
+
+            {/* Batch picker dialog (when multiple batches in selection) */}
+            <Dialog open={showBatchPickerDialog} onOpenChange={setShowBatchPickerDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Select Batch</DialogTitle>
+                        <DialogDescription>
+                            Multiple batches found in your selection. Which batch do you want to apply this action to?
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                        {uniqueBatches.map((batchId) => {
+                            const count = selectedDebtors.filter(
+                                (id) =>
+                                    debtors.find((d) => d.id === id)?.batch_id === batchId
+                            ).length;
+                            return (
+                                <Button
+                                    key={batchId}
+                                    variant="outline"
+                                    className="w-full justify-start"
+                                    onClick={() => handleBatchSelect(batchId)}
+                                >
+                                    <span className="font-mono">{batchId}</span>
+                                    <span className="ml-auto text-xs text-gray-500">
+                                        {count} selected
+                                    </span>
+                                </Button>
+                            );
+                        })}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Scope Selection Dialog */}
+            <Dialog open={showScopeDialog} onOpenChange={setShowScopeDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Select Action Scope</DialogTitle>
+                        <DialogDescription>
+                            {selectedBatchForAction && (
+                                <>
+                                    Apply action to which debtors in batch{" "}
+                                    <span className="font-mono font-semibold">
+                                        {selectedBatchForAction}
+                                    </span>
+                                    ?
+                                </>
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {/* Option A: Selected rows only */}
+                        <label className="flex items-start gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50">
+                            <input
+                                type="radio"
+                                name="scope"
+                                value="selected"
+                                checked={actionScope === "selected"}
+                                onChange={(e) => setActionScope(e.target.value)}
+                                className="mt-1"
+                            />
+                            <div>
+                                <p className="font-medium">
+                                    {selectedDebtors.length} selected row(s)
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                    Apply action only to debtors selected on current page
+                                </p>
+                            </div>
+                        </label>
+
+                        {/* Option B: Whole batch */}
+                        <label className="flex items-start gap-3 p-4 border rounded-lg border-blue-200 bg-blue-50 cursor-pointer">
+                            <input
+                                type="radio"
+                                name="scope"
+                                value="whole-batch"
+                                checked={actionScope === "whole-batch"}
+                                onChange={(e) => setActionScope(e.target.value)}
+                                className="mt-1"
+                            />
+                            <div>
+                                <p className="font-medium text-blue-900">
+                                    Entire batch ({debtors.length} debtor(s))
+                                </p>
+                                <p className="text-xs text-blue-700">
+                                    Apply action to all debtors in this batch with real-time
+                                    progress tracking
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setShowScopeDialog(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleScopeConfirm}
+                        >
+                            Proceed
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Progress Modal */}
+            <Dialog open={showProgressModal} onOpenChange={setShowProgressModal}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Bulk Action Progress</DialogTitle>
+                        <DialogDescription>
+                            {pendingAction === 'check' ? 'Checking' : 'Approving'} debtors...
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {jobStatus && (
+                        <div className="space-y-4">
+                            {/* Progress Stats */}
+                            <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg">
+                                <div>
+                                    <p className="text-xs text-gray-600">Processed</p>
+                                    <p className="text-2xl font-bold text-blue-600">
+                                        {jobStatus.processedCount || 0}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">Total</p>
+                                    <p className="text-2xl font-bold text-gray-700">
+                                        {jobStatus.totalCount}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-600">Progress</p>
+                                    <p className="text-2xl font-bold text-green-600">
+                                        {jobStatus.totalCount ? Math.round((jobStatus.processedCount / jobStatus.totalCount) * 100) : 0}%
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="space-y-2">
+                                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                    <div
+                                        className="bg-green-600 h-full transition-all duration-300"
+                                        style={{
+                                            width: `${jobStatus.totalCount ? Math.round((jobStatus.processedCount / jobStatus.totalCount) * 100) : 0}%`,
+                                        }}
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-600 text-center">
+                                    {jobStatus.message}
+                                </p>
+                            </div>
+
+                            {/* Errors if any */}
+                            {jobStatus.errors && jobStatus.errors.length > 0 && (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                    <p className="text-sm font-medium text-red-700 mb-2">
+                                        Errors ({jobStatus.errors.length}):
+                                    </p>
+                                    <div className="max-h-32 overflow-y-auto space-y-1">
+                                        {jobStatus.errors.slice(0, 10).map((err, idx) => (
+                                            <div
+                                                key={idx}
+                                                className="text-xs text-red-600"
+                                            >
+                                                <span className="font-mono">
+                                                    {err.debtorId || err.error}
+                                                </span>
+                                                : {err.error || err.nama}
+                                            </div>
+                                        ))}
+                                        {jobStatus.errors.length > 10 && (
+                                            <p className="text-xs text-red-500">
+                                                ...and {jobStatus.errors.length - 10} more
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Status badge */}
+                            <div className="flex justify-center">
+                                {jobStatus.status === 'PROCESSING' && (
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Processing...
+                                    </div>
+                                )}
+                                {jobStatus.status === 'COMPLETED' && (
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        Completed
+                                    </div>
+                                )}
+                                {jobStatus.status === 'FAILED' && (
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-full text-sm font-medium">
+                                        <AlertCircle className="w-4 h-4" />
+                                        Failed
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
 
             {/* Data Table */}
             <div>

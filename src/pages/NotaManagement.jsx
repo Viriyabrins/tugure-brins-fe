@@ -331,102 +331,7 @@ export default function NotaManagement() {
                     };
                 }
             });
-
-            // Auto-create nota entries for batches that don't have them
-            const notaCreationPromises = [];
-            for (const entry of batchReviewSync) {
-                const batchId = entry.batchId;
-                const existingNota = nextNotas.find(
-                    (n) => n.reference_id === batchId,
-                );
-
-                // Auto-create Nota only when ALL debtors in batch are APPROVED
-                if (!existingNota && batchId && entry.allApproved) {
-                    // Create nota for this batch
-                    const notaNumber = `NOTA-${batchId}-${Date.now()}`;
-                    notaCreationPromises.push(
-                        backend
-                            .create("Nota", {
-                                nota_number: notaNumber,
-                                nota_type: "Batch",
-                                reference_id: batchId,
-                                amount: entry.batch.final_premium_amount || 0,
-                                // New notas start as UNPAID
-                                status: "UNPAID",
-                                contract_id: entry.batch.contract_id,
-                            })
-                            .catch((err) => {
-                                console.warn(
-                                    `Failed to auto-create nota for batch ${batchId}:`,
-                                    err,
-                                );
-                            }),
-                    );
-                }
-            }
-
-            if (notaCreationPromises.length > 0) {
-                await Promise.allSettled(notaCreationPromises);
-                // Reload notas after creation
-                const updatedNotas = await loadNotas(1, filters);
-                nextNotas.splice(
-                    0,
-                    nextNotas.length,
-                    ...(Array.isArray(updatedNotas) ? updatedNotas : []),
-                );
-            }
-
-            const updatePromises = batchReviewSync
-                .filter((entry) => entry.needsUpdate && entry.batchId)
-                .map((entry) =>
-                    backend
-                        .update("Batch", entry.batchId, entry.updatePayload)
-                        .catch((syncError) => {
-                            console.warn(
-                                "Failed to sync batch review status:",
-                                syncError,
-                            );
-                        }),
-                );
-
-            if (updatePromises.length > 0) {
-                await Promise.allSettled(updatePromises);
-            }
-
-            // Update nota status to UNPAID where applicable
-            const notaUpdatePromises = [];
-            nextNotas.forEach((nota) => {
-                const batchInfo = batchNotaMap[nota.reference_id];
-                if (
-                    batchInfo &&
-                    batchInfo.isFinal &&
-                    nota.status !== "UNPAID" &&
-                    nota.status !== "PAID"
-                ) {
-                    notaUpdatePromises.push(
-                        backend
-                            .update("Nota", nota.id, { status: "UNPAID" })
-                            .then((updated) => {
-                                // Update in local array
-                                const idx = nextNotas.findIndex(
-                                    (n) => n.id === nota.id,
-                                );
-                                if (idx >= 0) nextNotas[idx] = updated;
-                            })
-                            .catch((err) =>
-                                console.warn(
-                                    `Failed to update nota ${nota.id} to UNPAID:`,
-                                    err,
-                                ),
-                            ),
-                    );
-                }
-            });
-
-            if (notaUpdatePromises.length > 0) {
-                await Promise.allSettled(notaUpdatePromises);
-            }
-
+            
             setNotas(nextNotas);
             setBatches(updatedBatches);
             setContracts(nextContracts);
@@ -472,18 +377,6 @@ export default function NotaManagement() {
         };
         return statusMap[status] || status;
     };
-
-    const getActionLabel = (status) => {
-        const labels = {
-            // UNPAID -> Mark PAID
-            UNPAID: "Mark PAID",
-            // PAID -> no further action
-            PAID: null,
-        };
-        return labels[status] || null;
-    };
-
-    // Note: handleGenerateNota removed - notas are now auto-created per batch
 
     const handleNotaAction = async () => {
         if (!selectedNota || !actionType) return;

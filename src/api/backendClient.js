@@ -634,5 +634,53 @@ export const backend = {
     }
 
     return { file_url: URL.createObjectURL(file) };
-  }
+  },
+
+  /**
+   * Start bulk debtor action job
+   * POST /api/apps/:appId/bulk-debtor-action
+   */
+  async startBulkDebtorAction(payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/bulk-debtor-action`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }));
+
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Get bulk debtor action job status
+   * GET /api/apps/:appId/debtor-jobs/:jobId
+   */
+  async getDebtorJobStatus(jobId) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/debtor-jobs/${encodeURIComponent(jobId)}`;
+    const res = await fetch(url, authFetchOptions());
+
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
 };

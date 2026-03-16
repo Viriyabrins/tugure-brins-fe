@@ -983,7 +983,7 @@ export default function ClaimReview() {
                                 header: "Actions",
                                 cell: (row) => (
                                     <div className="flex gap-2">
-                                        {canCheck && row.status === "Draft" && (
+                                        {canCheck && row.status === "SUBMITTED" && (
                                             <Button
                                                 size="sm"
                                                 variant="outline"

@@ -1868,7 +1868,7 @@ export default function ClaimSubmit() {
                                                     debtor_id: claim.debtor_id,
                                                     recovery_amount: toNumber(recoveryAmount),
                                                     recovery_date: formatDateToISO(recoveryDate),
-                                                    status: "Draft",
+                                                    status: "SUBMITTED",
                                                     remarks: subrogationRemarks,
                                                 });
 

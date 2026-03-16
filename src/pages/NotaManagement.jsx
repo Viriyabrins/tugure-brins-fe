@@ -1296,56 +1296,68 @@ export default function NotaManagement() {
 
     const handleDownloadPDF = (nota) => {
         try {
-            const pdf = new jsPDF("p", "mm", "a4");
-            
-            // Header
-            pdf.setFontSize(20);
-            pdf.setTextColor(41, 128, 185);
-            pdf.text("NOTA DETAILS", 105, 20, { align: "center" });
+            const pdf = new jsPDF("l", "mm", "a4");
 
-            pdf.setFontSize(12);
-            pdf.setTextColor(0, 0, 0);
-
-            // Details
-            let yPos = 40;
-            const lineHeight = 10;
-
-            const addField = (label, value) => {
-                pdf.setFont("helvetica", "bold");
-                pdf.text(`${label}:`, 20, yPos);
-                pdf.setFont("helvetica", "normal");
-                pdf.text(String(value || "-"), 65, yPos);
-                yPos += lineHeight;
+            // Helper to format currency correctly
+            const formatCurrency = (val) => {
+                const num = parseFloat(val) || 0;
+                const formatted = Math.abs(num).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                if (num < 0) return `(${formatted})`;
+                return formatted;
             };
 
-            addField("Nota Number", nota.nota_number);
-            addField("Nota Type", nota.nota_type);
-            addField("Status", nota.status);
-            addField("Reference / Batch ID", nota.reference_id);
-            addField("Contract ID", nota.contract_id);
-            
-            // Monetary Values
-            yPos += 10;
-            pdf.setFont("helvetica", "bold");
-            pdf.text("Monetary Values", 20, yPos);
-            yPos += lineHeight;
-
+            // Setup Header text
+            pdf.setFontSize(10);
             pdf.setFont("helvetica", "normal");
-            addField("Amount", `Rp ${Number(nota.amount || 0).toLocaleString("id-ID")}`);
-            
-            if (nota.payment_reference) {
-                addField("Payment Ref", nota.payment_reference);
-            }
-            if (nota.paid_date) {
-                addField("Paid Date", new Date(nota.paid_date).toLocaleDateString("id-ID"));
-            }
+            pdf.setTextColor(0, 0, 0);
 
-            if (nota.marked_paid_by) {
-                addField("Marked Paid By", nota.marked_paid_by);
-            }
-            if (nota.marked_paid_date) {
-                addField("Marked Paid Date", new Date(nota.marked_paid_date).toLocaleDateString("id-ID"));
-            }
+            // Set positions
+            const startY = 30;
+            const marginX = 15;
+            const rowHeight = 8;
+            
+            // X coordinates for the columns (right-aligned for numbers)
+            const colKindX = marginX; // Left aligned
+            const colPremiumX = 100;
+            const colCommissionX = 135;
+            const colClaimX = 170;
+            const colTotalX = 220;
+            const colNetDueX = 270;
+
+            // Draw Top Line
+            pdf.setLineWidth(0.5);
+            pdf.line(colKindX, startY, 280, startY);
+
+            // Draw Header Row
+            pdf.setFont("helvetica", "bold");
+            pdf.text("Kind Of Treaty", colKindX, startY + rowHeight);
+            
+            pdf.text("Premium", colPremiumX, startY + rowHeight, { align: "right" });
+            pdf.text("Commission", colCommissionX, startY + rowHeight, { align: "right" });
+            pdf.text("Claim", colClaimX, startY + rowHeight, { align: "right" });
+            pdf.text("Total", colTotalX, startY + rowHeight, { align: "right" });
+            pdf.text("Net Due", colNetDueX, startY + rowHeight, { align: "right" });
+
+            // Draw Bottom Line for Header
+            pdf.line(colKindX, startY + rowHeight + 2, 280, startY + rowHeight + 2);
+
+            // Currency Row
+            pdf.setFont("helvetica", "normal");
+            pdf.text("Currency : IDR", colKindX, startY + (rowHeight * 2) + 2);
+
+            // Data Row
+            const dataY = startY + (rowHeight * 3) + 2;
+            
+            // Mock Kind of Treaty text - using reference_id for now as it represents the batch
+            const kindOfTreaty = nota.reference_id || nota.contract_id || "AUTO FACULTATIVE CREDIT COMMERCIAL - 2024";
+            pdf.text(kindOfTreaty, colKindX, dataY);
+            
+            // Print Values
+            pdf.text(formatCurrency(nota.premium), colPremiumX, dataY, { align: "right" });
+            pdf.text(formatCurrency(nota.commission), colCommissionX, dataY, { align: "right" });
+            pdf.text(formatCurrency(nota.claim), colClaimX, dataY, { align: "right" });
+            pdf.text(formatCurrency(nota.total), colTotalX, dataY, { align: "right" });
+            pdf.text(formatCurrency(nota.net_due), colNetDueX, dataY, { align: "right" });
 
             pdf.save(`${nota.nota_number}.pdf`);
             setSuccessMessage("PDF downloaded successfully");

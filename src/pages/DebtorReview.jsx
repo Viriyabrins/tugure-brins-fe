@@ -569,6 +569,14 @@ export default function DebtorReview() {
             // **GENERATE NOTA IF ACTION IS APPROVE**
             if (action === "approve" && contractId) {
                 try {
+                    // Fetch the Batch record to get pre-calculated premium values
+                    let batchData = null;
+                    try {
+                        batchData = await backend.get("Batch", batchId);
+                    } catch (batchErr) {
+                        console.warn("Failed to fetch batch for Nota:", batchErr);
+                    }
+
                     const notaNumber = `NOTA-${contractId}-${Date.now()}`;
                     await backend.create("Nota", {
                         nota_number: notaNumber,
@@ -582,6 +590,11 @@ export default function DebtorReview() {
                         issued_date: new Date().toISOString(),
                         total_actual_paid: 0,
                         reconciliation_status: "PENDING",
+                        premium: parseFloat(batchData?.premium) || 0,
+                        commission: parseFloat(batchData?.commission) || 0,
+                        claim: parseFloat(batchData?.claim) || 0,
+                        total: parseFloat(batchData?.total) || 0,
+                        net_due: parseFloat(batchData?.net_due) || 0,
                     });
                     console.log("Nota generated:", notaNumber);
                 } catch (notaError) {
@@ -656,6 +669,7 @@ export default function DebtorReview() {
                 filters: backendFilters,
                 remarks: approvalRemarks,
                 batchId: selectedBatchForAction,
+                contract_id: filters.contract && filters.contract !== 'all' ? filters.contract : undefined,
             });
 
             if (response && response.jobId) {

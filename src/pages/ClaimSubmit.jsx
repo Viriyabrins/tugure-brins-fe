@@ -1251,17 +1251,17 @@ export default function ClaimSubmit() {
                                     ) : (
                                         <>
                                             <div className="flex gap-6 mb-4 flex-wrap">
-                                                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-                                                    <p className="text-xs text-gray-500">Total {isBrinsUser ? "Recovery" : "Claim"} Value</p>
-                                                    <p className="text-lg font-semibold text-green-700">
+                                                <div style={{ backgroundColor: '#1D4E32' }} className="rounded-lg px-4 py-2">
+                                                    <p className="text-xs text-green-100">Total {isBrinsUser ? "Recovery" : "Claim"} Value</p>
+                                                    <p className="text-lg font-semibold text-white">
                                                         {formatRupiahAdaptive(
                                                             allClaimsForTrend.reduce((s, c) => s + (Number(c.nilai_klaim) || 0), 0)
                                                         )}
                                                     </p>
                                                 </div>
-                                                <div className="bg-teal-50 border border-teal-200 rounded-lg px-4 py-2">
-                                                    <p className="text-xs text-gray-500">Total Share Tugure Amount</p>
-                                                    <p className="text-lg font-semibold text-teal-700">
+                                                <div style={{ backgroundColor: '#0D9488' }} className="rounded-lg px-4 py-2">
+                                                    <p className="text-xs text-teal-100">Total Share Tugure Amount</p>
+                                                    <p className="text-lg font-semibold text-white">
                                                         {formatRupiahAdaptive(
                                                             allClaimsForTrend.reduce((s, c) => s + (Number(c.share_tugure_amount) || 0), 0)
                                                         )}

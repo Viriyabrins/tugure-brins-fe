@@ -9,6 +9,8 @@ import {
     Users,
     BarChart3,
     TrendingUp,
+    CheckCircle2,
+    XCircle,
 } from "lucide-react";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import { backend } from "@/api/backendClient";
@@ -33,12 +35,125 @@ const MONTHS = [
 
 const defaultFilter = { month: "all", batchId: "" };
 
+/** Helper: aggregate debtor stats grouped by batch */
+const aggregateDebtorsByBatch = (debtors = []) => {
+    const map = {};
+    for (const d of debtors) {
+        const bid = d.batch_id || "Unknown";
+        if (!map[bid]) {
+            map[bid] = { batch_id: bid, count: 0, plafon: 0, nominal_premi: 0, net_premi: 0, komisi: 0, nominal_komisi_broker: 0 };
+        }
+        map[bid].count += 1;
+        map[bid].plafon += parseFloat(d.plafon) || 0;
+        map[bid].nominal_premi += parseFloat(d.nominal_premi) || 0;
+        map[bid].net_premi += parseFloat(d.net_premi) || 0;
+        map[bid].komisi += parseFloat(d.ric_amount) || 0;
+        map[bid].nominal_komisi_broker += parseFloat(d.bf_amount) || 0;
+    }
+    return Object.values(map);
+};
+
+/** Reusable section component for Recap TSI tab */
+function DebtorTsiSection({ title, subtitle, gradient, debtors = [], loading }) {
+    const totalCount = debtors.length;
+    const totalPlafon = debtors.reduce((s, d) => s + (parseFloat(d.plafon) || 0), 0);
+    const totalNominalPremi = debtors.reduce((s, d) => s + (parseFloat(d.nominal_premi) || 0), 0);
+    const totalNetPremi = debtors.reduce((s, d) => s + (parseFloat(d.net_premi) || 0), 0);
+    const totalKomisi = debtors.reduce((s, d) => s + (parseFloat(d.ric_amount) || 0), 0);
+    const totalNominalKomisiBroker = debtors.reduce((s, d) => s + (parseFloat(d.bf_amount) || 0), 0);
+    const batchRows = useMemo(() => aggregateDebtorsByBatch(debtors), [debtors]);
+
+    const icon =
+        title === "Active Debtors" ? CheckCircle2
+        : title === "Non-Active Debtors" ? XCircle
+        : Users;
+
+    return (
+        <Card className="border-0 shadow-sm overflow-hidden">
+            <CardHeader className={`bg-gradient-to-r ${gradient} py-4 px-6`}>
+                <CardTitle className="text-white text-base font-semibold flex items-center gap-2">
+                    {React.createElement(icon, { className: "w-5 h-5" })}
+                    {title}
+                    <span className="ml-auto text-xs font-normal opacity-80">{subtitle}</span>
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+                {/* Batch-grouped breakdown table */}
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
+                                <th className="text-left px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Batch ID</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Count</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Plafon</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Nominal Premi</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Net Premi</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Komisi</th>
+                                <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Komisi Broker</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {loading ? (
+                                [...Array(4)].map((_, i) => (
+                                    <tr key={i} className="border-b border-gray-100">
+                                        {[...Array(7)].map((_, j) => (
+                                            <td key={j} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
+                                        ))}
+                                    </tr>
+                                ))
+                            ) : batchRows.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="text-center py-12 text-gray-400">
+                                        <BarChart3 className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                                        <p className="text-sm">No debtors in this category</p>
+                                    </td>
+                                </tr>
+                            ) : (
+                                <>
+                                    {batchRows.map((row, i) => (
+                                        <tr
+                                            key={row.batch_id}
+                                            className={`border-b border-gray-100 transition-colors hover:bg-indigo-50/40 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/60"}`}
+                                        >
+                                            <td className="px-4 py-3 font-medium text-indigo-700 whitespace-nowrap">{row.batch_id}</td>
+                                            <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{row.count.toLocaleString()}</td>
+                                            <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{formatRupiahAdaptive(row.plafon)}</td>
+                                            <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{formatRupiahAdaptive(row.nominal_premi)}</td>
+                                            <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{formatRupiahAdaptive(row.net_premi)}</td>
+                                            <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{formatRupiahAdaptive(row.komisi)}</td>
+                                            <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{formatRupiahAdaptive(row.nominal_komisi_broker)}</td>
+                                        </tr>
+                                    ))}
+                                    {/* Grand Total */}
+                                    <tr className={`bg-gradient-to-r ${gradient} text-white font-semibold`}>
+                                        <td className="px-4 py-3.5 whitespace-nowrap">Grand Total</td>
+                                        <td className="px-4 py-3.5 text-right tabular-nums">{totalCount.toLocaleString()}</td>
+                                        <td className="px-4 py-3.5 text-right tabular-nums">{formatRupiahAdaptive(totalPlafon)}</td>
+                                        <td className="px-4 py-3.5 text-right tabular-nums">{formatRupiahAdaptive(totalNominalPremi)}</td>
+                                        <td className="px-4 py-3.5 text-right tabular-nums">{formatRupiahAdaptive(totalNetPremi)}</td>
+                                        <td className="px-4 py-3.5 text-right tabular-nums">{formatRupiahAdaptive(totalKomisi)}</td>
+                                        <td className="px-4 py-3.5 text-right tabular-nums">{formatRupiahAdaptive(totalNominalKomisiBroker)}</td>
+                                    </tr>
+                                </>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
 export default function RecapSummary() {
     const [activeTab, setActiveTab] = useState("debtor-batch");
     const [loading, setLoading] = useState(true);
+    const [tsiLoading, setTsiLoading] = useState(true);
     const [batches, setBatches] = useState([]);
     const [claims, setClaims] = useState([]);
+    const [allDebtors, setAllDebtors] = useState([]);
     const [filters, setFilters] = useState(defaultFilter);
+    const [tsiFilters, setTsiFilters] = useState({ year: "all" });
+    const defaultTsiFilter = { year: "all" };
 
     useEffect(() => {
         loadData();
@@ -47,12 +162,15 @@ export default function RecapSummary() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [batchData, claimData] = await Promise.all([
+            const [batchData, claimData, debtorData] = await Promise.all([
                 backend.list("Batch"),
                 backend.list("Claim"),
+                backend.list("Debtor"),
             ]);
             setBatches(Array.isArray(batchData) ? batchData : []);
             setClaims(Array.isArray(claimData) ? claimData : []);
+            setAllDebtors(Array.isArray(debtorData) ? debtorData : []);
+            setTsiLoading(false);
         } catch (error) {
             console.error("Failed to load recap data:", error);
         }
@@ -84,6 +202,50 @@ export default function RecapSummary() {
             };
         });
     }, [batches, claims]);
+
+    // Recap TSI: derive available years from debtor covering dates
+    const tsiYearOptions = useMemo(() => {
+        const years = new Set();
+        for (const d of allDebtors) {
+            if (d.tanggal_akhir_covering) {
+                years.add(new Date(d.tanggal_akhir_covering).getFullYear());
+            }
+        }
+        return [...years].sort((a, b) => b - a).map((y) => ({ value: String(y), label: String(y) }));
+    }, [allDebtors]);
+
+    // Filter debtors by selected year first
+    const yearFilteredDebtors = useMemo(() => {
+        if (tsiFilters.year === "all") return allDebtors;
+        const yr = Number(tsiFilters.year);
+        return allDebtors.filter((d) => {
+            if (!d.tanggal_akhir_covering) return false;
+            return new Date(d.tanggal_akhir_covering).getFullYear() === yr;
+        });
+    }, [allDebtors, tsiFilters.year]);
+
+    // Recap TSI: split debtors into active / non-active
+    const today = useMemo(() => {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }, []);
+
+    const activeDebtors = useMemo(
+        () => yearFilteredDebtors.filter((d) => {
+            if (!d.tanggal_akhir_covering) return false;
+            return new Date(d.tanggal_akhir_covering) >= today;
+        }),
+        [yearFilteredDebtors, today],
+    );
+
+    const nonActiveDebtors = useMemo(
+        () => yearFilteredDebtors.filter((d) => {
+            if (!d.tanggal_akhir_covering) return true;
+            return new Date(d.tanggal_akhir_covering) < today;
+        }),
+        [yearFilteredDebtors, today],
+    );
 
     // Apply filters (auto — no search button)
     const filteredRows = useMemo(() => {
@@ -394,21 +556,49 @@ export default function RecapSummary() {
                     </Card>
                 </TabsContent>
 
-                {/* ── Recap TSI Tab (placeholder) ── */}
-                <TabsContent value="recap-tsi" className="mt-4">
-                    <Card className="border-0 shadow-sm">
-                        <CardContent className="flex items-center justify-center py-24 text-gray-400">
-                            <div className="text-center space-y-2">
-                                <BarChart3 className="w-12 h-12 mx-auto opacity-40" />
-                                <p className="text-lg font-medium text-gray-500">
-                                    Recap TSI
-                                </p>
-                                <p className="text-sm text-gray-400">
-                                    Content coming soon
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
+                {/* ── Recap TSI Tab ── */}
+                <TabsContent value="recap-tsi" className="space-y-6 mt-4">
+                    <FilterTab
+                        filters={tsiFilters}
+                        onFilterChange={setTsiFilters}
+                        defaultFilters={defaultTsiFilter}
+                        columns={1}
+                        filterConfig={[
+                            {
+                                key: "year",
+                                label: "Year",
+                                type: "select",
+                                options: [
+                                    { value: "all", label: "All Years" },
+                                    ...tsiYearOptions,
+                                ],
+                            },
+                        ]}
+                    />
+
+                    {/* Section 1 – All Debtors */}
+                    <DebtorTsiSection
+                        title="All Debtors"
+                        gradient="from-indigo-500 to-blue-600"
+                        debtors={yearFilteredDebtors}
+                        loading={tsiLoading}
+                    />
+
+                    {/* Section 2 – Active Debtors */}
+                    <DebtorTsiSection
+                        title="Active Debtors"
+                        gradient="from-emerald-500 to-green-600"
+                        debtors={activeDebtors}
+                        loading={tsiLoading}
+                    />
+
+                    {/* Section 3 – Non-Active Debtors */}
+                    <DebtorTsiSection
+                        title="Non-Active Debtors"
+                        gradient="from-orange-500 to-red-600"
+                        debtors={nonActiveDebtors}
+                        loading={tsiLoading}
+                    />
                 </TabsContent>
             </Tabs>
         </div>

@@ -1466,7 +1466,7 @@ export default function DebtorReview() {
                             />
                             <div>
                                 <p className="font-medium text-blue-900">
-                                    Entire batch ({totalDebtors} debtor(s))
+                                    {selectedBatchForAction}
                                 </p>
                                 <p className="text-xs text-blue-700">
                                     Apply action to all debtors in this batch with real-time

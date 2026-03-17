@@ -530,6 +530,7 @@ export default function BorderoManagement() {
     const borderoColumns = [
         { header: "Bordero ID", accessorKey: "bordero_id" },
         { header: "Period", accessorKey: "period" },
+        { header: "Contract", accessorKey: "contract_id" },
         { header: "Total Debtors", accessorKey: "total_debtors" },
         {
             header: 'Plafond',

@@ -159,14 +159,26 @@ const toInteger = (value) => {
 const toIsoDate = (value) => {
     if (value === undefined || value === null || value === "") return null;
 
+    // If already a Date instance, normalize to UTC preserving time components
     if (value instanceof Date) {
-        return Number.isNaN(value.getTime()) ? null : value.toISOString();
+        if (Number.isNaN(value.getTime())) return null;
+        const utcMillis = Date.UTC(
+            value.getFullYear(),
+            value.getMonth(),
+            value.getDate(),
+            value.getHours(),
+            value.getMinutes(),
+            value.getSeconds(),
+            value.getMilliseconds(),
+        );
+        return new Date(utcMillis).toISOString();
     }
 
+    // Excel numeric date (serial) -> parse and build as UTC
     if (typeof value === "number") {
         const parsed = XLSX.SSF.parse_date_code(value);
         if (parsed && parsed.y && parsed.m && parsed.d) {
-            const date = new Date(
+            const utcMillis = Date.UTC(
                 parsed.y,
                 parsed.m - 1,
                 parsed.d,
@@ -174,6 +186,7 @@ const toIsoDate = (value) => {
                 parsed.M || 0,
                 parsed.S || 0,
             );
+            const date = new Date(utcMillis);
             return Number.isNaN(date.getTime()) ? null : date.toISOString();
         }
     }
@@ -181,14 +194,14 @@ const toIsoDate = (value) => {
     const text = String(value).trim();
     if (!text) return null;
 
+    // dd/mm/yyyy (with optional time) -> build UTC date
     const ddmmyyyyMatch = text.match(
         /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/,
     );
 
     if (ddmmyyyyMatch) {
-        const [, day, month, year, hour = "0", minute = "0", second = "0"] =
-            ddmmyyyyMatch;
-        const date = new Date(
+        const [, day, month, year, hour = "0", minute = "0", second = "0"] = ddmmyyyyMatch;
+        const utcMillis = Date.UTC(
             Number(year),
             Number(month) - 1,
             Number(day),
@@ -196,11 +209,23 @@ const toIsoDate = (value) => {
             Number(minute),
             Number(second),
         );
+        const date = new Date(utcMillis);
         return Number.isNaN(date.getTime()) ? null : date.toISOString();
     }
 
+    // Fallback: parse loose date/time strings, then normalize to UTC
     const fallbackDate = new Date(text);
-    return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate.toISOString();
+    if (Number.isNaN(fallbackDate.getTime())) return null;
+    const utcMillis = Date.UTC(
+        fallbackDate.getFullYear(),
+        fallbackDate.getMonth(),
+        fallbackDate.getDate(),
+        fallbackDate.getHours(),
+        fallbackDate.getMinutes(),
+        fallbackDate.getSeconds(),
+        fallbackDate.getMilliseconds(),
+    );
+    return new Date(utcMillis).toISOString();
 };
 
 const normalizePolicyNumber = (value) => {
@@ -944,45 +969,43 @@ export default function SubmitDebtor() {
     const startPolling = (jid) => {
         // clear any previous polling
         if (pollingInterval) clearInterval(pollingInterval);
+        let count = 0;
         const intervalId = setInterval(async () => {
             try {
                 const status = await backend.getDebtorJobStatus(jid);
                 setJobStatus(status);
-                if (status?.status === "completed" || status?.status === "failed") {
+                const normalized = (status?.status || "").toUpperCase();
+                if (normalized === "COMPLETED" || normalized === "FAILED") {
                     clearInterval(intervalId);
                     setPollingInterval(null);
-                    handleJobCompletion(status);
+                    if (normalized === "COMPLETED") {
+                        toast.success(
+                            `Batch action completed: ${status?.processedCount || 0} success, ${status?.failedCount || 0} failed`
+                        );
+                    } else {
+                        toast.error(`Batch action failed: ${status?.message || "See logs"}`);
+                    }
+                    setTimeout(() => {
+                        setShowProgressModal(false);
+                        setJobId(null);
+                        setPendingAction(null);
+                        setSelectedBatchForAction(null);
+                        setSelectedDebtors([]);
+                        loadInitialData();
+                        loadDebtors(1, filters);
+                    }, 1500);
                 }
             } catch (e) {
                 console.warn("Polling error", e);
             }
+            count++;
+            if (count > 300) {
+                clearInterval(intervalId);
+                setPollingInterval(null);
+                toast.error("Job polling timeout");
+            }
         }, 500);
         setPollingInterval(intervalId);
-    };
-
-    const handleJobCompletion = async (status) => {
-        setJobStatus(status);
-        setShowProgressModal(false);
-        setJobId(null);
-        setPendingAction(null);
-        // Refresh table to reflect changes
-        await loadDebtors();
-        if (status?.status === "completed") {
-            toast.success(`Batch action completed: ${status?.processedCount || 0} processed`);
-        } else {
-            toast.error(`Batch action failed: ${status?.message || 'See logs'}`);
-        }
-    };
-
-    const closeProgressModal = () => {
-        setShowProgressModal(false);
-        if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
-        }
-        setJobId(null);
-        setJobStatus(null);
-        setPendingAction(null);
     };
 
     // === CHECKER BRINS: SUBMITTED → CHECKED_BRINS ===
@@ -1361,41 +1384,41 @@ export default function SubmitDebtor() {
         //     ["BATCH-2026-03-999001", "1111305", "501", "009901000777321", "0000F.00099.2026.03.00001.1.1", "DL", "HEC7005", "New", "Conditional Automatic Cover", "01/03/2026", "01/03/2027", 300000000, 7500000, 3187500, 876562, 2310938, 119000, "0099", "KCP MEDAN", "KC Medan", "Sumatera Utara", "Ahmad Fauzi", "Jl. Gatot Subroto No. 88", "PK-005", "2026-03-05", "2026-03-06", "2026-03-06", 1, "BRISURF_COV_00501_009901000777321_03", 0, 1]
         // ];
 
-        const sampleData = Array.from({ length: 30 }, (_, i) => {
+        const sampleData = Array.from({ length: 20 }, (_, i) => {
             const index = i + 1;
             const paddedIndex = index.toString().padStart(3, '0');
             const paddedId = index.toString().padStart(5, '0');
             return [
-                "BATCH-2026-03-999001", // BATCH_ID
-                `11113${paddedIndex}`, // COVER_ID
-                "501", // PROGRAM_ID
-                `002101000888${paddedIndex}`, // NOMOR_REKENING_PINJAMAN
-                `0000A.00021.2026.01.${paddedId}.1.1`, // NOMOR_PESERTA
-                `1118141023000${paddedIndex}`, // POLICY_NO
+                "BATCH-2026-03-999003", // BATCH_ID
+                `11122${paddedIndex}`, // COVER_ID
+                "503", // PROGRAM_ID
+                `002101007887${paddedIndex}`, // NOMOR_REKENING_PINJAMAN
+                `0000A.00031.2026.01.${paddedId}.1.3`, // NOMOR_PESERTA
+                `1117341013000${paddedIndex}`, // POLICY_NO
                 "DL", // LOAN_TYPE
-                `HEC70${paddedIndex}`, // CIF_REKENING_PINJAMAN
+                `HBD70${paddedIndex}`, // CIF_REKENING_PINJAMAN
                 "New", // JENIS_PENGAJUAN_DESC
-                "Conditional Automatic Cover", // JENIS_COVERING_DESC
+                "Conditional Covering", // JENIS_COVERING_DESC
                 "01/01/2026", // TANGGAL_MULAI_COVERING
-                "01/01/2027", // TANGGAL_AKHIR_COVERING
-                500000000, // PLAFON
+                "01/03/2026", // TANGGAL_AKHIR_COVERING
+                450000000, // PLAFON
                 12500000, // NOMINAL_PREMI
                 5312500, // PREMIUM
                 1460937, // KOMISI
                 3851563, // NET_PREMI
                 119000, // NOMINAL_KOMISI_BROKER
-                "0021", // UNIT_CODE
-                "KCP JAKARTA PUSAT", // UNIT_DESC
-                "KC Jakarta", // BRANCH_DESC
-                "Jakarta", // REGION_DESC
-                `Debtor ${index}`, // NAMA_PESERTA
-                `Jl. Sudirman No. ${index}`, // ALAMAT_USAHA
+                "0032", // UNIT_CODE
+                "KCP SURABAYA", // UNIT_DESC
+                "KC Surabaya", // BRANCH_DESC
+                "Surabaya", // REGION_DESC
+                `Dude ${index}`, // NAMA_PESERTA
+                `Jl. Landak. ${index}`, // ALAMAT_USAHA
                 `PK-${paddedIndex}`, // NOMOR_PERJANJIAN_KREDIT
                 "2026-01-05", // TANGGAL_TERIMA
                 "2026-01-06", // TANGGAL_VALIDASI
                 "2026-01-06", // TELLER_PREMIUM_DATE
                 1, // STATUS_AKTIF
-                `BRISURF_COV_00501_002101000888${paddedIndex}_01`, // REMARK_PREMI
+                `BRISURF_COV_00501_002101000777${paddedIndex}_03`, // REMARK_PREMI
                 0, // FLAG_RESTRUK
                 1 // KOLEKTABILITAS
             ];
@@ -2233,7 +2256,7 @@ export default function SubmitDebtor() {
                             />
                             <div>
                                 <p className="font-medium text-blue-900">
-                                    Entire batch ({debtors.length} debtor(s))
+                                    {selectedBatchForAction}
                                 </p>
                                 <p className="text-xs text-blue-700">
                                     Apply action to all debtors in this batch with real-time

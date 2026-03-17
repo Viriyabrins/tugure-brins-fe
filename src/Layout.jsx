@@ -110,7 +110,8 @@ export default function Layout({ children, currentPageName }) {
       { name: 'Master Contract', icon: FileText, path: 'MasterContractManagement', roles: [] },
       { name: 'Nota Management', icon: FileText, path: 'NotaManagement', roles: [] },
       { name: 'Bordero Management', icon: BarChart3, path: 'BorderoManagement', roles: [] },
-      { name: 'Advanced Reports', icon: BarChart3, path: 'AdvancedReports', roles: [] },
+      // { name: 'Advanced Reports', icon: BarChart3, path: 'AdvancedReports', roles: [] },
+      { name: 'Recap Summary', icon: BarChart3, path: 'RecapSummary', roles: [] },
       { name: 'Audit Log', icon: Activity, path: 'AuditLog', roles: [] },
       { name: 'System Configuration', icon: Settings, path: 'SystemConfiguration', roles: [] },
       { name: 'Profile', icon: User, path: 'Profile', roles: [] }

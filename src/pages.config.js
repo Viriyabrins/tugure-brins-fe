@@ -1,4 +1,5 @@
 import AdvancedReports from './pages/AdvancedReports';
+import RecapSummary from './pages/RecapSummary';
 import AuditLog from './pages/AuditLog';
 import BatchProcessing from './pages/BatchProcessing';
 import BorderoManagement from './pages/BorderoManagement';
@@ -23,6 +24,7 @@ import __Layout from './Layout.jsx';
 
 export const PAGES = {
     "AdvancedReports": AdvancedReports,
+    "RecapSummary": RecapSummary,
     "AuditLog": AuditLog,
     "BatchProcessing": BatchProcessing,
     "BorderoManagement": BorderoManagement,

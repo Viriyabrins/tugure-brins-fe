@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -339,54 +339,91 @@ export default function Dashboard() {
     const generateMonthlyTrendData = () => {
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
 
-        // Calculate premium per month from batches
-        const monthlyPremium = months.map((month, index) => {
-            const monthBatches = batchesArray.filter((b) => {
-                const batchDate = b.createdAt || b.approved_date;
-                if (!batchDate) return false;
-                const date = new Date(batchDate);
-                return date.getMonth() === index;
-            });
-
-            const premium = monthBatches.reduce(
-                (sum, b) => sum + (parseFloat(b.final_premium_amount) || 0),
+        // Build recap rows using same logic as RecapSummary
+        const recapRows = batchesArray.map((b) => {
+            const batchClaims = claimsArray.filter((c) => c.batch_id === b.batch_id);
+            const premium = parseFloat(b.total_premium) || parseFloat(b.final_premium_amount) || parseFloat(b.premium) || 0;
+            const comm = parseFloat(b.commission) || 0;
+            const claimAmt = batchClaims.reduce(
+                (s, c) => s + (parseFloat(c.share_tugure_amount) || 0),
                 0,
             );
-
-            const claimsForMonth = claimsArray.filter((c) => {
-                const claimDate = c.dol || c.createdAt;
-                if (!claimDate) return false;
-                const date = new Date(claimDate);
-                return date.getMonth() === index;
-            });
-
-            const claims = claimsForMonth.reduce(
-                (sum, c) => sum + (parseFloat(c.nilai_klaim) || 0),
-                0,
-            );
-
-            const recoveryForMonth = subrogationsArray.filter((s) => {
-                const recoveryDate = s.recovery_date || s.createdAt;
-                if (!recoveryDate) return false;
-                const date = new Date(recoveryDate);
-                return date.getMonth() === index;
-            });
-
-            const recovery = recoveryForMonth.reduce(
-                (sum, s) => sum + (parseFloat(s.recovery_amount) || 0),
-                0,
-            );
-
-            const lossRatio = premium > 0 ? (claims / premium) * 100 : 0;
-
+            
             return {
-                month,
-                premium: premium || 0,
-                claims: claims || 0,
-                lossRatio: Number(lossRatio.toFixed(1)),
-                recovery: recovery || 0,
+                batch_id: b.batch_id,
+                batch_month: b.batch_month,
+                batch_year: b.batch_year,
+                premium_idr: premium,
+                comm_idr: comm,
+                claim_idr: claimAmt,
             };
         });
+
+        console.log('%c[Dashboard Monthly Trend] Recap Rows:', 'color: blue; font-weight: bold', recapRows);
+
+        // Build recovery data from subrogations (group by related batch/claim month)
+        const recoveryByMonth = {};
+        subrogationsArray.forEach((s) => {
+            if (s.recovery_amount) {
+                let monthNum = null;
+                
+                // Try to link recovery to batch via claim
+                if (s.claim_id) {
+                    const relatedClaim = claimsArray.find(c => c.id === s.claim_id || c.claim_id === s.claim_id);
+                    if (relatedClaim && relatedClaim.batch_id) {
+                        const relatedBatch = batchesArray.find(b => b.batch_id === relatedClaim.batch_id);
+                        if (relatedBatch && relatedBatch.batch_month) {
+                            monthNum = Number(relatedBatch.batch_month);
+                        }
+                    }
+                }
+                
+                // Fallback: try to extract month from subrogation dates
+                if (!monthNum) {
+                    const dateField = s.created_at || s.createdAt || s.date_created || s.submission_date;
+                    if (dateField) {
+                        const date = new Date(dateField);
+                        if (!isNaN(date.getTime())) {
+                            monthNum = date.getMonth() + 1; // getMonth() returns 0-11
+                        }
+                    }
+                }
+                
+                if (monthNum && monthNum >= 1 && monthNum <= 12) {
+                    recoveryByMonth[monthNum] = (recoveryByMonth[monthNum] || 0) + (parseFloat(s.recovery_amount) || 0);
+                }
+            }
+        });
+
+        console.log('%c[Dashboard Monthly Trend] Recovery by Month:', 'color: cyan; font-weight: bold', recoveryByMonth);
+
+        // Group by month (1-12)
+        const monthlyPremium = months.map((month, monthIndex) => {
+            const monthlyBatches = recapRows.filter((r) => Number(r.batch_month) === monthIndex + 1);
+            
+            console.log(`%c[Month: ${month}] Batches found:`, 'color: green; font-weight: bold', monthlyBatches.length, monthlyBatches);
+
+            const premium = monthlyBatches.reduce((s, r) => s + r.premium_idr, 0);
+            const komisi = monthlyBatches.reduce((s, r) => s + r.comm_idr, 0);
+            const claims = monthlyBatches.reduce((s, r) => s + r.claim_idr, 0);
+            const recovery = recoveryByMonth[monthIndex + 1] || 0;
+            const lossRatio = premium > 0 ? (claims / premium) * 100 : 0;
+
+            const monthData = {
+                month,
+                premium: premium || 0,
+                komisi: komisi || 0,
+                claims: claims || 0,
+                recovery: recovery || 0,
+                lossRatio: Number(lossRatio.toFixed(1)),
+            };
+
+            console.log(`%c[Month: ${month}] Final Data:`, 'color: purple; font-weight: bold', monthData);
+
+            return monthData;
+        });
+
+        console.log('%c[Dashboard Monthly Trend] Final Output:', 'color: red; font-weight: bold', monthlyPremium);
 
         return monthlyPremium;
     };
@@ -952,9 +989,9 @@ export default function Dashboard() {
             </div>
 
             {/* Charts Row 2 - Loss Ratio & Claims Analysis */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* <div className="grid grid-cols-1 lg:grid-cols-2 gap-6"> */}
                 {/* Loss Ratio Trend */}
-                <Card>
+                {/* <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <TrendingUp className="w-5 h-5 text-gray-500" />
@@ -1005,10 +1042,10 @@ export default function Dashboard() {
                             </p>
                         </div>
                     </CardContent>
-                </Card>
+                </Card> */}
 
                 {/* Premium vs Claims Trend */}
-                <Card>
+                {/* <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <BarChart3 className="w-5 h-5 text-gray-500" />
@@ -1055,8 +1092,8 @@ export default function Dashboard() {
                             </ResponsiveContainer>
                         </div>
                     </CardContent>
-                </Card>
-            </div>
+                </Card> */}
+            {/* </div> */}
 
             {/* Charts Row 3 - Recovery & Subrogation */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1187,6 +1224,42 @@ export default function Dashboard() {
                     </CardContent>
                 </Card>
             </div>
+
+        {/* Batch Trend Analysis */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5 text-gray-500" />
+                        Monthly Trend Analysis (Premi Reas, Komisi, Claim)
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={monthlyTrendData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                                <XAxis 
+                                    dataKey="month" 
+                                    tick={{ fontSize: 12 }} 
+                                    stroke="#6B7280" 
+                                />
+                                <YAxis 
+                                    tick={{ fontSize: 12 }} 
+                                    stroke="#6B7280" 
+                                    tickFormatter={formatRupiahAdaptive}
+                                />
+                                <Tooltip 
+                                    formatter={(value) => formatRupiahAdaptive(value)}
+                                />
+                                <Legend />
+                                <Area type="monotone" dataKey="premium" name="Premi Reas" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.4} />
+                                <Area type="monotone" dataKey="komisi" name="Komisi" stroke="#F59E0B" fill="#F59E0B" fillOpacity={0.4} />
+                                <Area type="monotone" dataKey="claims" name="Claim" stroke="#EF4444" fill="#EF4444" fillOpacity={0.4} />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </CardContent>
+            </Card>
 
             {/* Claims Status Summary Table */}
             <Card>

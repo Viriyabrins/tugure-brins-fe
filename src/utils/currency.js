@@ -14,10 +14,10 @@ export function formatRupiahAdaptive(value, maxLength = 13) {
 
     const abs = Math.abs(num);
     const units = [
-        { value: 1e12, suffix: "T" }, // triliun
-        { value: 1e9, suffix: "M" }, // miliar
-        { value: 1e6, suffix: "jt" }, // juta
-        { value: 1e3, suffix: "rb" }, // ribu
+        // { value: 1e12, suffix: "T" }, // triliun
+        // { value: 1e9, suffix: "M" }, // miliar
+        // { value: 1e6, suffix: "jt" }, // juta
+        // { value: 1e3, suffix: "rb" }, // ribu
     ];
 
     for (const u of units) {
@@ -25,7 +25,7 @@ export function formatRupiahAdaptive(value, maxLength = 13) {
             const n = abs / u.value;
             const shown = n >= 10 ? Math.round(n) : Math.round(n * 10) / 10;
             const sign = num < 0 ? "-" : "";
-            return `${sign}Rp ${shown} ${u.suffix}`;
+            return `${sign}Rp ${shown} ${u.suffix},00`;
         }
     }
 

@@ -112,8 +112,7 @@ export default function MasterContractManagement() {
     const [statsContracts, setStatsContracts] = useState([]); // full list for stat cards only
     const [uploadPreviewData, setUploadPreviewData] = useState([]);
     const [uploadTabActive, setUploadTabActive] = useState(1); // 1 = upload, 2 = preview
-    const [previewValidationError, setPreviewValidationError] =
-        useState("");
+    const [previewValidationError, setPreviewValidationError] = useState("");
     const pageSize = 10;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const canManageUploadTemplate = hasBrinsUploadRole(tokenRoles);
@@ -182,35 +181,52 @@ export default function MasterContractManagement() {
             }
 
             const base = extractBaseContractNo(
-                selectedContract.contract_no || selectedContract.contract_no_from || ''
+                selectedContract.contract_no ||
+                    selectedContract.contract_no_from ||
+                    "",
             );
 
             try {
-                const res = await backend.listPaginated('ContractRevise', {
+                const res = await backend.listPaginated("ContractRevise", {
                     page: 1,
                     limit: 1,
                     q: JSON.stringify({ contractId: base }),
                 });
-                const prev = Array.isArray(res.data) && res.data.length > 0 ? res.data[0] : null;
+                const prev =
+                    Array.isArray(res.data) && res.data.length > 0
+                        ? res.data[0]
+                        : null;
                 if (!prev) {
                     if (mounted) setRevisionDiffs([]);
                     return;
                 }
 
                 const diffs = [];
-                const keys = Object.keys(selectedContract || {}).filter((k) => k !== 'id');
+                const keys = Object.keys(selectedContract || {}).filter(
+                    (k) => k !== "id",
+                );
                 for (const k of keys) {
                     const oldVal = prev[k];
                     const newVal = selectedContract[k];
-                    const oldStr = oldVal === null || oldVal === undefined ? '' : String(oldVal);
-                    const newStr = newVal === null || newVal === undefined ? '' : String(newVal);
+                    const oldStr =
+                        oldVal === null || oldVal === undefined
+                            ? ""
+                            : String(oldVal);
+                    const newStr =
+                        newVal === null || newVal === undefined
+                            ? ""
+                            : String(newVal);
                     if (oldStr !== newStr) {
-                        diffs.push({ key: k, old: oldStr || '-', new: newStr || '-' });
+                        diffs.push({
+                            key: k,
+                            old: oldStr || "-",
+                            new: newStr || "-",
+                        });
                     }
                 }
                 if (mounted) setRevisionDiffs(diffs);
             } catch (e) {
-                console.error('Failed to load previous revision:', e);
+                console.error("Failed to load previous revision:", e);
                 if (mounted) setRevisionDiffs([]);
             }
         };
@@ -525,8 +541,13 @@ export default function MasterContractManagement() {
                     underwriter_name: toNullableString(row.underwriter_name),
                     input_date: toISODate(row.input_date),
                     input_status: toNullableString(row.input_status),
-                    contract_status:
-                        toNullableString(row.contract_status) || "Draft",
+                    // contract_status should come from the uploaded Excel file
+                    contract_status: toNullableString(row.contract_status) || "Draft",
+                    // approval-specific status column (keeps track of approval transitions)
+                    status_approval:
+                        uploadMode === "new"
+                            ? "SUBMITTED"
+                            : toNullableString(row.status_approval),
 
                     source_type: toNullableString(row.source_type),
                     source_name: toNullableString(row.source_name),
@@ -644,21 +665,27 @@ export default function MasterContractManagement() {
             // If we're in revise mode, perform final validation before saving.
             if (uploadMode === "revise") {
                 if (!selectedContractForRevision) {
-                    setPreviewValidationError("Silakan pilih kontrak yang akan direvisi.");
+                    setPreviewValidationError(
+                        "Silakan pilih kontrak yang akan direvisi.",
+                    );
                     setProcessing(false);
                     return;
                 }
 
                 const selected = revisionContracts.find(
-                    (c) => (c.contract_id || c.id) === selectedContractForRevision,
+                    (c) =>
+                        (c.contract_id || c.id) === selectedContractForRevision,
                 );
                 if (!selected) {
-                    setPreviewValidationError("Kontrak yang dipilih tidak ditemukan.");
+                    setPreviewValidationError(
+                        "Kontrak yang dipilih tidak ditemukan.",
+                    );
                     setProcessing(false);
                     return;
                 }
 
-                const expectedNoRaw = toNullableString(selected.contract_no) || "";
+                const expectedNoRaw =
+                    toNullableString(selected.contract_no) || "";
                 const expectedBase = extractBaseContractNo(expectedNoRaw) || "";
                 if (!expectedBase) {
                     setPreviewValidationError(
@@ -670,7 +697,10 @@ export default function MasterContractManagement() {
 
                 const mismatch = (uploadPreviewData || []).find((r) => {
                     const rNo = toNullableString(r.contract_no) || "";
-                    return extractBaseContractNo(rNo).trim().toUpperCase() !== expectedBase.trim().toUpperCase();
+                    return (
+                        extractBaseContractNo(rNo).trim().toUpperCase() !==
+                        expectedBase.trim().toUpperCase()
+                    );
                 });
 
                 if (mismatch) {
@@ -702,7 +732,7 @@ export default function MasterContractManagement() {
                 sendNotificationEmail({
                     targetGroup: "brins-checker",
                     objectType: "Contract",
-                    statusTo: "Draft/Active",
+                    statusTo: "SUBMITTED",
                     recipientRole: "BRINS",
                     variables: {
                         user_name:
@@ -750,7 +780,7 @@ export default function MasterContractManagement() {
         setShowUploadDialog(true);
     };
 
-    // === CHECKER BRINS: Draft/Active → CHECKED_BRINS ===
+    // === CHECKER BRINS: SUBMITTED/Draft → CHECKED_BRINS ===
     const handleCheckerBrinsCheck = async () => {
         if (selectedContractIds.length === 0) {
             toast.error("Please select contracts to check");
@@ -767,13 +797,15 @@ export default function MasterContractManagement() {
                 );
                 if (!contract) continue;
                 const status = (contract.contract_status || "").toString();
-                if (status !== "Draft" && status !== "Active") continue;
+                const approval = (contract.status_approval || "").toString();
+                // allow checking only for Draft or initial SUBMITTED (tracked in status_approval)
+                if (status !== "Draft" && approval !== "SUBMITTED") continue;
 
                 await backend.update(
                     "MasterContract",
                     contract.contract_id || contract.id,
                     {
-                        contract_status: "CHECKED_BRINS",
+                        status_approval: "CHECKED_BRINS",
                     },
                 );
                 processedCount++;
@@ -784,8 +816,8 @@ export default function MasterContractManagement() {
                         module: "CONFIG",
                         entity_type: "MasterContract",
                         entity_id: contract.contract_id || contract.id,
-                        old_value: JSON.stringify({ status }),
-                        new_value: JSON.stringify({ status: "CHECKED_BRINS" }),
+                        old_value: JSON.stringify({ approval: approval }),
+                        new_value: JSON.stringify({ approval: "CHECKED_BRINS" }),
                         user_email: auditActor?.user_email || user?.email,
                         user_role: auditActor?.user_role || user?.role,
                         reason: `Checker BRINS checked contract ${contract.contract_no || contract.contract_id}`,
@@ -797,7 +829,7 @@ export default function MasterContractManagement() {
 
             if (processedCount === 0) {
                 toast.warning(
-                    "No contracts with Draft/Active status were found in your selection.",
+                    "No contracts with Draft/SUBMITTED status were found in your selection.",
                 );
                 setSelectedContractIds([]);
                 setProcessing(false);
@@ -875,14 +907,14 @@ export default function MasterContractManagement() {
                 const contract = contracts.find(
                     (c) => (c.contract_id || c.id) === contractId,
                 );
-                if (!contract || contract.contract_status !== "CHECKED_BRINS")
+                if (!contract || (contract.status_approval || "") !== "CHECKED_BRINS")
                     continue;
 
                 await backend.update(
                     "MasterContract",
                     contract.contract_id || contract.id,
                     {
-                        contract_status: "APPROVED_BRINS",
+                        status_approval: "APPROVED_BRINS",
                     },
                 );
                 processedCount++;
@@ -893,8 +925,8 @@ export default function MasterContractManagement() {
                         module: "CONFIG",
                         entity_type: "MasterContract",
                         entity_id: contract.contract_id || contract.id,
-                        old_value: JSON.stringify({ status: "CHECKED_BRINS" }),
-                        new_value: JSON.stringify({ status: "APPROVED_BRINS" }),
+                        old_value: JSON.stringify({ approval: "CHECKED_BRINS" }),
+                        new_value: JSON.stringify({ approval: "APPROVED_BRINS" }),
                         user_email: auditActor?.user_email || user?.email,
                         user_role: auditActor?.user_role || user?.role,
                         reason: `Approver BRINS approved contract ${contract.contract_no || contract.contract_id}`,
@@ -906,7 +938,7 @@ export default function MasterContractManagement() {
 
             if (processedCount === 0) {
                 toast.warning(
-                    "No contracts with CHECKED_BRINS status were found in your selection.",
+                    "No contracts with CHECKED_BRINS approval status were found in your selection.",
                 );
                 setSelectedContractIds([]);
                 setProcessing(false);
@@ -986,14 +1018,14 @@ export default function MasterContractManagement() {
                 const contract = contracts.find(
                     (c) => (c.contract_id || c.id) === contractId,
                 );
-                if (!contract || contract.contract_status !== "APPROVED_BRINS")
+                if (!contract || (contract.status_approval || "") !== "APPROVED_BRINS")
                     continue;
 
                 await backend.update(
                     "MasterContract",
                     contract.contract_id || contract.id,
                     {
-                        contract_status: "CHECKED_TUGURE",
+                        status_approval: "CHECKED_TUGURE",
                     },
                 );
                 processedCount++;
@@ -1004,8 +1036,8 @@ export default function MasterContractManagement() {
                         module: "CONFIG",
                         entity_type: "MasterContract",
                         entity_id: contract.contract_id || contract.id,
-                        old_value: JSON.stringify({ status: "APPROVED_BRINS" }),
-                        new_value: JSON.stringify({ status: "CHECKED_TUGURE" }),
+                        old_value: JSON.stringify({ approval: "APPROVED_BRINS" }),
+                        new_value: JSON.stringify({ approval: "CHECKED_TUGURE" }),
                         user_email: auditActor?.user_email || user?.email,
                         user_role: auditActor?.user_role || user?.role,
                         reason: `Checker Tugure checked contract ${contract.contract_no || contract.contract_id}`,
@@ -1017,7 +1049,7 @@ export default function MasterContractManagement() {
 
             if (processedCount === 0) {
                 toast.warning(
-                    "No contracts with APPROVED_BRINS status were found in your selection.",
+                    "No contracts with APPROVED_BRINS approval status were found in your selection.",
                 );
                 setSelectedContractIds([]);
                 setProcessing(false);
@@ -1094,10 +1126,10 @@ export default function MasterContractManagement() {
                 const contract = contracts.find(
                     (c) => (c.contract_id || c.id) === contractId,
                 );
-                if (!contract || contract.contract_status !== "CHECKED_TUGURE")
+                if (!contract || (contract.status_approval || "") !== "CHECKED_TUGURE")
                     continue;
 
-                const updateData = { contract_status: newStatus };
+                const updateData = { status_approval: newStatus };
                 if (newStatus === "APPROVED") {
                     updateData.first_approved_by =
                         auditActor?.user_email || user?.email;
@@ -1120,9 +1152,9 @@ export default function MasterContractManagement() {
                         module: "CONFIG",
                         entity_type: "MasterContract",
                         entity_id: contract.contract_id || contract.id,
-                        old_value: JSON.stringify({ status: "CHECKED_TUGURE" }),
+                        old_value: JSON.stringify({ approval: "CHECKED_TUGURE" }),
                         new_value: JSON.stringify({
-                            status: newStatus,
+                            approval: newStatus,
                             remarks: approvalRemarks,
                         }),
                         user_email: auditActor?.user_email || user?.email,
@@ -1138,7 +1170,7 @@ export default function MasterContractManagement() {
 
             if (processedCount === 0) {
                 toast.warning(
-                    "No contracts with CHECKED_TUGURE status were found in your selection.",
+                    "No contracts with CHECKED_TUGURE approval status were found in your selection.",
                 );
                 setSelectedContractIds([]);
                 setProcessing(false);
@@ -1254,7 +1286,9 @@ export default function MasterContractManagement() {
         }
 
         if (!selectedContractForRevision) {
-            setPreviewValidationError("Silakan pilih kontrak yang akan direvisi.");
+            setPreviewValidationError(
+                "Silakan pilih kontrak yang akan direvisi.",
+            );
             return;
         }
 
@@ -1277,7 +1311,10 @@ export default function MasterContractManagement() {
 
         const mismatch = (uploadPreviewData || []).find((r) => {
             const rNo = toNullableString(r.contract_no) || "";
-            return extractBaseContractNo(rNo).trim().toUpperCase() !== expectedBase.trim().toUpperCase();
+            return (
+                extractBaseContractNo(rNo).trim().toUpperCase() !==
+                expectedBase.trim().toUpperCase()
+            );
         });
 
         if (mismatch) {
@@ -1287,18 +1324,33 @@ export default function MasterContractManagement() {
         } else {
             setPreviewValidationError("");
         }
-    }, [uploadPreviewData, selectedContractForRevision, uploadMode, uploadTabActive, revisionContracts]);
+    }, [
+        uploadPreviewData,
+        selectedContractForRevision,
+        uploadMode,
+        uploadTabActive,
+        revisionContracts,
+    ]);
 
-    const stats = {
-        total: statsContracts.length,
-        active: activeContracts.length,
-        // Single-approval workflow: contracts needing action are Draft/Revision
-        pending: statsContracts.filter((c) =>
-            ["Draft", "Revision"].includes(c.effective_status),
-        ).length,
-        draft: statsContracts.filter((c) => c.effective_status === "Draft")
-            .length,
-    };
+                const styles = {
+                    CHECKED_BRINS: "text-orange-600",
+                    CHECKED_TUGURE: "text-violet-700",
+                    REVISION: "text-red-600 font-medium",
+                    Draft: "text-gray-700",
+                    APPROVED: "text-emerald-600 font-medium",
+                    Unknown: "text-gray-700",
+                };
+
+                const stats = {
+                    total: Array.isArray(statsContracts) ? statsContracts.length : 0,
+                    active: Array.isArray(activeContracts) ? activeContracts.length : 0,
+                    pending: Array.isArray(statsContracts)
+                        ? statsContracts.filter((c) =>
+                              normalizeStatus(c.contract_status || c.effective_status) !==
+                              "ACTIVE",
+                          ).length
+                        : 0,
+                };
 
     const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
     const to = Math.min(total, page * pageSize);
@@ -1350,8 +1402,12 @@ export default function MasterContractManagement() {
             header: "Contract No",
             accessorKey: "contract_no",
             cell: (row) => {
-                const v = row.contract_no || row.contract_no_from || row.contract_id || '';
-                return extractBaseContractNo(v) || '-';
+                const v =
+                    row.contract_no ||
+                    row.contract_no_from ||
+                    row.contract_id ||
+                    "";
+                return extractBaseContractNo(v) || "-";
             },
         },
         { header: "Underwriter Name", accessorKey: "underwriter_name" },
@@ -1360,22 +1416,50 @@ export default function MasterContractManagement() {
             accessorKey: "contract_status",
             cell: (row) => {
                 const status = (row.contract_status || "Unknown").toString();
+                // For APPROVED / APPROVED_BRINS show a filled green badge like Debtor
+                if (status === "APPROVED" || status === "APPROVED_BRINS") {
+                    return (
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium bg-emerald-400 text-white`} title={status}>
+                            {status}
+                        </span>
+                    );
+                }
+
                 const styles = {
-                    CHECKED_BRINS: "bg-yellow-200 text-orange-500",
-                    APPROVED_BRINS: "bg-emerald-400 text-white",
-                    CHECKED_TUGURE: "bg-violet-100 text-violet-800",
-                    REVISION: "bg-red-500 text-white",
-                    Active: "bg-blue-100 text-blue-800",
-                    Draft: "bg-gray-100 text-gray-800",
-                    Unknown: "bg-gray-200 text-gray-700",
+                    CHECKED_BRINS: "text-orange-600",
+                    CHECKED_TUGURE: "text-violet-700",
+                    REVISION: "text-red-600 font-medium",
+                    Draft: "text-gray-700",
+                    Unknown: "text-gray-700",
                 };
                 const cls = styles[status] || styles.Unknown;
                 return (
+                    <span className={`inline-block px-1 py-0.5 text-sm ${cls}`} title={status}>
+                        {status}
+                    </span>
+                );
+            },
+        },
+        {
+            header: "Status Approval",
+            accessorKey: "status_approval",
+            cell: (row) => {
+                const s = (row.status_approval || "Unknown").toString();
+                const styles = {
+                    SUBMITTED: "bg-blue-100 text-blue-800",
+                    APPROVED: "bg-emerald-400 text-white",
+                    REVISION: "bg-red-500 text-white",
+                    CHECKED_BRINS: "bg-yellow-200 text-orange-500",
+                    CHECKED_TUGURE: "bg-violet-100 text-violet-800",
+                    Unknown: "bg-gray-200 text-gray-700",
+                };
+                const cls = styles[s] || styles.Unknown;
+                return (
                     <span
                         className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${cls}`}
-                        title={status}
+                        title={s}
                     >
-                        {status}
+                        {s}
                     </span>
                 );
             },
@@ -2009,8 +2093,8 @@ export default function MasterContractManagement() {
                                             <Alert className="mt-2 bg-blue-50 border-blue-200">
                                                 <AlertCircle className="h-4 w-4 text-blue-600" />
                                                 <AlertDescription className="text-blue-700">
-                                                    Will create a new version and
-                                                    archive the previous one
+                                                    Will create a new version
+                                                    and archive the previous one
                                                 </AlertDescription>
                                             </Alert>
                                         )}
@@ -2077,9 +2161,9 @@ export default function MasterContractManagement() {
                                     <Alert className="bg-blue-50 border-blue-200">
                                         <AlertCircle className="h-4 w-4 text-blue-600" />
                                         <AlertDescription className="text-blue-700">
-                                            Below is a preview of the data that will
-                                            be saved. Please review it before
-                                            confirming.
+                                            Below is a preview of the data that
+                                            will be saved. Please review it
+                                            before confirming.
                                         </AlertDescription>
                                     </Alert>
                                 )}
@@ -2119,6 +2203,10 @@ export default function MasterContractManagement() {
                                                     {
                                                         key: "input_status",
                                                         label: "Input Status",
+                                                    },
+                                                    {
+                                                        key: "status_approval",
+                                                        label: "Status Approval",
                                                     },
                                                     {
                                                         key: "contract_status",
@@ -2368,14 +2456,27 @@ export default function MasterContractManagement() {
                                                             : "-"}
                                                     </td>
                                                     <td className="p-2 whitespace-nowrap">
-                                                        {row.input_status ??
-                                                            "-"}
+                                                        {row.input_status ?? "-"}
                                                     </td>
                                                     <td className="p-2 whitespace-nowrap">
-                                                        <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs">
-                                                            {row.contract_status ??
-                                                                "Draft"}
+                                                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs">
+                                                            {row.status_approval ?? "-"}
                                                         </span>
+                                                    </td>
+                                                    <td className="p-2 whitespace-nowrap">
+                                                        { (row.contract_status === "APPROVED" || row.contract_status === "APPROVED_BRINS") ? (
+                                                            <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-emerald-400 text-white">{row.contract_status ?? "Draft"}</span>
+                                                        ) : (
+                                                            <span className={`text-sm ${
+                                                                row.contract_status === "CHECKED_BRINS"
+                                                                    ? "text-orange-600"
+                                                                    : row.contract_status === "CHECKED_TUGURE"
+                                                                    ? "text-violet-700"
+                                                                    : row.contract_status === "REVISION"
+                                                                    ? "text-red-600 font-medium"
+                                                                    : "text-gray-700"
+                                                            }`}>{row.contract_status ?? "Draft"}</span>
+                                                        )}
                                                     </td>
                                                     <td className="p-2 whitespace-nowrap">
                                                         {row.source_type ?? "-"}
@@ -2671,8 +2772,8 @@ export default function MasterContractManagement() {
                                             ? "Revising..."
                                             : "Uploading..."
                                         : uploadMode === "revise"
-                                        ? "Revise"
-                                        : "Upload"}
+                                          ? "Revise"
+                                          : "Upload"}
                                 </Button>
                             </div>
                         )}
@@ -2879,14 +2980,25 @@ export default function MasterContractManagement() {
 
                     {revisionDiffs && revisionDiffs.length > 0 && (
                         <div className="mt-4 w-full">
-                            <div className="font-semibold mb-2">Revision Differences</div>
+                            <div className="font-semibold mb-2">
+                                Revision Differences
+                            </div>
                             <div className="grid grid-cols-1 gap-2">
                                 {revisionDiffs.map((d) => (
-                                    <div key={d.key} className="p-2 border rounded flex justify-between">
-                                        <div className="w-1/3 font-medium text-sm">{d.key}</div>
+                                    <div
+                                        key={d.key}
+                                        className="p-2 border rounded flex justify-between"
+                                    >
+                                        <div className="w-1/3 font-medium text-sm">
+                                            {d.key}
+                                        </div>
                                         <div className="w-2/3 text-sm">
-                                            <div className="text-yellow-600 font-normal">Old: {d.old}</div>
-                                            <div className="text-green-600 font-medium text-base">New: {d.new}</div>
+                                            <div className="text-yellow-600 font-normal">
+                                                Old: {d.old}
+                                            </div>
+                                            <div className="text-green-600 font-medium text-base">
+                                                New: {d.new}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}

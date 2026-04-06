@@ -1338,6 +1338,7 @@ export default function MasterContractManagement() {
                     REVISION: "text-red-600 font-medium",
                     Draft: "text-gray-700",
                     APPROVED: "text-emerald-600 font-medium",
+                    APPROVED_BRINS: "text-emerald-600 font-medium",
                     Unknown: "text-gray-700",
                 };
 
@@ -1448,6 +1449,7 @@ export default function MasterContractManagement() {
                 const styles = {
                     SUBMITTED: "bg-blue-100 text-blue-800",
                     APPROVED: "bg-emerald-400 text-white",
+                    APPROVED_BRINS: "bg-emerald-400 text-white",
                     REVISION: "bg-red-500 text-white",
                     CHECKED_BRINS: "bg-yellow-200 text-orange-500",
                     CHECKED_TUGURE: "bg-violet-100 text-violet-800",

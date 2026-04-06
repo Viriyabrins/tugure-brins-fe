@@ -507,6 +507,7 @@ export default function MasterContractManagement() {
         }
         setProcessing(true);
         setErrorMessage("");
+        setPreviewValidationError("");
         try {
             const rows = await parseUploadFile(uploadFile);
             if (!rows || rows.length === 0) {
@@ -627,7 +628,9 @@ export default function MasterContractManagement() {
             setUploadPreviewData(contractsPayload);
             setUploadTabActive(2); // pindah ke tab preview
         } catch (error) {
-            setErrorMessage(readableError(error));
+            const msg = readableError(error);
+            setPreviewValidationError(msg);
+            setUploadTabActive(2);
         }
         setProcessing(false);
     };
@@ -636,11 +639,12 @@ export default function MasterContractManagement() {
         setProcessing(true);
         setErrorMessage("");
         setSuccessMessage("");
+        setPreviewValidationError("");
         try {
             // If we're in revise mode, perform final validation before saving.
             if (uploadMode === "revise") {
                 if (!selectedContractForRevision) {
-                    setErrorMessage("Silakan pilih kontrak yang akan direvisi.");
+                    setPreviewValidationError("Silakan pilih kontrak yang akan direvisi.");
                     setProcessing(false);
                     return;
                 }
@@ -649,7 +653,7 @@ export default function MasterContractManagement() {
                     (c) => (c.contract_id || c.id) === selectedContractForRevision,
                 );
                 if (!selected) {
-                    setErrorMessage("Kontrak yang dipilih tidak ditemukan.");
+                    setPreviewValidationError("Kontrak yang dipilih tidak ditemukan.");
                     setProcessing(false);
                     return;
                 }
@@ -657,7 +661,7 @@ export default function MasterContractManagement() {
                 const expectedNoRaw = toNullableString(selected.contract_no) || "";
                 const expectedBase = extractBaseContractNo(expectedNoRaw) || "";
                 if (!expectedBase) {
-                    setErrorMessage(
+                    setPreviewValidationError(
                         "Kontrak terpilih tidak memiliki Contract No yang valid.",
                     );
                     setProcessing(false);
@@ -670,7 +674,7 @@ export default function MasterContractManagement() {
                 });
 
                 if (mismatch) {
-                    setErrorMessage(
+                    setPreviewValidationError(
                         `Contract No pada file (${extractBaseContractNo(mismatch.contract_no) || "-"}) tidak sesuai dengan kontrak yang dipilih untuk direvisi (${expectedBase}). Periksa kembali file atau pilihan kontrak.`,
                     );
                     setProcessing(false);
@@ -720,17 +724,30 @@ export default function MasterContractManagement() {
             setUploadFile(null);
             setUploadMode("new");
             setSelectedContractForRevision("");
+            setUploadPreviewData([]);
+            setPreviewValidationError("");
+            setUploadTabActive(1);
             loadData(page, filters);
             loadStats();
         } catch (error) {
-            setErrorMessage(
-                readableError(
-                    error,
-                    "Upload gagal. Periksa data dan coba lagi.",
-                ),
+            const msg = readableError(
+                error,
+                "Upload gagal. Periksa data dan coba lagi.",
             );
+            setPreviewValidationError(msg);
+            setUploadTabActive(2);
         }
         setProcessing(false);
+    };
+
+    const openUploadDialog = () => {
+        setUploadPreviewData([]);
+        setPreviewValidationError("");
+        setUploadTabActive(1);
+        setUploadFile(null);
+        setUploadMode("new");
+        setSelectedContractForRevision("");
+        setShowUploadDialog(true);
     };
 
     // === CHECKER BRINS: Draft/Active → CHECKED_BRINS ===
@@ -1228,8 +1245,11 @@ export default function MasterContractManagement() {
     // Validate preview when in Revise mode: ensure contract_no in uploaded file
     // matches the contract_no of the selected contract to revise.
     useEffect(() => {
+        // Only run validation when in Revise mode and Preview tab is active.
+        // Do not clear `previewValidationError` here for non-revise flows because
+        // upload errors for 'new' mode are set elsewhere and should be preserved
+        // until the dialog is explicitly reset or closed.
         if (uploadMode !== "revise" || uploadTabActive !== 2) {
-            setPreviewValidationError("");
             return;
         }
 
@@ -1474,7 +1494,7 @@ export default function MasterContractManagement() {
                                     Download Template
                                 </Button>
                                 <Button
-                                    onClick={() => setShowUploadDialog(true)}
+                                    onClick={openUploadDialog}
                                     variant="outline"
                                 >
                                     <Upload className="w-4 h-4 mr-2" />
@@ -1843,6 +1863,7 @@ export default function MasterContractManagement() {
                         setUploadFile(null);
                         setUploadPreviewData([]);
                         setUploadTabActive(1);
+                        setPreviewValidationError("");
                     }
                 }}
             >
@@ -2594,6 +2615,7 @@ export default function MasterContractManagement() {
                                 setUploadFile(null);
                                 setUploadPreviewData([]);
                                 setUploadTabActive(1);
+                                setPreviewValidationError("");
                             }}
                         >
                             Cancel

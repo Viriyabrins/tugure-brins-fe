@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp, ChevronDown } from "lucide-react";
 import { getUserRoles } from '@/lib/keycloak';
 
 export default function DataTable({ 
@@ -19,6 +19,9 @@ export default function DataTable({
   onRowClick,
   pagination,
   onPageChange,
+  onSort,
+  sortColumn,
+  sortOrder,
   emptyMessage = "No data available"
 }) {
   const roles = Array.isArray(getUserRoles && getUserRoles()) ? getUserRoles() : [];
@@ -34,6 +37,42 @@ export default function DataTable({
       .replace(/\bClaims\b/gi, (m) => (m[0] === m[0].toUpperCase() ? 'Recoveries' : 'recoveries'))
       .replace(/\bClaim\b/gi, (m) => (m[0] === m[0].toUpperCase() ? 'Recovery' : 'recovery'));
   };
+
+  const handleSortClick = (col) => {
+    if (!onSort) return;
+    
+    let newSortOrder = null;
+    
+    // If clicking a new column, start with ascending
+    if (sortColumn !== col.accessorKey) {
+      newSortOrder = 'asc';
+    } else {
+      // If clicking the same column, cycle: asc -> desc -> off
+      if (sortOrder === 'asc') {
+        newSortOrder = 'desc';
+      } else if (sortOrder === 'desc') {
+        newSortOrder = null;
+      } else {
+        newSortOrder = 'asc';
+      }
+    }
+    
+    onSort(col.accessorKey, newSortOrder);
+  };
+
+  const getSortIcon = (col) => {
+    if (!onSort || sortColumn !== col.accessorKey) {
+      return null;
+    }
+    
+    if (sortOrder === 'asc') {
+      return <ChevronUp className="h-4 w-4 text-blue-600" />;
+    } else if (sortOrder === 'desc') {
+      return <ChevronDown className="h-4 w-4 text-blue-600" />;
+    }
+    
+    return null;
+  };
   if (isLoading) {
     return (
       <div className="bg-white rounded-xl border overflow-hidden">
@@ -42,7 +81,9 @@ export default function DataTable({
             <TableRow className="bg-gray-50">
               {columns.map((col, i) => (
                 <TableHead key={i} className="font-semibold text-gray-700">
-                  {typeof col.header === 'string' ? transformLabel(col.header) : col.header}
+                  <div className="flex items-center gap-2">
+                    {typeof col.header === 'string' ? transformLabel(col.header) : col.header}
+                  </div>
                 </TableHead>
               ))}
             </TableRow>
@@ -71,11 +112,17 @@ export default function DataTable({
             <TableRow className="bg-gray-50 hover:bg-gray-50">
               {columns.map((col, i) => (
                 <TableHead 
-                  key={i} 
-                  className="font-semibold text-gray-700 whitespace-nowrap"
+                  key={i}
+                  className={`font-semibold text-gray-700 whitespace-nowrap ${
+                    onSort ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''
+                  }`}
                   style={{ width: col.width }}
+                  onClick={() => handleSortClick(col)}
                 >
-                  {typeof col.header === 'string' ? transformLabel(col.header) : col.header}
+                  <div className="flex items-center gap-2">
+                    <span>{typeof col.header === 'string' ? transformLabel(col.header) : col.header}</span>
+                    {getSortIcon(col)}
+                  </div>
                 </TableHead>
               ))}
             </TableRow>

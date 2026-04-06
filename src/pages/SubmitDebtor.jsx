@@ -557,6 +557,8 @@ export default function SubmitDebtor() {
 
     const [filters, setFilters] = useState(defaultFilter);
     const [page, setPage] = useState(1);
+    const [sortColumn, setSortColumn] = useState(null);
+    const [sortOrder, setSortOrder] = useState(null);
     const isFirstPageEffect = useRef(true);
     const canShowActionButtons = userRoles.some((role) => {
         const normalizedRole = String(role || "").trim().toLowerCase();
@@ -1308,6 +1310,10 @@ export default function SubmitDebtor() {
             if (activeFilters) {
                 query.q = JSON.stringify(activeFilters);
             }
+            if (sortColumn && sortOrder) {
+                query.sortBy = sortColumn;
+                query.sortOrder = sortOrder;
+            }
 
             const useReviseLog =
                 activeFilters?.submitStatus === "REVISION" ||
@@ -1331,6 +1337,12 @@ export default function SubmitDebtor() {
         setErrorMessage("");
         loadInitialData();
         loadDebtors(page, filters);
+    };
+
+    const handleSort = (column, order) => {
+        setSortColumn(column);
+        setSortOrder(order);
+        setPage(1); // Reset to first page when sorting
     };
 
     useEffect(() => {
@@ -1360,7 +1372,7 @@ export default function SubmitDebtor() {
 
         setSelectedDebtors([]);
         loadDebtors(page, filters);
-    }, [page]);
+    }, [page, sortColumn, sortOrder]);
 
     // Download template
     const handleDownloadTemplate = () => {
@@ -2392,6 +2404,9 @@ export default function SubmitDebtor() {
                     emptyMessage="No debtors found. Upload your first batch to get started."
                     pagination={{ from, to, total, page, totalPages }}
                     onPageChange={(p) => setPage(p)}
+                    onSort={handleSort}
+                    sortColumn={sortColumn}
+                    sortOrder={sortOrder}
                 />
             </div>
 

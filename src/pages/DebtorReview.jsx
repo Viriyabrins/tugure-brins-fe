@@ -198,6 +198,10 @@ export default function DebtorReview() {
             };
             // include filters as JSON string in `q`
             query.q = JSON.stringify(reviewFilters);
+            if (sortColumn && sortOrder) {
+                query.sortBy = sortColumn;
+                query.sortOrder = sortOrder;
+            }
 
             const useReviseLog =
                 filters?.submitStatus === "REVISION" ||
@@ -691,6 +695,8 @@ export default function DebtorReview() {
 
     // Pagination for Debtor Review (pageSize 10) - server-driven
     const [page, setPage] = useState(1);
+    const [sortColumn, setSortColumn] = useState(null);
+    const [sortOrder, setSortOrder] = useState(null);
     const pageSize = 10;
     const total = totalDebtors;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -720,7 +726,13 @@ export default function DebtorReview() {
     // Load page when `page` changes
     useEffect(() => {
         loadDebtors(page);
-    }, [page]);
+    }, [page, sortColumn, sortOrder]);
+
+    const handleSort = (column, order) => {
+        setSortColumn(column);
+        setSortOrder(order);
+        setPage(1);
+    };
 
     // Fetch revision diffs when detail dialog opens for a REVISION status debtor
     useEffect(() => {
@@ -1064,6 +1076,9 @@ export default function DebtorReview() {
                 emptyMessage="No debtors to review"
                 pagination={{ from, to, total, page, totalPages }}
                 onPageChange={(p) => setPage(p)}
+                onSort={handleSort}
+                sortColumn={sortColumn}
+                sortOrder={sortOrder}
             />
 
             {/* Detail Dialog */}

@@ -2000,7 +2000,7 @@ export default function SubmitDebtor() {
     ];
 
     // Only include contracts that have been approved in the system
-    const activeContracts = contracts.filter((c) => c.contract_status === "APPROVED");
+    const activeContracts = contracts.filter((c) => c.status_approval === "APPROVED");
 
     if (pageLoading) {
         return (
@@ -2582,7 +2582,7 @@ export default function SubmitDebtor() {
                                                     value={c.contract_id}
                                                 >
                                                     {c.contract_id} -
-                                                    {c.contract_status}
+                                                    {c.status_approval === "APPROVED"}
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>

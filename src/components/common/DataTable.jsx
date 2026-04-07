@@ -39,7 +39,7 @@ export default function DataTable({
   };
 
   const handleSortClick = (col) => {
-    if (!onSort) return;
+    if (!onSort || !col.accessorKey) return;
     
     let newSortOrder = null;
     
@@ -61,7 +61,7 @@ export default function DataTable({
   };
 
   const getSortIcon = (col) => {
-    if (!onSort || sortColumn !== col.accessorKey) {
+    if (!onSort || !col.accessorKey || sortColumn !== col.accessorKey) {
       return null;
     }
     
@@ -114,7 +114,7 @@ export default function DataTable({
                 <TableHead 
                   key={i}
                   className={`font-semibold text-gray-700 whitespace-nowrap ${
-                    onSort ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''
+                    onSort && col.accessorKey ? 'cursor-pointer hover:bg-gray-100 transition-colors' : ''
                   }`}
                   style={{ width: col.width }}
                   onClick={() => handleSortClick(col)}

@@ -1350,7 +1350,6 @@ export default function SubmitDebtor() {
     const handleSort = (column, order) => {
         setSortColumn(column);
         setSortOrder(order);
-        setPage(1); // Reset to first page when sorting
     };
 
     useEffect(() => {

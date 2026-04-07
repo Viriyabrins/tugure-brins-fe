@@ -731,7 +731,6 @@ export default function DebtorReview() {
     const handleSort = (column, order) => {
         setSortColumn(column);
         setSortOrder(order);
-        setPage(1);
     };
 
     // Fetch revision diffs when detail dialog opens for a REVISION status debtor
@@ -866,6 +865,7 @@ export default function DebtorReview() {
         },
         {
             header: "Debtor",
+            accessorKey: "nomor_peserta",
             cell: (row) => (
                 <div>
                     <p className="font-medium">{row.nama_peserta}</p>
@@ -882,14 +882,17 @@ export default function DebtorReview() {
         },
         {
             header: "Plafond",
+            accessorKey: "plafon",
             cell: (row) => `${formatRupiahAdaptive(row.plafon)}`,
         },
         {
             header: "Net Premi",
+            accessorKey: "net_premi",
             cell: (row) => `${formatRupiahAdaptive(row.net_premi)}`,
         },
         {
             header: "Status",
+            accessorKey: "status",
             cell: (row) => <StatusBadge status={row.status} />,
         },
         {

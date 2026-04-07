@@ -197,6 +197,8 @@ export default function ClaimSubmit() {
     const [processing, setProcessing] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
+    // Errors that should be shown inside dialogs / upload preview (not on main UI)
+    const [dialogErrorMessage, setDialogErrorMessage] = useState("");
     const [validationRemarks, setValidationRemarks] = useState([]);
     const [selectedClaim, setSelectedClaim] = useState("");
     const [recoveryAmount, setRecoveryAmount] = useState("");
@@ -512,7 +514,7 @@ export default function ClaimSubmit() {
         if (!file || !selectedBatch) return;
 
         setProcessing(true);
-        setErrorMessage("");
+        setDialogErrorMessage("");
         setValidationRemarks([]);
         setParsedClaims([]);
 
@@ -523,7 +525,7 @@ export default function ClaimSubmit() {
             );
 
             if (!batch) {
-                setErrorMessage("Batch not found");
+                setDialogErrorMessage("Batch not found");
                 setProcessing(false);
                 return;
             }
@@ -683,7 +685,7 @@ export default function ClaimSubmit() {
 
             const summaryMsg = buildPreviewValidationMessage(validationErrors);
             if (validationErrors.length > 0) {
-                setErrorMessage(`${validationErrors.length} validation issues found`);
+                setDialogErrorMessage(`${validationErrors.length} validation issues found`);
                 setPreviewValidationError(summaryMsg);
             } else {
                 setSuccessMessage(
@@ -693,7 +695,7 @@ export default function ClaimSubmit() {
             }
         } catch (error) {
             console.error("Parse error:", error);
-            setErrorMessage("Failed to parse file: " + error.message);
+            setDialogErrorMessage("Failed to parse file: " + error.message);
         }
         setProcessing(false);
     };
@@ -704,7 +706,7 @@ export default function ClaimSubmit() {
             parsedClaims.length === 0 ||
             !selectedBatch
         ) {
-            setErrorMessage(isBrinsUser ? "No valid recoveries to upload" : "No valid claims to upload");
+            setDialogErrorMessage(isBrinsUser ? "No valid recoveries to upload" : "No valid claims to upload");
             return;
         }
 
@@ -714,7 +716,7 @@ export default function ClaimSubmit() {
             const batch = batches.find((b) => b.batch_id === selectedBatch);
 
             if (!batch) {
-                setErrorMessage("Batch not found");
+                setDialogErrorMessage("Batch not found");
                 setProcessing(false);
                 return;
             }
@@ -737,7 +739,7 @@ export default function ClaimSubmit() {
             );
 
             if (!hasCompletedPayment && batchNotas.length > 0) {
-                setErrorMessage(
+                setDialogErrorMessage(
                     `❌ BLOCKED: ${isBrinsUser ? 'Recovery' : 'Claim'} submission not allowed. Nota must be PAID first.`,
                 );
 
@@ -978,7 +980,7 @@ export default function ClaimSubmit() {
             }
 
             if (errors.length > 0) {
-                setErrorMessage(
+                setDialogErrorMessage(
                     `Uploaded ${uploaded} ${isBrinsUser ? 'recoveries' : 'claims'}, but ${errors.length} failed: ${errors.join("; ")}`,
                 );
             } else {
@@ -995,7 +997,7 @@ export default function ClaimSubmit() {
             }, 1000);
         } catch (error) {
             console.error("Upload error:", error);
-            setErrorMessage("Failed to upload " + (isBrinsUser ? "recoveries: " : "claims: ") + error.message);
+            setDialogErrorMessage("Failed to upload " + (isBrinsUser ? "recoveries: " : "claims: ") + error.message);
         }
         setProcessing(false);
     };
@@ -1077,13 +1079,7 @@ export default function ClaimSubmit() {
                     </AlertDescription>
                 </Alert>
             )}
-
-            {errorMessage && (
-                <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{errorMessage}</AlertDescription>
-                </Alert>
-            )}
+            
 
             {/* Validation issues are shown in the upload preview dialog only. */}
 
@@ -1439,7 +1435,7 @@ export default function ClaimSubmit() {
                         setUploadFile(null);
                         setUploadTabActive(1);
                         setPreviewValidationError("");
-                        setErrorMessage("");
+                        setDialogErrorMessage("");
                         setSuccessMessage("");
                     }
                 }}
@@ -1545,7 +1541,7 @@ export default function ClaimSubmit() {
                                                 setValidationRemarks([]);
                                                 setPreviewValidationError("");
                                                 setSuccessMessage("");
-                                                setErrorMessage("");
+                                                setDialogErrorMessage("");
                                             }
                                         }}
                                         disabled={!selectedBatch}
@@ -1573,7 +1569,12 @@ export default function ClaimSubmit() {
                                     </div>
                                 </div>
 
-                                {validationRemarks.length > 0 ? (
+                                {dialogErrorMessage ? (
+                                    <Alert variant="destructive">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertDescription>{dialogErrorMessage}</AlertDescription>
+                                    </Alert>
+                                ) : validationRemarks.length > 0 ? (
                                     <Alert className="bg-red-50 border-red-200">
                                         <AlertCircle className="h-4 w-4 text-red-600" />
                                         <AlertDescription className="text-red-700">
@@ -1668,7 +1669,10 @@ export default function ClaimSubmit() {
                         {uploadTabActive === 1 && (
                             <Button
                                 onClick={async () => {
-                                    if (!uploadFile || !selectedBatch) return setErrorMessage("Select batch and file first");
+                                    if (!uploadFile || !selectedBatch) {
+                                        setDialogErrorMessage("Select batch and file first");
+                                        return;
+                                    }
                                     await handleFileUpload(uploadFile);
                                     // After parsing and validation, show preview
                                     setUploadTabActive(2);
@@ -2001,7 +2005,7 @@ export default function ClaimSubmit() {
                                                 loadData();
                                             } catch (error) {
                                                 console.error("Failed to create subrogation:", error);
-                                                setErrorMessage("Failed to create subrogation: " + error.message);
+                                                setDialogErrorMessage("Failed to create subrogation: " + error.message);
                                             }
                                             setProcessing(false);
                                         }}

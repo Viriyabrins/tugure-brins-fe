@@ -844,8 +844,16 @@ export default function SubmitDebtor() {
             const dbDups = duplicateCheckResult?.databaseDuplicates || [];
 
             // If database duplicates exist, reject upload entirely
-            if (dbDups && dbDups.length > 0) {
-                const dbDupMessages = dbDups
+            // For revise batch mode, ignore duplicates on nomor_peserta and policy_no
+            let effectiveDbDups = dbDups || [];
+            if (batchMode === 'revise') {
+                effectiveDbDups = effectiveDbDups.filter(
+                    (dup) => dup.field !== 'nomor_peserta' && dup.field !== 'policy_no',
+                );
+            }
+
+            if (effectiveDbDups && effectiveDbDups.length > 0) {
+                const dbDupMessages = effectiveDbDups
                     .map((dup) => {
                         const fieldLabel = dup.field === 'nomor_peserta'
                             ? 'Nomor Peserta'
@@ -855,9 +863,9 @@ export default function SubmitDebtor() {
                     .slice(0, 5);
 
                 const dbErrorMsg =
-                    `Upload rejected: ${dbDups.length} record(s) already exist in database.\n` +
+                    `Upload rejected: ${effectiveDbDups.length} record(s) already exist in database.\n` +
                     dbDupMessages.join('\n') +
-                    (dbDups.length > 5 ? `\n...and ${dbDups.length - 5} more` : '');
+                    (effectiveDbDups.length > 5 ? `\n...and ${effectiveDbDups.length - 5} more` : '');
 
                 setErrorMessage(dbErrorMsg);
                 toast.error('Upload contains duplicates from database. Please verify your data.');
@@ -2581,8 +2589,8 @@ export default function SubmitDebtor() {
                                                     key={c.contract_id}
                                                     value={c.contract_id}
                                                 >
-                                                    {c.contract_id} -
-                                                    {c.status_approval === "APPROVED"}
+                                                    {c.contract_id} - 
+                                                    {c.status_approval === "APPROVED" ? " APPROVED" : "Not Approved"}
                                                 </SelectItem>
                                             ))}
                                         </SelectContent>

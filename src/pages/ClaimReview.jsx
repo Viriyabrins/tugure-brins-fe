@@ -36,6 +36,7 @@ import {
     ShieldCheck,
     Pen,
 } from "lucide-react";
+import { toast } from "sonner";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import { Checkbox } from "@/components/ui/checkbox";
 import { backend } from "@/api/backendClient";
@@ -232,10 +233,10 @@ export default function ClaimReview() {
                             entity_type: "Claim",
                             entity_id:
                                 selectedClaim.claim_no || selectedClaim.id,
-                            old_value: {},
-                            new_value: {
+                            old_value: JSON.stringify({}),
+                            new_value: JSON.stringify({
                                 blocked_reason: "Nota payment not completed",
-                            },
+                            }),
                             user_email: auditActor?.user_email || user?.email,
                             user_role: auditActor?.user_role || user?.role,
                             reason: "Attempted claim review before Nota payment",
@@ -1127,9 +1128,14 @@ export default function ClaimReview() {
                             Cancel
                         </Button>
                         <Button
-                            onClick={handleClaimAction}
+                            onClick={(e) => {
+                                console.log('ClaimReview: Confirm clicked', { actionType, processing, selectedClaim });
+                                toast.info('Confirm clicked');
+                                handleClaimAction();
+                            }}
                             disabled={processing}
                             className="bg-blue-600"
+                            type="button"
                         >
                             {processing ? (
                                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

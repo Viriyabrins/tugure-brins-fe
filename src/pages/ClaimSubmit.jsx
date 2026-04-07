@@ -801,49 +801,145 @@ export default function ClaimSubmit() {
                     );
                     const dolISO = formatDateToISO(claim.dol);
 
-                    await backend.create("Claim", {
-                        claim_no: claimNo,
-                        policy_no: claim.policy_no,
-                        nomor_sertifikat: claim.nomor_sertifikat,
-                        nama_tertanggung: claim.nama_tertanggung,
-                        no_ktp_npwp: claim.no_ktp_npwp,
-                        no_fasilitas_kredit: claim.no_fasilitas_kredit,
-                        bdo_premi: claim.bdo_premi,
-                        tanggal_realisasi_kredit: tanggalRealisasiISO,
-                        plafond: claim.plafond,
-                        max_coverage: claim.max_coverage,
-                        kol_debitur: claim.kol_debitur,
-                        dol: dolISO,
-                        nilai_klaim: claim.nilai_klaim,
-                        // tahun_polis: claim.tahun_polis,
-                        share_tugure_percentage: claim.share_tugure_percentage,
-                        share_tugure_amount: claim.share_tugure_amount,
-                        check_bdo_premi: claim.check_bdo_premi,
-                        debtor_id: claim.debtor_id || "",
-                        contract_id: claim.contract_id || "",
-                        batch_id: batch.batch_id,
-                        nomor_peserta: claim.nomor_peserta,
-                        status: "SUBMITTED",
-                        version_no: 1,
-                    });
+                    if (isBrinsUser) {
+                        // Brins users upload recoveries -> create Subrogation records
+                        const subrogationId = `SUB-${Date.now()}-${sequence}`;
+                        const claimRef = claim.claim_no || claim.claimNo || claim.claimno || "";
+                        if (!claimRef) {
+                            throw new Error('Missing claim reference for subrogation');
+                        }
 
-                    // Create audit log
-                    await backend.create("AuditLog", {
-                        action: "CLAIM_CREATED",
-                        module: "CLAIM",
-                        entity_type: "Claim",
-                        entity_id: claimNo,
-                        old_value: "{}",
-                        new_value: JSON.stringify({
-                            batch_id: batch.batch_id,
+                        await backend.create("Subrogation", {
+                            subrogation_id: subrogationId,
+                            claim_id: claimRef,
+                            debtor_id: claim.debtor_id || claim.debtorId || "",
+                            recovery_amount: toNumber(claim.recovery_amount || claim.nilai_klaim || 0),
+                            recovery_date: formatDateToISO(claim.recovery_date || claim.tanggal_realisasi_kredit || claim.dol),
+                            status: "SUBMITTED",
+                            remarks: claim.remarks || "",
+                        });
+
+                        // Audit + notification for subrogation
+                        try {
+                            await backend.create("AuditLog", {
+                                action: "SUBROGATION_CREATED",
+                                module: "SUBROGATION",
+                                entity_type: "Subrogation",
+                                entity_id: subrogationId,
+                                old_value: "{}",
+                                new_value: JSON.stringify({ claim_id: claimRef, recovery_amount: claim.recovery_amount || claim.nilai_klaim }),
+                                user_email: user?.email,
+                                user_role: user?.role,
+                                reason: "Bulk recovery upload",
+                            });
+                        } catch (auditError) {
+                            console.warn('Failed to create audit log for subrogation:', auditError);
+                        }
+
+                        try {
+                            await backend.create("Notification", {
+                                title: "New Subrogation Created",
+                                message: `Subrogation ${subrogationId} created for claim ${claimRef}`,
+                                type: "INFO",
+                                module: "SUBROGATION",
+                                reference_id: subrogationId,
+                                target_role: "TUGURE",
+                            });
+                        } catch (notifError) {
+                            console.warn('Failed to create notification for subrogation:', notifError);
+                        }
+
+                        uploaded++;
+                    } else {
+                        await backend.create("Claim", {
+                            claim_no: claimNo,
+                            policy_no: claim.policy_no,
+                            nomor_sertifikat: claim.nomor_sertifikat,
+                            nama_tertanggung: claim.nama_tertanggung,
+                            no_ktp_npwp: claim.no_ktp_npwp,
+                            no_fasilitas_kredit: claim.no_fasilitas_kredit,
+                            bdo_premi: claim.bdo_premi,
+                            tanggal_realisasi_kredit: tanggalRealisasiISO,
+                            plafond: claim.plafon,
+                            max_coverage: claim.max_coverage,
+                            kol_debitur: claim.kol_debitur,
+                            dol: dolISO,
                             nilai_klaim: claim.nilai_klaim,
-                        }),
-                        user_email: user?.email,
-                        user_role: user?.role,
-                        reason: "Bulk upload from file",
-                    });
+                            // tahun_polis: claim.tahun_polis,
+                            share_tugure_percentage: claim.share_tugure_percentage,
+                            share_tugure_amount: claim.share_tugure_amount,
+                            check_bdo_premi: claim.check_bdo_premi,
+                            debtor_id: claim.debtor_id || "",
+                            contract_id: claim.contract_id || "",
+                            batch_id: batch.batch_id,
+                            nomor_peserta: claim.nomor_peserta,
+                            status: "SUBMITTED",
+                            version_no: 1,
+                        });
 
-                    uploaded++;
+                        // Also create a Subrogation record for this new Claim so it appears in Subrogation tab
+                        try {
+                            const subrogationId = `SUB-${Date.now()}-${sequence}`;
+                            await backend.create("Subrogation", {
+                                subrogation_id: subrogationId,
+                                claim_id: claimNo,
+                                debtor_id: claim.debtor_id || "",
+                                recovery_amount: toNumber(claim.nilai_klaim || 0),
+                                recovery_date: tanggalRealisasiISO || null,
+                                status: "SUBMITTED",
+                                remarks: "Auto-created from Claim upload",
+                            });
+
+                            try {
+                                await backend.create("AuditLog", {
+                                    action: "SUBROGATION_CREATED",
+                                    module: "SUBROGATION",
+                                    entity_type: "Subrogation",
+                                    entity_id: subrogationId,
+                                    old_value: "{}",
+                                    new_value: JSON.stringify({ claim_id: claimNo, recovery_amount: claim.nilai_klaim }),
+                                    user_email: user?.email,
+                                    user_role: user?.role,
+                                    reason: "Auto-created from Claim upload",
+                                });
+                            } catch (auditErr) {
+                                console.warn('Failed to create audit log for auto subrogation:', auditErr);
+                            }
+
+                            try {
+                                await backend.create("Notification", {
+                                    title: "New Subrogation Created",
+                                    message: `Subrogation ${subrogationId} auto-created for claim ${claimNo}`,
+                                    type: "INFO",
+                                    module: "SUBROGATION",
+                                    reference_id: subrogationId,
+                                    target_role: "TUGURE",
+                                });
+                            } catch (notifErr) {
+                                console.warn('Failed to notify for auto subrogation:', notifErr);
+                            }
+                        } catch (subErr) {
+                            console.error('Failed to auto-create subrogation for claim:', subErr);
+                        }
+
+                        // Create audit log
+                        await backend.create("AuditLog", {
+                            action: "CLAIM_CREATED",
+                            module: "CLAIM",
+                            entity_type: "Claim",
+                            entity_id: claimNo,
+                            old_value: "{}",
+                            new_value: JSON.stringify({
+                                batch_id: batch.batch_id,
+                                nilai_klaim: claim.nilai_klaim,
+                            }),
+                            user_email: user?.email,
+                            user_role: user?.role,
+                            reason: "Bulk upload from file",
+                        });
+
+                        uploaded++;
+                    }
                 } catch (createError) {
                     errors.push(`Row ${uploaded + 1}: ${createError.message}`);
                     console.error("Failed to create claim:", createError);

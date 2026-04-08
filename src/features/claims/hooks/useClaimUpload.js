@@ -34,9 +34,10 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
     /**
      * Step 1: Parse the file, run validation, and populate preview state.
      * Call this when the user clicks "Preview Data →".
+     * Returns true if parse succeeded (rows loaded), false on error.
      */
     const handleFileUpload = async (file, selectedBatch) => {
-        if (!file || !selectedBatch) return;
+        if (!file || !selectedBatch) return false;
         setProcessing(true);
         setDialogError("");
         setValidationRemarks([]);
@@ -49,7 +50,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
             if (!batch) {
                 setDialogError("Batch not found");
                 setProcessing(false);
-                return;
+                return false;
             }
 
             const batchDebtors = debtors.filter(
@@ -61,18 +62,21 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
             const validationErrors = [];
 
             for (const row of rows) {
-                const { debtor, issues } = validateClaimRow(
-                    row,
-                    batchDebtors,
-                );
+                // BRINS users upload recovery data — debtor matching is not
+                // required because they reference an existing claim_no instead.
+                const { debtor, issues } = isBrinsUser
+                    ? { debtor: undefined, issues: [] }
+                    : validateClaimRow(row, batchDebtors);
+
                 if (issues.length > 0) {
                     validationErrors.push({
                         row: row.excelRow,
-                        participant: row.nomor_peserta || "Unknown",
+                        participant: row.nomor_peserta || row.claim_no || "Unknown",
                         issues,
                     });
                 }
                 parsed.push({
+                    claim_no: row.claim_no,
                     excelRow: row.excelRow,
                     policy_no: row.policy_no,
                     nomor_sertifikat: row.nomor_sertifikat,
@@ -102,11 +106,15 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
 
             const fileErrors = validateFileInternalDuplicates(parsed);
             validationErrors.push(...fileErrors);
-            const batchErrors = await validateBatchDuplicates(
-                parsed,
-                batch.batch_id,
-            );
-            validationErrors.push(...batchErrors);
+            // For BRINS recovery uploads, skip claim-level duplicate check
+            // (Subrogation duplicates are handled at DB level by claim_id uniqueness).
+            if (!isBrinsUser) {
+                const batchErrors = await validateBatchDuplicates(
+                    parsed,
+                    batch.batch_id,
+                );
+                validationErrors.push(...batchErrors);
+            }
 
             setParsedClaims(parsed);
             setValidationRemarks(validationErrors);
@@ -121,11 +129,14 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
             } else {
                 setPreviewValidationError("");
             }
+            setProcessing(false);
+            return true;
         } catch (err) {
             console.error("Parse error:", err);
             setDialogError("Failed to parse file: " + err.message);
         }
         setProcessing(false);
+        return false;
     };
 
     /**

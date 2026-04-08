@@ -74,6 +74,7 @@ export default function ClaimSubmit() {
         user,
         isBrinsUser,
         onSuccess: (msg) => {
+            closeDialog("upload");
             setSuccessMessage(msg);
             loadAll();
         },

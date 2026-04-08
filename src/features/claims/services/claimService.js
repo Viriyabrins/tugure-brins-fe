@@ -33,15 +33,50 @@ export const claimService = {
         const dolISO = getExcelDate(claim.dol);
 
         if (isBrinsUser) {
-            const claimRef =
-                claim.claim_no || claim.claimNo || claim.claimno || "";
-            if (!claimRef)
-                throw new Error("Missing claim reference for subrogation");
+            // Step 1: Create the Claim record so it appears in the Recoveries tab.
+            await backend.create("Claim", {
+                claim_no: claimNo,
+                policy_no: claim.policy_no,
+                nomor_sertifikat: claim.nomor_sertifikat,
+                nama_tertanggung: claim.nama_tertanggung,
+                no_ktp_npwp: claim.no_ktp_npwp,
+                no_fasilitas_kredit: claim.no_fasilitas_kredit,
+                bdo_premi: claim.bdo_premi,
+                tanggal_realisasi_kredit: tanggalRealisasiISO,
+                plafond: claim.plafond,
+                max_coverage: claim.max_coverage,
+                kol_debitur: claim.kol_debitur,
+                dol: dolISO,
+                nilai_klaim: claim.nilai_klaim,
+                share_tugure_percentage: claim.share_tugure_percentage,
+                share_tugure_amount: claim.share_tugure_amount,
+                check_bdo_premi: claim.check_bdo_premi,
+                debtor_id: claim.debtor_id || "",
+                contract_id: claim.contract_id || "",
+                batch_id: batch.batch_id,
+                nomor_peserta: claim.nomor_peserta,
+                status: "SUBMITTED",
+                version_no: 1,
+            });
 
+            await claimService._audit(
+                "CLAIM_CREATED",
+                "CLAIM",
+                "Claim",
+                claimNo,
+                {
+                    batch_id: batch.batch_id,
+                    nilai_klaim: claim.nilai_klaim,
+                },
+                user,
+                "Bulk recovery upload (BRINS)",
+            );
+
+            // Step 2: Create the Subrogation pointing to the newly created Claim.
             const subrogationId = `SUB-${Date.now()}-${claimNo}`;
             await backend.create("Subrogation", {
                 subrogation_id: subrogationId,
-                claim_id: claimRef,
+                claim_id: claimNo,
                 debtor_id: claim.debtor_id || "",
                 recovery_amount: toNumber(
                     claim.recovery_amount || claim.nilai_klaim || 0,
@@ -61,15 +96,15 @@ export const claimService = {
                 "Subrogation",
                 subrogationId,
                 {
-                    claim_id: claimRef,
+                    claim_id: claimNo,
                     recovery_amount: claim.nilai_klaim,
                 },
                 user,
-                "Bulk recovery upload",
+                "Auto-created from recovery upload (BRINS)",
             );
             await claimService._notify(
-                "New Subrogation Created",
-                `Subrogation ${subrogationId} created for claim ${claimRef}`,
+                "New Recovery Submitted",
+                `Recovery ${subrogationId} submitted for claim ${claimNo}`,
                 "SUBROGATION",
                 subrogationId,
                 "TUGURE",

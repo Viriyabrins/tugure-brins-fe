@@ -109,8 +109,8 @@ export function ClaimUploadDialog({
 
     const handlePreview = async () => {
         if (!uploadFile || !selectedBatch) return;
-        await onPreview(uploadFile, selectedBatch);
-        setStep(2);
+        const success = await onPreview(uploadFile, selectedBatch);
+        if (success) setStep(2);
     };
 
     return (

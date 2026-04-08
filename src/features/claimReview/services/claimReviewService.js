@@ -70,12 +70,26 @@ export const claimReviewService = {
 
     async approveClaim(claim, remarks, user, auditActor) {
         const claimId = claim.claim_no || claim.id;
-        const notaNumber = `NOTA-CLM-${claim.claim_no}-${Date.now()}`;
+        const claimAmount = claim.nilai_klaim || 0;
+        const notaNumber = `NOTA-${claim.claim_no}-${Date.now()}`;
         await backend.create("Nota", {
-            nota_number: notaNumber, nota_type: "Claim", reference_id: claim.claim_no,
-            contract_id: claim.contract_id, amount: claim.share_tugure_amount || claim.nilai_klaim || 0,
-            currency: "IDR", status: "UNPAID", issued_by: auditActor?.user_email || user?.email,
-            issued_date: new Date().toISOString(), is_immutable: false, total_actual_paid: 0, reconciliation_status: "PENDING",
+            nota_number: notaNumber, 
+            nota_type: "Claim", 
+            reference_id: claim.claim_no,
+            contract_id: claim.contract_id, 
+            amount: claimAmount,
+            currency: "IDR", 
+            status: "UNPAID", 
+            issued_by: auditActor?.user_email || user?.email,
+            issued_date: new Date().toISOString(), 
+            is_immutable: false, 
+            total_actual_paid: 0, 
+            reconciliation_status: "PENDING",
+            premium: 0,
+            commission: 0,
+            claim: claimAmount,
+            total: claimAmount,
+            net_due: claimAmount,
         });
         await backend.update("Claim", claimId, {
             status: "APPROVED", approved_by: user?.email, approved_date: new Date().toISOString(),
@@ -105,12 +119,18 @@ export const claimReviewService = {
         const subId = subrogation.subrogation_id || subrogation.id;
         const associatedClaim = claims.find((c) => c.claim_no === subrogation.claim_id);
         const contractId = associatedClaim?.contract_id || "";
+        const recoveryAmount = parseFloat(subrogation.recovery_amount || 0);
         const notaNumber = `NOTA-SBR-${subId}-${Date.now()}`;
         await backend.create("Nota", {
             nota_number: notaNumber, nota_type: "Subrogation", reference_id: subId,
-            contract_id: contractId, amount: subrogation.recovery_amount || 0,
+            contract_id: contractId, amount: recoveryAmount,
             currency: "IDR", status: "UNPAID", issued_by: auditActor?.user_email || user?.email,
             issued_date: new Date().toISOString(), is_immutable: false, total_actual_paid: 0, reconciliation_status: "PENDING",
+            premium: 0,
+            commission: 0,
+            claim: recoveryAmount,
+            total: recoveryAmount,
+            net_due: recoveryAmount,
         });
         await backend.update("Subrogation", subId, {
             status: "APPROVED", approved_by: user?.email, approved_date: new Date().toISOString(),

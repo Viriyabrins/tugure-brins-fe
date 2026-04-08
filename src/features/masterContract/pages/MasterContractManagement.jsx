@@ -82,7 +82,7 @@ export default function MasterContractManagement() {
         },
         { header: "Contract No", cell: (row) => extractBaseContractNo(row.contract_no || row.contract_no_from || row.contract_id || "") || "-" },
         { header: "Underwriter Name", accessorKey: "underwriter_name" },
-        { header: "Contract Status", cell: (row) => <ApprovalBadge status={row.contract_status} /> },
+        { header: "Contract Status", cell: (row) => <span className="text-sm font-medium">{row.contract_status || "-"}</span> },
         { header: "Status Approval", cell: (row) => <ApprovalBadge status={row.status_approval} /> },
         { header: "Source Name", accessorKey: "source_name" },
         { header: "Ceding Name", accessorKey: "ceding_name" },

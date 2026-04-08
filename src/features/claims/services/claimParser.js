@@ -71,6 +71,7 @@ export async function parseClaimFile(file) {
     };
 
     const idx = {
+        claimNo: getFirst(["claim_no", "claimno", "claimno"]),
         nomorPeserta: getFirst(["nomor_peserta"]),
         policyNo: getFirst(["policy_no", "policyno"]),
         nomorSertifikat: getFirst(["nomor_sertifikat"]),
@@ -131,6 +132,7 @@ export async function parseClaimFile(file) {
         const share = findShareValues();
         return {
             excelRow: index + 2,
+            claim_no: toNullableString(read(idx.claimNo)),
             policy_no: toNullableString(read(idx.policyNo)),
             nomor_sertifikat: toNullableString(read(idx.nomorSertifikat)),
             nama_tertanggung: toNullableString(read(idx.namaTertanggung)),

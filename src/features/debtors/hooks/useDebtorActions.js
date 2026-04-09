@@ -21,6 +21,10 @@ export function useDebtorActions({ user, auditActor, debtors, selectedDebtors, s
     const [jobStatus, setJobStatus] = useState(null);
     const [pollingInterval, setPollingInterval] = useState(null);
 
+    // Action confirm dialog state
+    const [showActionConfirmDialog, setShowActionConfirmDialog] = useState(false);
+    const [actionConfirmSummary, setActionConfirmSummary] = useState(null);
+
     function _getUniqueBatches(ids) {
         return Array.from(
             new Set(
@@ -63,6 +67,37 @@ export function useDebtorActions({ user, auditActor, debtors, selectedDebtors, s
 
     async function handleScopeConfirm() {
         setShowScopeDialog(false);
+
+        // Compute summary for the confirmation dialog
+        let eligibleDebtors = [];
+        if (actionScope === "selected") {
+            eligibleDebtors = selectedDebtors
+                .map((id) => debtors.find((d) => d.id === id))
+                .filter(Boolean);
+        } else {
+            eligibleDebtors = debtors.filter((d) => d.batch_id === selectedBatchForAction);
+        }
+
+        const summary = eligibleDebtors.reduce(
+            (acc, d) => {
+                acc.totalNetPremi += parseFloat(d.net_premi) || 0;
+                acc.totalKomisi += parseFloat(d.ric_amount) || 0;
+                acc.totalPlafon += parseFloat(d.plafon) || 0;
+                acc.totalNominalPremi += parseFloat(d.nominal_premi) || 0;
+                acc.count += 1;
+                return acc;
+            },
+            { totalNetPremi: 0, totalKomisi: 0, totalPlafon: 0, totalNominalPremi: 0, count: 0 },
+        );
+        summary.batchId = selectedBatchForAction || eligibleDebtors[0]?.batch_id || "-";
+        summary.contractId = selectedContract || eligibleDebtors[0]?.contract_id || "-";
+
+        setActionConfirmSummary(summary);
+        setShowActionConfirmDialog(true);
+    }
+
+    async function handleActionConfirm() {
+        setShowActionConfirmDialog(false);
         if (actionScope === "selected") {
             if (pendingAction === "check") return handleCheckerBrinsCheck();
             if (pendingAction === "approve") return handleApproverBrinsApprove();
@@ -271,9 +306,12 @@ export function useDebtorActions({ user, auditActor, debtors, selectedDebtors, s
         pendingAction,
         showProgressModal, setShowProgressModal,
         jobId, jobStatus,
+        showActionConfirmDialog, setShowActionConfirmDialog,
+        actionConfirmSummary,
         handleActionButtonClick,
         handleBatchSelect,
         handleScopeConfirm,
+        handleActionConfirm,
         handleCheckerBrinsCheck,
         handleApproverBrinsApprove,
         handleRequestRevision,

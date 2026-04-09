@@ -33,7 +33,6 @@ export const claimService = {
         const dolISO = getExcelDate(claim.dol);
 
         if (isBrinsUser) {
-            // Step 1: Create the Claim record so it appears in the Recoveries tab.
             await backend.create("Claim", {
                 claim_no: claimNo,
                 policy_no: claim.policy_no,
@@ -70,44 +69,6 @@ export const claimService = {
                 },
                 user,
                 "Bulk recovery upload (BRINS)",
-            );
-
-            // Step 2: Create the Subrogation pointing to the newly created Claim.
-            const subrogationId = `SUB-${Date.now()}-${claimNo}`;
-            await backend.create("Subrogation", {
-                subrogation_id: subrogationId,
-                claim_id: claimNo,
-                debtor_id: claim.debtor_id || "",
-                recovery_amount: toNumber(
-                    claim.recovery_amount || claim.nilai_klaim || 0,
-                ),
-                recovery_date: getExcelDate(
-                    claim.recovery_date ||
-                        claim.tanggal_realisasi_kredit ||
-                        claim.dol,
-                ),
-                status: "SUBMITTED",
-                remarks: claim.remarks || "",
-            });
-
-            await claimService._audit(
-                "SUBROGATION_CREATED",
-                "SUBROGATION",
-                "Subrogation",
-                subrogationId,
-                {
-                    claim_id: claimNo,
-                    recovery_amount: claim.nilai_klaim,
-                },
-                user,
-                "Auto-created from recovery upload (BRINS)",
-            );
-            await claimService._notify(
-                "New Recovery Submitted",
-                `Recovery ${subrogationId} submitted for claim ${claimNo}`,
-                "SUBROGATION",
-                subrogationId,
-                "TUGURE",
             );
         } else {
             await backend.create("Claim", {
@@ -147,38 +108,6 @@ export const claimService = {
                 user,
                 "Bulk upload from file",
             );
-
-            // Auto-create a Subrogation so it appears in the Subrogation tab
-            try {
-                const subrogationId = `SUB-${Date.now()}-${claimNo}`;
-                await backend.create("Subrogation", {
-                    subrogation_id: subrogationId,
-                    claim_id: claimNo,
-                    debtor_id: claim.debtor_id || "",
-                    recovery_amount: toNumber(claim.nilai_klaim || 0),
-                    recovery_date: tanggalRealisasiISO || null,
-                    status: "SUBMITTED",
-                    remarks: "Auto-created from Claim upload",
-                });
-                await claimService._audit(
-                    "SUBROGATION_CREATED",
-                    "SUBROGATION",
-                    "Subrogation",
-                    subrogationId,
-                    { claim_id: claimNo, recovery_amount: claim.nilai_klaim },
-                    user,
-                    "Auto-created from Claim upload",
-                );
-                await claimService._notify(
-                    "New Subrogation Created",
-                    `Subrogation ${subrogationId} auto-created for claim ${claimNo}`,
-                    "SUBROGATION",
-                    subrogationId,
-                    "TUGURE",
-                );
-            } catch (err) {
-                console.error("Failed to auto-create subrogation:", err);
-            }
         }
     },
 
@@ -237,7 +166,7 @@ export const claimService = {
                     if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
                 }
             }
-        } catch (_) {}
+        } catch (_) { }
         return maxSeq;
     },
 

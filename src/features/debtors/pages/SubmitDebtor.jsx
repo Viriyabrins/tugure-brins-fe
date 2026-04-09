@@ -193,6 +193,18 @@ export default function SubmitDebtor() {
 
     const previewKeys = getPreviewColumnKeys(upload.uploadPreviewData);
 
+    const previewTotals = upload.uploadPreviewData.reduce(
+        (acc, r) => {
+            acc.totalNetPremi += parseFloat(r.net_premi) || 0;
+            acc.totalKomisi += parseFloat(r.ric_amount) || 0;
+            acc.totalPlafon += parseFloat(r.plafon) || 0;
+            acc.totalNominalPremi += parseFloat(r.nominal_premi) || 0;
+            return acc;
+        },
+        { totalNetPremi: 0, totalKomisi: 0, totalPlafon: 0, totalNominalPremi: 0 },
+    );
+    const previewBatchId = upload.uploadPreviewData[0]?.batch_id || "-";
+
     // Upload error view
     function formatUploadErrorView(message) {
         if (!message) return { title: "", items: [], summary: "" };
@@ -466,6 +478,80 @@ export default function SubmitDebtor() {
                 </DialogContent>
             </Dialog>
 
+            {/* ── Action Confirm dialog (Preview Total) ──────────────────────── */}
+            <Dialog open={actions.showActionConfirmDialog} onOpenChange={actions.setShowActionConfirmDialog}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Konfirmasi {actions.pendingAction === "check" ? "Check" : "Approve"} Debtor
+                        </DialogTitle>
+                        <DialogDescription>
+                            Periksa ringkasan total sebelum melanjutkan proses{" "}
+                            {actions.pendingAction === "check" ? "pengecekan" : "persetujuan"}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {actions.actionConfirmSummary && (
+                        <div className="space-y-4 py-2">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 col-span-2">
+                                    <p className="text-xs text-gray-500 mb-1">Batch ID</p>
+                                    <p className="text-base font-semibold font-mono text-gray-900">
+                                        {actions.actionConfirmSummary.batchId}
+                                    </p>
+                                </div>
+                                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                                    <p className="text-xs text-gray-500 mb-1">Total Jumlah Debtor</p>
+                                    <p className="text-2xl font-bold text-blue-700">
+                                        {actions.actionConfirmSummary.count}
+                                    </p>
+                                </div>
+                                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                                    <p className="text-xs text-gray-500 mb-1">Total Net Premi</p>
+                                    <p className="text-lg font-bold text-green-700">
+                                        {formatRupiahAdaptive(actions.actionConfirmSummary.totalNetPremi)}
+                                    </p>
+                                </div>
+                                <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200 col-span-2">
+                                    <p className="text-xs text-gray-500 mb-1">Total Nilai Komisi</p>
+                                    <p className="text-lg font-bold text-indigo-700">
+                                        {formatRupiahAdaptive(actions.actionConfirmSummary.totalKomisi)}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Contract</span>
+                                    <span className="font-medium">{actions.actionConfirmSummary.contractId}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Total Plafon</span>
+                                    <span className="font-medium">{formatRupiahAdaptive(actions.actionConfirmSummary.totalPlafon)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Total Nominal Premi</span>
+                                    <span className="font-medium">{formatRupiahAdaptive(actions.actionConfirmSummary.totalNominalPremi)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Scope</span>
+                                    <span className="font-medium">
+                                        {actions.actionScope === "selected" ? `${selectedDebtors.length} dipilih` : "Seluruh batch"}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => actions.setShowActionConfirmDialog(false)}>
+                            Batal
+                        </Button>
+                        <Button onClick={actions.handleActionConfirm}>
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            {actions.pendingAction === "check" ? "Confirm Check" : "Confirm Approve"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* ── Progress modal ─────────────────────────────────────────────── */}
             <Dialog open={actions.showProgressModal} onOpenChange={actions.setShowProgressModal}>
                 <DialogContent className="max-w-2xl">
@@ -556,21 +642,21 @@ export default function SubmitDebtor() {
                 <DialogContent className="max-w-4xl w-full" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                     <DialogHeader className="shrink-0">
                         <DialogTitle>
-                            {upload.uploadTabActive === 1 ? "Upload Debtors" : upload.uploadTabActive === 2 ? "Debtor Preview" : "Resolve Duplicates"}
+                            {upload.uploadTabActive === 1 ? "Upload Debtors" : upload.uploadTabActive === 2 ? "Debtor Preview" : "Preview Total"}
                         </DialogTitle>
                         <DialogDescription>
                             {upload.uploadTabActive === 1
                                 ? "Upload CSV/XLS/XLSX file containing debtor information"
                                 : upload.uploadTabActive === 2
                                 ? "Periksa data sebelum disimpan ke database"
-                                : "Select which duplicate rows to exclude from upload"}
+                                : "Review total summary before confirming upload to database"}
                         </DialogDescription>
                         {/* Stepper */}
                         <div className="flex mt-3 gap-2">
                             {[
                                 { step: 1, label: "Upload" },
-                                { step: 2, label: upload.uploadTabActive === 3 ? "Resolve Duplicates" : "Preview" },
-                                { step: 3, label: "Preview" },
+                                { step: 2, label: "Preview" },
+                                { step: 3, label: "Preview Total" },
                             ].map(({ step, label }) => {
                                 const isActive = upload.uploadTabActive === step;
                                 const isDone = upload.uploadTabActive > step;
@@ -744,61 +830,50 @@ export default function SubmitDebtor() {
                             </>
                         )}
 
-                        {/* Tab 3: Deduplication */}
+                        {/* Tab 3: Preview Total */}
                         {upload.uploadTabActive === 3 && (
                             <>
-                                <Alert className="bg-amber-50 border-amber-200">
-                                    <AlertCircle className="h-4 w-4 text-amber-600" />
-                                    <AlertDescription className="text-amber-800">
-                                        <p className="font-medium mb-2">Duplicate records detected in upload file</p>
-                                        <p className="text-sm">{upload.fileDuplicates.length} duplicate group(s) found. Select which rows to EXCLUDE from upload.</p>
+                                <Alert className="bg-blue-50 border-blue-200">
+                                    <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                                    <AlertDescription className="text-blue-700">
+                                        Data preview complete. Review the total summary below before confirming upload.
                                     </AlertDescription>
                                 </Alert>
-                                {upload.fileDuplicates.map((dupGroup, gi) => {
-                                    const key = `${dupGroup.field}:${dupGroup.value}`;
-                                    const isExcluding = upload.fileDuplicateResolutions[key] || [];
-                                    return (
-                                        <div key={gi} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                            <p className="font-medium text-sm mb-3">
-                                                {dupGroup.field === "nomor_peserta" ? "Nomor Peserta" : "Policy No"}:
-                                                <span className="text-blue-600 font-semibold ml-2">{dupGroup.value}</span>
-                                            </p>
-                                            <div className="space-y-2 ml-4">
-                                                <p className="text-xs text-gray-600 mb-2">Found in <span className="font-medium">{dupGroup.rowIndices.length}</span> row(s). Select which to <span className="font-medium">EXCLUDE</span>:</p>
-                                                {dupGroup.rowIndices.map((rowIdx) => {
-                                                    const row = upload.uploadPreviewData[rowIdx];
-                                                    const isExcluded = isExcluding.includes(rowIdx);
-                                                    return (
-                                                        <div key={rowIdx} className="flex items-start gap-3 p-2 bg-white rounded border border-gray-200">
-                                                            <Checkbox
-                                                                checked={isExcluded}
-                                                                onCheckedChange={(checked) => {
-                                                                    const next = isExcluding.filter((i) => i !== rowIdx);
-                                                                    if (checked) next.push(rowIdx);
-                                                                    upload.setFileDuplicateResolutions({ ...upload.fileDuplicateResolutions, [key]: next });
-                                                                }}
-                                                                id={`${key}-${rowIdx}`}
-                                                            />
-                                                            <label htmlFor={`${key}-${rowIdx}`} className="flex-1 text-sm cursor-pointer">
-                                                                <p className="font-medium text-gray-700">Row {rowIdx + 2}</p>
-                                                                <p className="text-xs text-gray-500 mt-1">
-                                                                    {row?.nama_peserta || "N/A"} | {row?.plafon ? formatRupiahAdaptive(row.plafon) : "N/A"}
-                                                                </p>
-                                                            </label>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200 mt-4">
-                                    <p className="text-sm text-blue-800">
-                                        <span className="font-medium">Summary:</span>{" "}
-                                        {upload.uploadPreviewData.length} total rows →{" "}
-                                        {upload.uploadPreviewData.length - Object.values(upload.fileDuplicateResolutions).flat().length} rows to upload{" "}
-                                        ({Object.values(upload.fileDuplicateResolutions).flat().length} excluded)
-                                    </p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 col-span-2">
+                                        <p className="text-xs text-gray-500 mb-1">Batch ID</p>
+                                        <p className="text-lg font-semibold font-mono text-gray-900">{previewBatchId}</p>
+                                    </div>
+                                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                        <p className="text-xs text-gray-500 mb-1">Total Jumlah Debtor</p>
+                                        <p className="text-2xl font-bold text-blue-700">{upload.uploadPreviewData.length}</p>
+                                    </div>
+                                    <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                                        <p className="text-xs text-gray-500 mb-1">Total Net Premi</p>
+                                        <p className="text-xl font-bold text-green-700">{formatRupiahAdaptive(previewTotals.totalNetPremi)}</p>
+                                    </div>
+                                    <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200 col-span-2">
+                                        <p className="text-xs text-gray-500 mb-1">Total Nilai Komisi</p>
+                                        <p className="text-xl font-bold text-indigo-700">{formatRupiahAdaptive(previewTotals.totalKomisi)}</p>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Contract</span>
+                                        <span className="font-medium">{upload.selectedContract || "-"}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Mode</span>
+                                        <span className="font-medium">{upload.batchMode === "new" ? "New Batch" : "Revise"}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Total Plafon</span>
+                                        <span className="font-medium">{formatRupiahAdaptive(previewTotals.totalPlafon)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Total Nominal Premi</span>
+                                        <span className="font-medium">{formatRupiahAdaptive(previewTotals.totalNominalPremi)}</span>
+                                    </div>
                                 </div>
                             </>
                         )}
@@ -820,27 +895,19 @@ export default function SubmitDebtor() {
                                         <ChevronLeft className="w-4 h-4 mr-2" />Back to Upload
                                     </Button>
                                     <Button variant="outline" onClick={() => upload.setUploadDialogOpen(false)} disabled={upload.uploading}>Cancel</Button>
-                                    <Button onClick={upload.handleConfirmSave} disabled={upload.uploading}>
-                                        {upload.uploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Uploading...</> : <><Upload className="w-4 h-4 mr-2" />Confirm Upload</>}
+                                    <Button onClick={() => upload.setUploadTabActive(3)} disabled={upload.uploading}>
+                                        <ChevronRight className="w-4 h-4 mr-2" />Preview Total
                                     </Button>
                                 </>
                             )}
                             {upload.uploadTabActive === 3 && (
                                 <>
-                                    <Button variant="outline" onClick={() => { upload.setUploadTabActive(1); upload.setUploadError(""); }} disabled={upload.uploadPreviewLoading}>
-                                        <ChevronLeft className="w-4 h-4 mr-2" />Back to Upload
+                                    <Button variant="outline" onClick={() => { upload.setUploadTabActive(2); upload.setUploadError(""); }} disabled={upload.uploading}>
+                                        <ChevronLeft className="w-4 h-4 mr-2" />Back to Preview
                                     </Button>
-                                    <Button
-                                        onClick={() => {
-                                            const excluded = new Set(Object.values(upload.fileDuplicateResolutions).flat());
-                                            upload.setUploadPreviewData(upload.uploadPreviewData.filter((_, i) => !excluded.has(i)));
-                                            upload.setFileDuplicates([]);
-                                            upload.setFileDuplicateResolutions({});
-                                            upload.setUploadTabActive(2);
-                                        }}
-                                        disabled={upload.uploadPreviewLoading}
-                                    >
-                                        <ChevronRight className="w-4 h-4 mr-2" />Apply & Continue to Preview
+                                    <Button variant="outline" onClick={() => upload.setUploadDialogOpen(false)} disabled={upload.uploading}>Cancel</Button>
+                                    <Button onClick={upload.handleConfirmSave} disabled={upload.uploading}>
+                                        {upload.uploading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Uploading...</> : <><Upload className="w-4 h-4 mr-2" />Confirm Upload</>}
                                     </Button>
                                 </>
                             )}

@@ -167,15 +167,6 @@ export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadIn
                 return;
             }
 
-            if (fileDups.length > 0) {
-                setFileDuplicates(fileDups);
-                setDatabaseDuplicates([]);
-                setUploadPreviewData(previewPayloads);
-                setFileDuplicateResolutions({});
-                setUploadTabActive(3);
-                return;
-            }
-
             setFileDuplicates([]);
             setDatabaseDuplicates([]);
             setFileDuplicateResolutions({});
@@ -203,6 +194,8 @@ export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadIn
         const borderoId = uploadPreviewData[0].bordero_id;
         const contractId = uploadPreviewData[0].contract_id;
         const createdDebtorIds = [];
+        let batchCreatedByUs = false;
+        let borderoCreatedByUs = false;
 
         try {
             const totalExposure = uploadPreviewData.reduce((s, r) => s + (r.plafon || 0), 0);
@@ -210,9 +203,11 @@ export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadIn
 
             if (batchMode === "new") {
                 await debtorService.createBatch(batchId, contractId, uploadPreviewData.length, totalExposure, totalPremium);
+                batchCreatedByUs = true;
                 const now = new Date();
                 const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
                 await debtorService.createBordero(borderoId, contractId, batchId, period);
+                borderoCreatedByUs = true;
             }
 
             const result = await debtorService.uploadDebtorsAtomic(batchMode, selectedBatch, uploadPreviewData);
@@ -270,16 +265,12 @@ export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadIn
         } catch (e) {
             console.error("Upload error:", e);
 
-            // Rollback
+            // Rollback — only undo records WE created in this attempt
             for (const id of createdDebtorIds.reverse()) {
                 await debtorService.deleteDebtor(id);
             }
-            if (batchMode === "new") {
-                const bId = uploadPreviewData[0]?.batch_id;
-                const brId = uploadPreviewData[0]?.bordero_id;
-                if (brId) await debtorService.deleteBordero(brId);
-                if (bId) await debtorService.deleteBatch(bId);
-            }
+            if (borderoCreatedByUs) await debtorService.deleteBordero(borderoId);
+            if (batchCreatedByUs) await debtorService.deleteBatch(batchId);
 
             const msg = `Upload failed: ${e.message}`;
             setUploadError(msg);

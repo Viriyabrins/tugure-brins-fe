@@ -16,6 +16,7 @@ export default defineConfig({
   },
   // Dev server proxy settings (useful for local/staging dev)
   server: {
+    host:'0.0.0.0',
     proxy: {
       '/api': {
         // Prefer explicit Vite proxy env, then production PROXY_TARGET, then fallback

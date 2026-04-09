@@ -27,6 +27,7 @@ import { useClaimData } from "../hooks/useClaimData";
 import { useClaimUpload } from "../hooks/useClaimUpload";
 import { ClaimUploadDialog } from "../components/ClaimUploadDialog";
 import { SubrogationDialog } from "../components/SubrogationDialog";
+import { FilePreviewModal } from "../components/FilePreviewModal";
 import { ClaimTrendTab } from "../components/ClaimTrendTab";
 import { DEFAULT_CLAIM_FILTER, CLAIM_TEMPLATE_HEADERS, CLAIM_TEMPLATE_SAMPLE } from "../utils/claimConstants";
 
@@ -42,6 +43,8 @@ export default function ClaimSubmit() {
     const [filters, setFilters] = useState(DEFAULT_CLAIM_FILTER);
     const [activeTab, setActiveTab] = useState("claims");
     const [successMessage, setSuccessMessage] = useState("");
+    const [filePreviewOpen, setFilePreviewOpen] = useState(false);
+    const [selectedClaimForFiles, setSelectedClaimForFiles] = useState(null);
 
     const {
         claims,
@@ -126,6 +129,22 @@ export default function ClaimSubmit() {
         {
             header: "Status",
             cell: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+            header: "Attachments",
+            cell: (row) => (
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                        setSelectedClaimForFiles(row);
+                        setFilePreviewOpen(true);
+                    }}
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                >
+                    📎 Files
+                </Button>
+            ),
         },
     ];
 
@@ -434,6 +453,18 @@ export default function ClaimSubmit() {
                     loadAll();
                 }}
             />
+
+            {selectedClaimForFiles && (
+                <FilePreviewModal
+                    open={filePreviewOpen}
+                    onClose={() => {
+                        setFilePreviewOpen(false);
+                        setSelectedClaimForFiles(null);
+                    }}
+                    claimId={selectedClaimForFiles.claim_no}
+                    batchId={selectedClaimForFiles.batch_id}
+                />
+            )}
         </div>
     );
 }

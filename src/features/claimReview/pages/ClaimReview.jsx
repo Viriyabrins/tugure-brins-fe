@@ -21,6 +21,7 @@ import { formatRupiahAdaptive } from "@/utils/currency";
 import { DEFAULT_CLAIM_FILTER, CLAIM_PAGE_SIZE } from "../utils/claimReviewConstants";
 import { useClaimReviewData } from "../hooks/useClaimReviewData";
 import { useClaimReviewActions } from "../hooks/useClaimReviewActions";
+import { FilePreviewModal } from "../../claims/components/FilePreviewModal";
 
 export default function ClaimReview() {
     const data = useClaimReviewData();
@@ -33,6 +34,8 @@ export default function ClaimReview() {
 
     const [selectedClaims, setSelectedClaims] = useState([]);
     const [activeTab, setActiveTab] = useState("review");
+    const [filePreviewOpen, setFilePreviewOpen] = useState(false);
+    const [selectedClaimForFiles, setSelectedClaimForFiles] = useState(null);
 
     const actions = useClaimReviewActions({
         user, auditActor, claims, selectedClaims, setSelectedClaims,
@@ -83,6 +86,9 @@ export default function ClaimReview() {
                 <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => { actions.setSelectedClaim(row); actions.setShowViewDialog(true); }}>
                         <Eye className="w-4 h-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => { setSelectedClaimForFiles(row); setFilePreviewOpen(true); }} className="text-blue-600 hover:text-blue-700">
+                        📎
                     </Button>
                     {canCheck && row.status === "SUBMITTED" && (
                         <Button size="sm" variant="outline" onClick={() => { actions.setSelectedClaim(row); actions.setActionType("check"); actions.setShowActionDialog(true); }}>
@@ -309,6 +315,19 @@ export default function ClaimReview() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* ── File Preview Modal ──────────────────────────────────────────── */}
+            {selectedClaimForFiles && (
+                <FilePreviewModal
+                    open={filePreviewOpen}
+                    onClose={() => {
+                        setFilePreviewOpen(false);
+                        setSelectedClaimForFiles(null);
+                    }}
+                    claimId={selectedClaimForFiles.claim_no}
+                    batchId={selectedClaimForFiles.batch_id}
+                />
+            )}
         </div>
     );
 }

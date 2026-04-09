@@ -2,6 +2,7 @@ import { useState } from "react";
 import { maskKtp } from "@/shared/utils/dataTransform";
 import { parseClaimFile } from "../services/claimParser";
 import { claimService } from "../services/claimService";
+import { uploadFile as uploadToMinIO } from "@/services/minioClient";
 import {
     validateClaimRow,
     validateFileInternalDuplicates,
@@ -34,10 +35,9 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
     /**
      * Step 1: Parse the file, run validation, and populate preview state.
      * Call this when the user clicks "Preview Data →".
-     * Returns true if parse succeeded (rows loaded), false on error.
      */
-    const handleFileUpload = async (file, selectedBatch) => {
-        if (!file || !selectedBatch) return false;
+    const handleFileUpload = async (file, selectedBatch, attachedFiles = []) => {
+        if (!file || !selectedBatch) return;
         setProcessing(true);
         setDialogError("");
         setValidationRemarks([]);
@@ -130,20 +130,18 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                 setPreviewValidationError("");
             }
             setProcessing(false);
-            return true;
         } catch (err) {
             console.error("Parse error:", err);
             setDialogError("Failed to parse file: " + err.message);
         }
         setProcessing(false);
-        return false;
     };
 
     /**
      * Step 2: Submit all valid parsed rows to the backend.
      * Call this when the user clicks "Upload N Claims".
      */
-    const handleBulkUpload = async (selectedBatch) => {
+    const handleBulkUpload = async (selectedBatch, attachedFiles = []) => {
         if (
             !Array.isArray(parsedClaims) ||
             parsedClaims.length === 0 ||
@@ -208,6 +206,23 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                         isBrinsUser,
                     );
                     uploaded++;
+
+                    // Upload attached files for this claim after claim is created
+                    if (attachedFiles.length > 0) {
+                        for (const file of attachedFiles) {
+                            try {
+                                await uploadToMinIO(file, claimNo, batch.batch_id);
+                            } catch (fileErr) {
+                                console.error(
+                                    `Failed to upload file ${file.name} for claim ${claimNo}:`,
+                                    fileErr,
+                                );
+                                errors.push(
+                                    `Claim ${claimNo}: File "${file.name}" upload failed - ${fileErr.message}`,
+                                );
+                            }
+                        }
+                    }
                 } catch (err) {
                     errors.push(`Row ${uploaded + 1}: ${err.message}`);
                     console.error("Failed to create claim:", err);
@@ -228,7 +243,17 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
             const message =
                 errors.length > 0
                     ? `Uploaded ${uploaded} ${isBrinsUser ? "recoveries" : "claims"}, but ${errors.length} failed`
-                    : `✓ Successfully uploaded ${uploaded} ${isBrinsUser ? "recoveries" : "claims"}`;
+                    : `✓ Successfully uploaded ${uploaded} ${isBrinsUser ? "recoveries" : "claims"}${
+                        attachedFiles.length > 0 ? ` with ${attachedFiles.length} file(s)` : ""
+                      }`;
+
+            if (errors.length > 0) {
+                setDialogError(
+                    `❌ ${errors.length} upload${errors.length > 1 ? "s" : ""} failed:\n${errors.join("\n")}`
+                );
+                setProcessing(false);
+                return;
+            }
 
             reset();
             onSuccess?.(message);

@@ -18,7 +18,8 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
+import { validateFiles, formatFileSize, getFileIcon, buildValidationErrorMessage } from "../utils/fileValidation";
 
 function DialogStepper({ step, isBrinsUser }) {
     return (
@@ -66,7 +67,7 @@ function DialogStepper({ step, isBrinsUser }) {
 }
 
 /**
- * Two-step upload dialog: (1) pick batch & file → (2) preview rows before submit.
+ * Two-step upload dialog: (1) pick batch, claim file, & attachments → (2) preview claims before submit.
  *
  * Props:
  *   open               {boolean}
@@ -78,8 +79,8 @@ function DialogStepper({ step, isBrinsUser }) {
  *   dialogError        {string}
  *   previewValidationError {string}
  *   processing         {boolean}
- *   onPreview          {(file, batchId) => Promise<void>}   — triggers file parse
- *   onUpload           {(batchId) => Promise<void>}          — triggers bulk submit
+ *   onPreview          {(file, batchId, attachedFiles) => Promise<void>}   — triggers file parse
+ *   onUpload           {(batchId, attachedFiles) => Promise<void>}          — triggers bulk submit
  */
 export function ClaimUploadDialog({
     open,
@@ -97,20 +98,45 @@ export function ClaimUploadDialog({
     const [step, setStep] = useState(1);
     const [selectedBatch, setSelectedBatch] = useState("");
     const [uploadFile, setUploadFile] = useState(null);
+    const [attachedFiles, setAttachedFiles] = useState([]);
+    const [fileValidationError, setFileValidationError] = useState("");
     const [showValidationDetails, setShowValidationDetails] = useState(false);
 
     const handleClose = () => {
         setStep(1);
         setSelectedBatch("");
         setUploadFile(null);
+        setAttachedFiles([]);
+        setFileValidationError("");
         setShowValidationDetails(false);
         onClose();
     };
 
     const handlePreview = async () => {
         if (!uploadFile || !selectedBatch) return;
-        const success = await onPreview(uploadFile, selectedBatch);
-        if (success) setStep(2);
+        await onPreview(uploadFile, selectedBatch, attachedFiles);
+        setStep(2);
+    };
+
+    const handleAddFiles = (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+
+        const validation = validateFiles([...attachedFiles, ...files]);
+        if (!validation.isValid) {
+            setFileValidationError(buildValidationErrorMessage(validation));
+            e.target.value = ""; // Reset input
+            return;
+        }
+
+        setAttachedFiles((prev) => [...prev, ...files]);
+        setFileValidationError("");
+        e.target.value = ""; // Reset input so same file can be selected again
+    };
+
+    const handleRemoveFile = (index) => {
+        setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+        setFileValidationError("");
     };
 
     return (
@@ -172,7 +198,7 @@ export function ClaimUploadDialog({
                                 </Select>
                             </div>
                             <div>
-                                <Label>Upload File</Label>
+                                <Label>Upload Claim File *</Label>
                                 <Input
                                     type="file"
                                     accept=".csv,.xlsx,.xls"
@@ -185,6 +211,65 @@ export function ClaimUploadDialog({
                                 <p className="text-xs text-gray-500 mt-1">
                                     Excel atau CSV format
                                 </p>
+                            </div>
+
+                            <div>
+                                <Label>Attach Files (Optional)</Label>
+                                <p className="text-xs text-gray-500 mb-2">
+                                    PDF, Excel, Word, PowerPoint, or Text files. Max 5 files, 10MB each.
+                                </p>
+                                <Input
+                                    type="file"
+                                    multiple
+                                    accept=".pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.txt,.csv"
+                                    onChange={handleAddFiles}
+                                    disabled={!selectedBatch}
+                                    className="cursor-pointer"
+                                />
+
+                                {fileValidationError && (
+                                    <Alert variant="destructive" className="mt-2">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertDescription>
+                                            {fileValidationError}
+                                        </AlertDescription>
+                                    </Alert>
+                                )}
+
+                                {attachedFiles.length > 0 && (
+                                    <div className="mt-3 p-3 border rounded-lg bg-gray-50">
+                                        <p className="text-sm font-medium mb-2">
+                                            {attachedFiles.length} file{attachedFiles.length !== 1 ? "s" : ""} attached
+                                        </p>
+                                        <div className="space-y-2">
+                                            {attachedFiles.map((file, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    className="flex items-center justify-between p-2 bg-white rounded border border-gray-200"
+                                                >
+                                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                        <span className="text-lg">{getFileIcon(file.name)}</span>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm font-medium truncate">
+                                                                {file.name}
+                                                            </p>
+                                                            <p className="text-xs text-gray-500">
+                                                                {formatFileSize(file.size)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleRemoveFile(idx)}
+                                                        className="ml-2 p-1 hover:bg-gray-100 rounded transition-colors"
+                                                        type="button"
+                                                    >
+                                                        <X className="w-4 h-4 text-gray-500" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </>
                     )}
@@ -449,7 +534,7 @@ export function ClaimUploadDialog({
                             }`}
                         >
                             <Button
-                                onClick={() => onUpload(selectedBatch)}
+                                onClick={() => onUpload(selectedBatch, attachedFiles)}
                                 disabled={
                                     processing || validationRemarks.length > 0
                                 }

@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { 
   LayoutDashboard, FileText, Upload, FileCheck, BarChart3, 
   DollarSign, CreditCard, Scale, Bell, User, Settings, 
-  LogOut, Menu, X, ChevronRight, Shield, Activity, Lock
+  LogOut, Menu, X, ChevronRight, Shield, Activity, Lock, Folder
 } from "lucide-react";
 import { useKeycloakAuth } from './lib/KeycloakContext';
 export default function Layout({ children, currentPageName }) {
@@ -111,6 +111,7 @@ export default function Layout({ children, currentPageName }) {
       { name: 'Nota Management', icon: FileText, path: 'NotaManagement', roles: [] },
       { name: 'Bordero Management', icon: BarChart3, path: 'BorderoManagement', roles: [] },
       // { name: 'Advanced Reports', icon: BarChart3, path: 'AdvancedReports', roles: [] },
+      { name: 'File Manager', icon: Folder, path: 'FileManagementPage', roles: [] },
       { name: 'Recap Summary', icon: BarChart3, path: 'RecapSummary', roles: [] },
       { name: 'Audit Log', icon: Activity, path: 'AuditLog', roles: [] },
       { name: 'System Configuration', icon: Settings, path: 'SystemConfiguration', roles: [] },

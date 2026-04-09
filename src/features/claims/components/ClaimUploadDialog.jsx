@@ -19,7 +19,8 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, X } from "lucide-react";
-import { validateFiles, formatFileSize, getFileIcon, buildValidationErrorMessage } from "../utils/fileValidation";
+import { validateFiles, formatFileSize, getFileIcon, buildValidationErrorMessage } from "@/utils/fileValidation";
+// import { validateFiles, formatFileSize, getFileIcon, buildValidationErrorMessage } from "../utils/fileValidation";
 
 function DialogStepper({ step, isBrinsUser }) {
     return (

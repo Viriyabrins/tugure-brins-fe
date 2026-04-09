@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import DebtorReview from './pages/DebtorReview';
 import DocumentClaim from './pages/DocumentClaim';
 import DocumentEligibilityBatch from './pages/DocumentEligibilityBatch';
+import FileManagementPage from './pages/FileManagementPage';
 import Home from './pages/Home';
 import MasterContractManagement from './pages/MasterContractManagement';
 import NotaManagement from './pages/NotaManagement';
@@ -34,6 +35,7 @@ export const PAGES = {
     "DebtorReview": DebtorReview,
     "DocumentClaim": DocumentClaim,
     "DocumentEligibilityBatch": DocumentEligibilityBatch,
+    "FileManagementPage": FileManagementPage,
     "Home": Home,
     "MasterContractManagement": MasterContractManagement,
     "NotaManagement": NotaManagement,

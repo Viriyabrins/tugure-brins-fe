@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Download, Trash2, Loader } from "lucide-react";
 import { listFiles, getPresignedUrl, deleteFile } from "@/services/minioClient";
-import { formatFileSize, getFileIcon } from "../utils/fileValidation";
+import { formatFileSize, getFileIcon } from "@/utils/fileValidation";
+// import { formatFileSize, getFileIcon } from "../utils/fileValidation"; 
 
 /**
  * Modal for viewing, downloading, and deleting attached files for a claim.

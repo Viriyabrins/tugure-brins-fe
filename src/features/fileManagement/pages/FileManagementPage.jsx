@@ -1,0 +1,559 @@
+/**
+ * File Management Page
+ * 3-Level Hierarchy: All Files → Batch → Debtor Name → Files
+ */
+
+import React, { useEffect, useState, useMemo } from 'react';
+import { Loader2, RefreshCw, Search, Download, Eye, Trash2, Grid3X3, List } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import PageHeader from '@/components/common/PageHeader';
+import { backend } from '@/api/backendClient';
+import { getDownloadUrl, removeFile } from '@/services/storageService';
+import fileManagerService from '../services/fileManagerService';
+import { toast } from 'sonner';
+
+/**
+ * Builds 3-level tree: All Files → Batch → Debtor Name
+ */
+const buildThreeLevelTree = async (claims) => {
+  // Group by batch
+  const byBatch = {};
+  claims.forEach((claim) => {
+    const batchId = claim.batch_id || 'Unknown';
+    if (!byBatch[batchId]) {
+      byBatch[batchId] = [];
+    }
+    byBatch[batchId].push(claim);
+  });
+
+  // Build tree structure
+  const tree = Object.entries(byBatch).map(([batchId, batchClaims]) => {
+    // Group within batch by debtor name (nama_tertanggung)
+    const byDebtor = {};
+    batchClaims.forEach((claim) => {
+      const debtorName = claim.nama_tertanggung || 'Unknown';
+      if (!byDebtor[debtorName]) {
+        byDebtor[debtorName] = [];
+      }
+      byDebtor[debtorName].push(claim);
+    });
+
+    return {
+      id: `batch-${batchId}`,
+      label: batchId,
+      type: 'batch',
+      batchId,
+      children: Object.entries(byDebtor).map(([debtorName, debtorClaims]) => ({
+        id: `debtor-${batchId}-${debtorName}`,
+        label: debtorName,
+        type: 'debtor',
+        batchId,
+        debtorName,
+        claims: debtorClaims, // Store claims for file loading
+        children: [], // Will be populated with files on demand
+        isLoaded: false,
+        isLoading: false,
+      })),
+    };
+  });
+
+  return tree;
+};
+
+/**
+ * Load files for a debtor (all their claims' files)
+ */
+const loadFilesForDebtor = async (batchId, debtorName, claims) => {
+  try {
+    let allFiles = [];
+    
+    for (const claim of claims) {
+      try {
+        const claimId = claim.claim_no || claim.id;
+        const files = await fileManagerService.loadFilesForRecord(claimId, batchId);
+        
+        if (Array.isArray(files)) {
+          allFiles = allFiles.concat(
+            files.map((file) => ({
+              ...file,
+              claimNo: claim.claim_no,
+              batchId,
+              debtorName,
+            }))
+          );
+        }
+      } catch (err) {
+        console.warn(`Failed to load files for claim ${claim.claim_no}:`, err);
+      }
+    }
+    
+    return allFiles;
+  } catch (err) {
+    console.error('Failed to load debtor files:', err);
+    return [];
+  }
+};
+
+/**
+ * File Grid View
+ */
+const FileGridView = ({ files, onDownload, onPreview, onDelete, isLoading }) => {
+  if (files.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-96 text-gray-500">
+        <p>No files found</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {files.map((file, idx) => (
+        <div
+          key={idx}
+          className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow group"
+        >
+          {/* File Icon */}
+          <div className="flex justify-center mb-3">
+            <div className="w-12 h-12 bg-red-100 rounded flex items-center justify-center text-2xl">
+              📄
+            </div>
+          </div>
+
+          {/* Filename */}
+          <p className="text-sm font-medium truncate text-center text-gray-900" title={file.fileName}>
+            {file.fileName}
+          </p>
+
+          {/* File Size */}
+          <p className="text-xs text-gray-500 text-center mt-1">
+            {formatFileSize(file.size)}
+          </p>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="flex-1 h-8"
+              onClick={() => onPreview(file)}
+              title="Preview"
+            >
+              <Eye className="w-3 h-3" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="flex-1 h-8"
+              onClick={() => onDownload(file)}
+              title="Download"
+            >
+              <Download className="w-3 h-3" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="flex-1 h-8 text-red-600 hover:bg-red-50"
+              onClick={() => onDelete(file)}
+              title="Delete"
+            >
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/**
+ * File List View (Table)
+ */
+const FileListView = ({ files, onDownload, onPreview, onDelete, isLoading }) => {
+  if (files.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-96 text-gray-500">
+        <p>No files found</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg border overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b bg-gray-50">
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Filename</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Claim</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Size</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Date</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {files.map((file, idx) => (
+              <tr key={idx} className="border-b hover:bg-gray-50">
+                <td className="px-4 py-3 text-sm text-gray-900 truncate max-w-96" title={file.fileName}>
+                  📄 {file.fileName}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-700">{file.claimNo}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">{formatFileSize(file.size)}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {formatDate(file.lastModified)}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onPreview(file)}
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onDownload(file)}
+                    >
+                      <Download className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-600 hover:bg-red-50"
+                      onClick={() => onDelete(file)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Utility Functions
+ */
+const formatFileSize = (bytes) => {
+  if (!bytes) return 'N/A';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+};
+
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  try {
+    return new Date(dateString).toLocaleDateString('id-ID');
+  } catch {
+    return dateString;
+  }
+};
+
+/**
+ * Main Component
+ */
+export default function FileManagementPage() {
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [tree, setTree] = useState([]);
+  const [selectedDebtorFiles, setSelectedDebtorFiles] = useState([]);
+  const [expandedNodes, setExpandedNodes] = useState(new Set());
+  const [loadingNodeId, setLoadingNodeId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState('grid');
+  const [selectedBatchId, setSelectedBatchId] = useState('');
+
+  // Load claims on mount
+  useEffect(() => {
+    const loadClaims = async () => {
+      setInitialLoading(true);
+      setError('');
+      try {
+        const res = await backend.listPaginated('Claim', {
+          page: 1,
+          limit: 1000,
+        });
+        const claims = res.data || [];
+        const newTree = await buildThreeLevelTree(claims);
+        setTree(newTree);
+      } catch (err) {
+        setError(`Failed to load claims: ${err?.message || 'Unknown error'}`);
+        console.error(err);
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+
+    loadClaims();
+  }, []);
+
+  /**
+   * Handle tree node expansion - load files for debtor
+   */
+  const handleExpandNode = async (nodeId) => {
+    if (expandedNodes.has(nodeId)) {
+      // Collapse
+      setExpandedNodes((prev) => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+      setSelectedDebtorFiles([]);
+      return;
+    }
+
+    // Expand - find the debtor node and load files
+    setLoadingNodeId(nodeId);
+    try {
+      let debtorNode = null;
+      
+      for (const batch of tree) {
+        for (const debtor of batch.children) {
+          if (debtor.id === nodeId) {
+            debtorNode = debtor;
+            break;
+          }
+        }
+      }
+
+      if (debtorNode) {
+        const files = await loadFilesForDebtor(
+          debtorNode.batchId,
+          debtorNode.debtorName,
+          debtorNode.claims
+        );
+        setSelectedDebtorFiles(files);
+        setExpandedNodes((prev) => new Set(prev).add(nodeId));
+      }
+    } catch (err) {
+      console.error('Failed to expand node:', err);
+      toast.error('Failed to load files');
+    } finally {
+      setLoadingNodeId(null);
+    }
+  };
+
+  /**
+   * Handle file download
+   */
+  const handleDownloadFile = async (file) => {
+    try {
+      const url = await getDownloadUrl(file.key || file.id);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.fileName || 'file';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success('Downloaded: ' + file.fileName);
+    } catch (err) {
+      toast.error('Failed to download: ' + (err?.message || 'Unknown error'));
+    }
+  };
+
+  /**
+   * Handle file preview
+   */
+  const handlePreviewFile = async (file) => {
+    try {
+      const url = await getDownloadUrl(file.key || file.id);
+      window.open(url, '_blank');
+    } catch (err) {
+      toast.error('Failed to preview: ' + (err?.message || 'Unknown error'));
+    }
+  };
+
+  /**
+   * Handle file deletion
+   */
+  const handleDeleteFile = async (file) => {
+    if (!confirm('Are you sure you want to delete this file?')) return;
+
+    try {
+      const fileKey = file.key || file.id;
+      await removeFile(fileKey);
+      setSelectedDebtorFiles((prev) => prev.filter((f) => (f.key || f.id) !== fileKey));
+      toast.success('File deleted');
+    } catch (err) {
+      toast.error('Failed to delete: ' + (err?.message || 'Unknown error'));
+    }
+  };
+
+  /**
+   * Filter files based on search query
+   */
+  const filteredFiles = useMemo(() => {
+    return selectedDebtorFiles.filter((file) => {
+      const query = searchQuery.toLowerCase();
+      return (
+        (file.fileName || '').toLowerCase().includes(query) ||
+        (file.claimNo || '').toLowerCase().includes(query)
+      );
+    });
+  }, [selectedDebtorFiles, searchQuery]);
+
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <PageHeader
+        title="File Manager"
+        subtitle="Browse and manage all attached files"
+        breadcrumbs={[
+          { label: 'Dashboard', url: 'Dashboard' },
+          { label: 'File Manager' },
+        ]}
+        actions={
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
+        }
+      />
+
+      {/* Error Alert */}
+      {error && (
+        <Alert className="border-red-200 bg-red-50">
+          <AlertDescription className="text-red-800">{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Main Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Left Sidebar - Tree */}
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-lg border p-4 h-[calc(100vh-300px)] overflow-y-auto">
+            <h3 className="font-semibold text-gray-900 mb-3">Folders</h3>
+            <div className="space-y-1">
+              {tree.map((batch) => (
+                <div key={batch.id}>
+                  {/* Batch */}
+                  <div
+                    onClick={() => setSelectedBatchId(selectedBatchId === batch.batchId ? '' : batch.batchId)}
+                    className="flex items-center gap-2 px-2 py-2 hover:bg-gray-100 rounded cursor-pointer"
+                  >
+                    <span className="text-lg">
+                      {selectedBatchId === batch.batchId ? '▼' : '▶'}
+                    </span>
+                    <span className="text-sm font-medium text-gray-900">📁 {batch.label}</span>
+                    <span className="text-xs text-gray-500 ml-auto">
+                      ({batch.children.length})
+                    </span>
+                  </div>
+
+                  {/* Debtors */}
+                  {selectedBatchId === batch.batchId && (
+                    <div className="ml-4 space-y-1">
+                      {batch.children.map((debtor) => (
+                        <div
+                          key={debtor.id}
+                          onClick={() => handleExpandNode(debtor.id)}
+                          className={`flex items-center gap-2 px-2 py-2 rounded cursor-pointer ${
+                            expandedNodes.has(debtor.id)
+                              ? 'bg-blue-50'
+                              : 'hover:bg-gray-100'
+                          }`}
+                        >
+                          <span className="text-lg">
+                            {expandedNodes.has(debtor.id) ? '▼' : '▶'}
+                          </span>
+                          <span className="text-sm text-gray-700 truncate">
+                            👤 {debtor.label}
+                          </span>
+                          <span className="text-xs text-gray-500 ml-auto">
+                            {loadingNodeId === debtor.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              selectedDebtorFiles.length || '0'
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Content - Files */}
+        <div className="lg:col-span-3 space-y-4">
+          {/* Search and View Toggle */}
+          <div className="flex gap-2">
+            <Input
+              placeholder="Search files..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1"
+              icon={<Search className="w-4 h-4" />}
+            />
+            <div className="flex gap-1 border rounded-lg p-1">
+              <Button
+                size="sm"
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                onClick={() => setViewMode('grid')}
+                className="h-8 w-8 p-0"
+              >
+                <Grid3X3 className="w-4 h-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                onClick={() => setViewMode('list')}
+                className="h-8 w-8 p-0"
+              >
+                <List className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* File Count */}
+          {filteredFiles.length > 0 && (
+            <p className="text-sm text-gray-600">
+              {filteredFiles.length} file{filteredFiles.length !== 1 ? 's' : ''}
+            </p>
+          )}
+
+          {/* Files Display */}
+          <div className="bg-white rounded-lg border p-4">
+            {viewMode === 'grid' ? (
+              <FileGridView
+                files={filteredFiles}
+                onDownload={handleDownloadFile}
+                onPreview={handlePreviewFile}
+                onDelete={handleDeleteFile}
+                isLoading={loadingNodeId !== null}
+              />
+            ) : (
+              <FileListView
+                files={filteredFiles}
+                onDownload={handleDownloadFile}
+                onPreview={handlePreviewFile}
+                onDelete={handleDeleteFile}
+                isLoading={loadingNodeId !== null}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

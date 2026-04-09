@@ -29,6 +29,32 @@ export const debtorService = {
         return backend.list("Bordero");
     },
 
+    async getBatchSummary(batchId, contractId) {
+        try {
+            const queryFilters = { batch_id: batchId };
+            if (contractId) queryFilters.contract_id = contractId;
+            const rows = await backend.list('Debtor', { q: JSON.stringify(queryFilters) });
+            if (!Array.isArray(rows)) return null;
+            const summary = rows.reduce(
+                (acc, d) => {
+                    acc.totalNetPremi += parseFloat(d.net_premi) || 0;
+                    acc.totalKomisi += parseFloat(d.ric_amount) || 0;
+                    acc.totalPlafon += parseFloat(d.plafon) || 0;
+                    acc.totalNominalPremi += parseFloat(d.nominal_premi) || 0;
+                    acc.count += 1;
+                    return acc;
+                },
+                { totalNetPremi: 0, totalKomisi: 0, totalPlafon: 0, totalNominalPremi: 0, count: 0 }
+            );
+            summary.batchId = batchId;
+            summary.contractId = rows[0]?.contract_id || contractId || '-';
+            return summary;
+        } catch (e) {
+            console.warn('getBatchSummary failed:', e);
+            return null;
+        }
+    },
+
     async getRevisionHistory(nomorPeserta) {
         return backend.listPaginated("DebtorRevise", {
             page: 1,

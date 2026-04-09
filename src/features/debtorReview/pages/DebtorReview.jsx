@@ -434,14 +434,6 @@ export default function DebtorReview() {
                                     <span className="text-gray-500">Total Nominal Premi</span>
                                     <span className="font-medium">{formatRupiahAdaptive(actions.actionConfirmSummary.totalNominalPremi)}</span>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Scope</span>
-                                    <span className="font-medium">
-                                        {actions.actionScope === "selected"
-                                            ? `${selectedDebtors.length} dipilih`
-                                            : "Seluruh batch"}
-                                    </span>
-                                </div>
                             </div>
                             {(actions.approvalAction === "bulk_approve" || actions.approvalAction === "bulk_revision") && (
                                 <div>

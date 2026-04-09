@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { maskKtp } from "@/shared/utils/dataTransform";
+import { maskKtp, getExcelDate } from "@/shared/utils/dataTransform";
+import { backend } from "@/api/backendClient";
 import { parseClaimFile } from "../services/claimParser";
 import { claimService } from "../services/claimService";
 import { uploadFile as uploadToMinIO } from "@/services/minioClient";
@@ -57,6 +58,23 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                 (d) => d.batch_id === batch.batch_id,
             );
             const rows = await parseClaimFile(file);
+
+            // Backend data-type validation before building preview.
+            // Date fields are pre-normalised to ISO strings so that valid dates
+            // in any format (Date objects, Excel serials, various string formats)
+            // are accepted; blank fields stay null.
+            try {
+                const rowsForValidation = rows.map((row) => ({
+                    ...row,
+                    tanggal_realisasi_kredit: getExcelDate(row.tanggal_realisasi_kredit),
+                    dol: getExcelDate(row.dol),
+                }));
+                await backend.validateClaimsPayload(rowsForValidation);
+            } catch (validationError) {
+                setDialogError(validationError?.message || "Validasi tipe data gagal. Periksa isi file dan coba lagi.");
+                setProcessing(false);
+                return false;
+            }
 
             const parsed = [];
             const validationErrors = [];

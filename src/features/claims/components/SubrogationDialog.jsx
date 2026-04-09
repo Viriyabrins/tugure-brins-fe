@@ -22,6 +22,7 @@ import { AlertCircle } from "lucide-react";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import { toNumber } from "@/shared/utils/dataTransform";
 import { claimService } from "../services/claimService";
+import { backend } from "@/api/backendClient";
 
 function SubrogationStepper({ step }) {
     return (
@@ -101,7 +102,7 @@ export function SubrogationDialog({
         onClose();
     };
 
-    const handlePreview = () => {
+    const handlePreview = async () => {
         setPreviewError("");
         if (!selectedClaim) {
             setPreviewError("Select a paid claim first");
@@ -109,6 +110,12 @@ export function SubrogationDialog({
         }
         if (!recoveryAmount || toNumber(recoveryAmount) <= 0) {
             setPreviewError("Enter a valid recovery amount");
+            return;
+        }
+        try {
+            await backend.validateSubrogationPayload({ recoveryAmount, recoveryDate });
+        } catch (err) {
+            setPreviewError(err?.message || "Validasi data gagal. Periksa jumlah dan tanggal pemulihan.");
             return;
         }
         setStep(2);

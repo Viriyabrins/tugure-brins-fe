@@ -100,6 +100,26 @@ export const readableError = (error, fallback = "Terjadi kesalahan saat memprose
     return msg;
 };
 
+// Date fields that must be normalised to ISO strings before backend validation
+const MC_DATE_FIELDS = [
+    'input_date', 'offer_date', 'contract_start_date', 'contract_end_date',
+    'effective_date', 'stnc_date',
+];
+
+/**
+ * Pre-normalises date fields in raw Excel rows to ISO strings before backend validation.
+ * Valid dates (any format, including Excel serial numbers) are converted to ISO;
+ * blank/empty fields remain null; unparseable values become null (backend skips them).
+ */
+export const normalizeRawRowDatesForValidation = (rows) =>
+    rows.map((row) => {
+        const out = { ...row };
+        for (const field of MC_DATE_FIELDS) {
+            out[field] = toISODate(row[field]);
+        }
+        return out;
+    });
+
 export const parseUploadFile = async (file) => {
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (ext === "csv") {
@@ -151,7 +171,7 @@ export const buildContractPayload = (row, index, uploadMode) => {
         outward_retrocession: toNullableString(row.outward_retrocession) || "Tidak",
         automatic_cession: toNullableString(row.automatic_cession) || "Tidak",
         retro_program: toNullableString(row.retro_program),
-        reinsurance_commission_pct: toNumber(row.reinsurance_commission_pct),
+        reinsurance_commission_pct: toInteger(row.reinsurance_commission_pct),
         profit_commission_pct: toNumber(row.profit_commission_pct),
         brokerage_fee_pct: toNumber(row.brokerage_fee_pct),
         reporting_participant_days: toInteger(row.reporting_participant_days),
@@ -165,17 +185,20 @@ export const buildContractPayload = (row, index, uploadMode) => {
         cut_loss_basis: toNullableString(row.cut_loss_basis),
         cut_off_value: toNumber(row.cut_off_value),
         cut_off_basis: toNullableString(row.cut_off_basis),
-        loss_ratio_value: toNumber(row.loss_ratio_value),
+        loss_ratio_value: toInteger(row.loss_ratio_value),
         loss_ratio_basis: toNullableString(row.loss_ratio_basis),
         evaluation_period_value: toInteger(row.evaluation_period_value),
         evaluation_period_unit: toNullableString(row.evaluation_period_unit),
         max_tenor_value: toInteger(row.max_tenor_value),
         max_tenor_unit: toNullableString(row.max_tenor_unit),
-        max_sum_insured: toNumber(row.max_sum_insured),
+        max_sum_insured: toInteger(row.max_sum_insured),
         perils_covers: toNullableString(row.perils_covers),
         limit_coverage_type: toNullableString(row.limit_coverage_type),
-        kolektibilitas_max: toNullableString(row.kolektibilitas_max),
+        kolektibilitas_max: toInteger(row.kolektibilitas_max),
         kolektibilitas_limit_amount: toNumber(row.kolektibilitas_limit_amount),
+        qs_tugure_share: toInteger(row.qs_tugure_share),
+        qs_cedant_share: toInteger(row.qs_cedant_share),
+        deductible: toInteger(row.deductible),
         currency: "IDR",
         version: uploadMode === "revise" ? null : 1,
         parent_contract_id: null,
@@ -240,6 +263,9 @@ export const PREVIEW_COLUMNS = [
     { key: "limit_coverage_type", label: "Limit Coverage Type" },
     { key: "kolektibilitas_max", label: "Kolektibilitas Max" },
     { key: "kolektibilitas_limit_amount", label: "Kolektibilitas Limit", isCurrency: true },
+    { key: "qs_tugure_share", label: "QS Tugure Share" },
+    { key: "qs_cedant_share", label: "QS Cedant Share" },
+    { key: "deductible", label: "Deductible" },
 ];
 
 export const MC_TEMPLATE_CSV = [

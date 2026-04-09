@@ -6,8 +6,9 @@ import {
     parseDebtorFile,
     validateUploadRows,
     buildDebtorPayload,
+    toNullableString,
+    normalizeDebtorRowDatesForValidation,
 } from "../utils/debtorParser";
-import { toNullableString } from "../utils/debtorParser";
 
 export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadInitialData }) {
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -97,6 +98,16 @@ export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadIn
                 const msg = "File is empty or invalid format";
                 setUploadError(msg);
                 toast.error(msg);
+                return;
+            }
+
+            // Backend data-type validation before building preview
+            try {
+                await backend.validateDebtorsPayload(normalizeDebtorRowDatesForValidation(normalizedRows));
+            } catch (validationError) {
+                const msg = validationError?.message || "Validasi tipe data gagal. Periksa isi file dan coba lagi.";
+                setUploadError(msg);
+                toast.error("Validation failed: data type errors detected.");
                 return;
             }
 

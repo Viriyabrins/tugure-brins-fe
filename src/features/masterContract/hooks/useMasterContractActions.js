@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
     extractBaseContractNo, toNullableString, parseUploadFile, buildContractPayload,
-    readableError, normalizeStatus, MC_TEMPLATE_CSV,
+    readableError, normalizeStatus, MC_TEMPLATE_CSV, normalizeRawRowDatesForValidation,
 } from "../utils/masterContractConstants";
 import { masterContractService } from "../services/masterContractService";
 import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
+import { backend } from "@/api/backendClient";
 
 export function useMasterContractActions({ user, auditActor, contracts, statsContracts, reload, page, filters, loadContracts, loadStats }) {
     // Dialog state
@@ -70,12 +71,12 @@ export function useMasterContractActions({ user, auditActor, contracts, statsCon
     const openUploadDialog = () => {
         setUploadPreviewData([]); setPreviewValidationError(""); setUploadTabActive(1);
         setUploadFile(null); setUploadMode("new"); setSelectedContractForRevision("");
-        setShowUploadDialog(true);
+        setErrorMessage(""); setShowUploadDialog(true);
     };
 
     const closeUploadDialog = () => {
         setShowUploadDialog(false); setUploadMode("new"); setSelectedContractForRevision("");
-        setUploadFile(null); setUploadPreviewData([]); setUploadTabActive(1); setPreviewValidationError("");
+        setUploadFile(null); setUploadPreviewData([]); setUploadTabActive(1); setPreviewValidationError(""); setErrorMessage("");
     };
 
     const handleDownloadTemplate = () => {
@@ -92,6 +93,16 @@ export function useMasterContractActions({ user, auditActor, contracts, statsCon
         try {
             const rows = await parseUploadFile(uploadFile);
             if (!rows || rows.length === 0) { setErrorMessage("File kosong atau format tidak valid."); setProcessing(false); return; }
+
+            // Backend data-type validation before showing preview
+            try {
+                await backend.validateMasterContractsPayload(normalizeRawRowDatesForValidation(rows));
+            } catch (validationError) {
+                setErrorMessage(readableError(validationError, "Validasi tipe data gagal. Periksa isi file dan coba lagi."));
+                setProcessing(false);
+                return;
+            }
+
             setUploadPreviewData(rows.map((row, i) => buildContractPayload(row, i, uploadMode)));
             setUploadTabActive(2);
         } catch (error) {

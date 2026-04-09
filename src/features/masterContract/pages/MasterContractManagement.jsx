@@ -173,6 +173,12 @@ export default function MasterContractManagement() {
                     <div className="py-4 space-y-4 overflow-y-auto flex-1 min-h-0 pr-1">
                         {actions.uploadTabActive === 1 && (
                             <>
+                                {actions.errorMessage && (
+                                    <Alert variant="destructive">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <AlertDescription className="whitespace-pre-wrap">{actions.errorMessage}</AlertDescription>
+                                    </Alert>
+                                )}
                                 <div>
                                     <label className="text-sm font-medium">Upload Mode</label>
                                     <Select value={actions.uploadMode} onValueChange={actions.setUploadMode}>

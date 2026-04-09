@@ -264,6 +264,88 @@ export const backend = {
     return handleResponse(res);
   },
 
+  async validateMasterContractsPayload(rows) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/validate`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows }),
+    }));
+
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? { valid: true };
+      return parsed;
+    } catch {
+      return { valid: true };
+    }
+  },
+
+  async validateDebtorsPayload(rows) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/debtors/validate`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows }),
+    }));
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? { valid: true };
+      return parsed;
+    } catch {
+      return { valid: true };
+    }
+  },
+
+  async validateClaimsPayload(rows) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/claims/validate`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows }),
+    }));
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? { valid: true };
+      return parsed;
+    } catch {
+      return { valid: true };
+    }
+  },
+
+  async validateSubrogationPayload(data) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/subrogations/validate`;
+    const res = await fetch(url, authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }));
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? { valid: true };
+      return parsed;
+    } catch {
+      return { valid: true };
+    }
+  },
+
   async uploadMasterContractsAtomic(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/upload`;
     const res = await fetch(url, authFetchOptions({

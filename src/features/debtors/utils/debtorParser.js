@@ -10,6 +10,11 @@ import {
 } from "./debtorConstants";
 
 // ─── String / number / date converters ───────────────────────────────────────
+// Date fields for debtor rows that must be normalised before backend validation
+const _DEBTOR_DATE_FIELDS = [
+    'tanggal_mulai_covering', 'tanggal_akhir_covering',
+    'tanggal_terima', 'tanggal_validasi', 'teller_premium_date',
+];
 
 export const toNullableString = (value) => {
     if (value === undefined || value === null) return null;
@@ -306,3 +311,17 @@ export const formatUploadError = (message) => {
     }
     return { title: "Please review the following issues:", items: lines.slice(1, 7), summary };
 };
+
+/**
+ * Pre-normalises date fields in debtor rows to ISO strings before backend validation.
+ * Valid dates (any format, including Excel serial numbers and DD/MM/YYYY) are converted;
+ * blank/empty fields remain null; unparseable values become null (backend skips them).
+ */
+export const normalizeDebtorRowDatesForValidation = (rows) =>
+    rows.map((row) => {
+        const out = { ...row };
+        for (const field of _DEBTOR_DATE_FIELDS) {
+            out[field] = toIsoDate(row[field]);
+        }
+        return out;
+    });

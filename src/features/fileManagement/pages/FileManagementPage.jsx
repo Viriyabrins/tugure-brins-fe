@@ -4,13 +4,13 @@
  */
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Loader2, RefreshCw, Search, Download, Eye, Trash2, Grid3X3, List } from 'lucide-react';
+import { Loader2, RefreshCw, Search, Download, Eye, Grid3X3, List, Files, Folder, FolderClosed, ChevronRight, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import PageHeader from '@/components/common/PageHeader';
 import { backend } from '@/api/backendClient';
-import { getDownloadUrl, removeFile } from '@/services/storageService';
+import { getDownloadUrl } from '@/services/storageService';
 import fileManagerService from '../services/fileManagerService';
 import { toast } from 'sonner';
 
@@ -99,7 +99,7 @@ const loadFilesForDebtor = async (batchId, debtorName, claims) => {
 /**
  * File Grid View
  */
-const FileGridView = ({ files, onDownload, onPreview, onDelete, isLoading }) => {
+const FileGridView = ({ files, onDownload, onPreview, isLoading }) => {
   if (files.length === 0) {
     return (
       <div className="flex items-center justify-center h-96 text-gray-500">
@@ -118,7 +118,7 @@ const FileGridView = ({ files, onDownload, onPreview, onDelete, isLoading }) => 
           {/* File Icon */}
           <div className="flex justify-center mb-3">
             <div className="w-12 h-12 bg-red-100 rounded flex items-center justify-center text-2xl">
-              📄
+              <Files className="w-6 h-6 text-red-600" />
             </div>
           </div>
 
@@ -152,15 +152,6 @@ const FileGridView = ({ files, onDownload, onPreview, onDelete, isLoading }) => 
             >
               <Download className="w-3 h-3" />
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="flex-1 h-8 text-red-600 hover:bg-red-50"
-              onClick={() => onDelete(file)}
-              title="Delete"
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
           </div>
         </div>
       ))}
@@ -171,7 +162,7 @@ const FileGridView = ({ files, onDownload, onPreview, onDelete, isLoading }) => 
 /**
  * File List View (Table)
  */
-const FileListView = ({ files, onDownload, onPreview, onDelete, isLoading }) => {
+const FileListView = ({ files, onDownload, onPreview, isLoading }) => {
   if (files.length === 0) {
     return (
       <div className="flex items-center justify-center h-96 text-gray-500">
@@ -197,7 +188,7 @@ const FileListView = ({ files, onDownload, onPreview, onDelete, isLoading }) => 
             {files.map((file, idx) => (
               <tr key={idx} className="border-b hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm text-gray-900 truncate max-w-96" title={file.fileName}>
-                  📄 {file.fileName}
+                  <Files className="w-5 h-5 inline-block mr-2" /> {file.fileName}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-700">{file.claimNo}</td>
                 <td className="px-4 py-3 text-sm text-gray-600">{formatFileSize(file.size)}</td>
@@ -219,14 +210,6 @@ const FileListView = ({ files, onDownload, onPreview, onDelete, isLoading }) => 
                       onClick={() => onDownload(file)}
                     >
                       <Download className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-red-600 hover:bg-red-50"
-                      onClick={() => onDelete(file)}
-                    >
-                      <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
                 </td>
@@ -373,21 +356,6 @@ export default function FileManagementPage() {
     }
   };
 
-  /**
-   * Handle file deletion
-   */
-  const handleDeleteFile = async (file) => {
-    if (!confirm('Are you sure you want to delete this file?')) return;
-
-    try {
-      const fileKey = file.key || file.id;
-      await removeFile(fileKey);
-      setSelectedDebtorFiles((prev) => prev.filter((f) => (f.key || f.id) !== fileKey));
-      toast.success('File deleted');
-    } catch (err) {
-      toast.error('Failed to delete: ' + (err?.message || 'Unknown error'));
-    }
-  };
 
   /**
    * Filter files based on search query
@@ -450,9 +418,18 @@ export default function FileManagementPage() {
                     className="flex items-center gap-2 px-2 py-2 hover:bg-gray-100 rounded cursor-pointer"
                   >
                     <span className="text-lg">
-                      {selectedBatchId === batch.batchId ? '▼' : '▶'}
+                      {selectedBatchId === batch.batchId ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
                     </span>
-                    <span className="text-sm font-medium text-gray-900">📁 {batch.label}</span>
+                    {selectedBatchId === batch.batchId ? (
+                      <Folder className="w-4 h-4 flex-shrink-0" />
+                    ) : (
+                      <FolderClosed className="w-4 h-4 flex-shrink-0" />
+                    )}
+                    <span className="text-sm font-medium text-gray-900">{batch.label}</span>
                     <span className="text-xs text-gray-500 ml-auto">
                       ({batch.children.length})
                     </span>
@@ -472,10 +449,14 @@ export default function FileManagementPage() {
                           }`}
                         >
                           <span className="text-lg">
-                            {expandedNodes.has(debtor.id) ? '▼' : '▶'}
+                            {expandedNodes.has(debtor.id) ? (
+                              <ChevronDown className="w-4 h-4" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4" />
+                            )}
                           </span>
                           <span className="text-sm text-gray-700 truncate">
-                            👤 {debtor.label}
+                            {debtor.label}
                           </span>
                           <span className="text-xs text-gray-500 ml-auto">
                             {loadingNodeId === debtor.id ? (
@@ -539,7 +520,6 @@ export default function FileManagementPage() {
                 files={filteredFiles}
                 onDownload={handleDownloadFile}
                 onPreview={handlePreviewFile}
-                onDelete={handleDeleteFile}
                 isLoading={loadingNodeId !== null}
               />
             ) : (
@@ -547,7 +527,6 @@ export default function FileManagementPage() {
                 files={filteredFiles}
                 onDownload={handleDownloadFile}
                 onPreview={handlePreviewFile}
-                onDelete={handleDeleteFile}
                 isLoading={loadingNodeId !== null}
               />
             )}

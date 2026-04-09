@@ -64,6 +64,10 @@ export const notaService = {
         });
     },
 
+    async getMasterContract(contractId) {
+        return backend.get("MasterContract", contractId);
+    },
+
     // ─── Reconciliation ────────────────────────────────────────────────────────
 
     async recordPayment({ notaNumber, contractId, paidAmount, paymentDate, bankReference, matchStatus, exceptionType, reconStatus, newTotalPaid, userEmail }) {

@@ -32,6 +32,10 @@ export function useDebtorReviewActions({
     const [jobStatus, setJobStatus] = useState(null);
     const [pollingInterval, setPollingInterval] = useState(null);
 
+    // Action confirm dialog state
+    const [showActionConfirmDialog, setShowActionConfirmDialog] = useState(false);
+    const [actionConfirmSummary, setActionConfirmSummary] = useState(null);
+
     // Revision diffs
     const [revisionDiffs, setRevisionDiffs] = useState([]);
 
@@ -72,10 +76,39 @@ export function useDebtorReviewActions({
 
     function handleScopeConfirm() {
         setShowScopeDialog(false);
+
+        // Compute summary for confirm dialog
+        let eligibleDebtors = [];
+        if (actionScope === "selected") {
+            eligibleDebtors = debtors.filter((d) => selectedDebtors.includes(d.id));
+        } else {
+            eligibleDebtors = debtors.filter((d) => d.batch_id === selectedBatchForAction);
+        }
+
+        const summary = eligibleDebtors.reduce(
+            (acc, d) => {
+                acc.totalNetPremi += parseFloat(d.net_premi) || 0;
+                acc.totalKomisi += parseFloat(d.ric_amount) || 0;
+                acc.totalPlafon += parseFloat(d.plafon) || 0;
+                acc.totalNominalPremi += parseFloat(d.nominal_premi) || 0;
+                acc.count += 1;
+                return acc;
+            },
+            { totalNetPremi: 0, totalKomisi: 0, totalPlafon: 0, totalNominalPremi: 0, count: 0 },
+        );
+        summary.batchId = selectedBatchForAction || eligibleDebtors[0]?.batch_id || "-";
+        summary.contractId = eligibleDebtors[0]?.contract_id || "-";
+
+        setActionConfirmSummary(summary);
+        setShowActionConfirmDialog(true);
+    }
+
+    function handleActionConfirm() {
+        setShowActionConfirmDialog(false);
         if (actionScope === "selected") {
             if (approvalAction === "bulk_check") handleCheck(true);
-            else if (approvalAction === "bulk_approve") { setApprovalAction("bulk_approve"); setShowApprovalDialog(true); }
-            else if (approvalAction === "bulk_revision") { setApprovalAction("bulk_revision"); setShowApprovalDialog(true); }
+            else if (approvalAction === "bulk_approve") handleApproveRevise();
+            else if (approvalAction === "bulk_revision") handleApproveRevise();
         } else {
             executeApprovalWholeBatch();
         }
@@ -214,7 +247,9 @@ export function useDebtorReviewActions({
         uniqueBatches, selectedBatchForAction,
         actionScope, setActionScope,
         jobStatus, revisionDiffs,
-        handleActionButtonClick, handleBatchSelect, handleScopeConfirm,
+        handleActionButtonClick, handleBatchSelect, handleScopeConfirm, handleActionConfirm,
+        showActionConfirmDialog, setShowActionConfirmDialog,
+        actionConfirmSummary,
         handleCheck, handleApproveRevise, executeApproval,
     };
 }

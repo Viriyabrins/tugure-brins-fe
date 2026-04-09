@@ -354,7 +354,7 @@ export default function DebtorReview() {
                                 <p className="text-xs text-blue-700">Apply to all debtors in this batch with real-time progress</p>
                             </div>
                         </label>
-                        {!actions.approvalAction?.includes("check") && (
+                        {!actions.approvalAction?.includes("check") && actions.actionScope !== "whole-batch" && !isApproverTugure && (
                             <div>
                                 <label className="text-sm font-medium">Remarks *</label>
                                 <Textarea value={actions.approvalRemarks} onChange={(e) => actions.setApprovalRemarks(e.target.value)} rows={3}
@@ -364,8 +364,129 @@ export default function DebtorReview() {
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => actions.setShowScopeDialog(false)} disabled={actions.processing}>Cancel</Button>
-                        <Button onClick={actions.handleScopeConfirm} disabled={actions.processing || (!actions.approvalAction?.includes("check") && !actions.approvalRemarks.trim())}>
+                        <Button onClick={actions.handleScopeConfirm} disabled={actions.processing || (actions.actionScope !== "whole-batch" && !actions.approvalAction?.includes("check") && !isApproverTugure && !actions.approvalRemarks.trim())}>
                             {actions.processing ? "Processing..." : "Proceed"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── Action Confirm Dialog (Preview Total) ───────────────────── */}
+            <Dialog open={actions.showActionConfirmDialog} onOpenChange={actions.setShowActionConfirmDialog}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Konfirmasi{" "}
+                            {actions.approvalAction === "bulk_check"
+                                ? "Check"
+                                : actions.approvalAction === "bulk_approve"
+                                ? "Approve"
+                                : "Revision"}{" "}
+                            Debtor
+                        </DialogTitle>
+                        <DialogDescription>
+                            Periksa ringkasan total sebelum melanjutkan proses{" "}
+                            {actions.approvalAction === "bulk_check"
+                                ? "pengecekan"
+                                : actions.approvalAction === "bulk_approve"
+                                ? "persetujuan"
+                                : "permintaan revisi"}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {actions.actionConfirmSummary && (
+                        <div className="space-y-4 py-2">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 col-span-2">
+                                    <p className="text-xs text-gray-500 mb-1">Batch ID</p>
+                                    <p className="text-base font-semibold font-mono text-gray-900">
+                                        {actions.actionConfirmSummary.batchId}
+                                    </p>
+                                </div>
+                                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                                    <p className="text-xs text-gray-500 mb-1">Total Jumlah Debtor</p>
+                                    <p className="text-2xl font-bold text-blue-700">
+                                        {actions.actionConfirmSummary.count}
+                                    </p>
+                                </div>
+                                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                                    <p className="text-xs text-gray-500 mb-1">Total Net Premi</p>
+                                    <p className="text-lg font-bold text-green-700">
+                                        {formatRupiahAdaptive(actions.actionConfirmSummary.totalNetPremi)}
+                                    </p>
+                                </div>
+                                <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200 col-span-2">
+                                    <p className="text-xs text-gray-500 mb-1">Total Nilai Komisi</p>
+                                    <p className="text-lg font-bold text-indigo-700">
+                                        {formatRupiahAdaptive(actions.actionConfirmSummary.totalKomisi)}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Contract</span>
+                                    <span className="font-medium">{actions.actionConfirmSummary.contractId}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Total Plafon</span>
+                                    <span className="font-medium">{formatRupiahAdaptive(actions.actionConfirmSummary.totalPlafon)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Total Nominal Premi</span>
+                                    <span className="font-medium">{formatRupiahAdaptive(actions.actionConfirmSummary.totalNominalPremi)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-500">Scope</span>
+                                    <span className="font-medium">
+                                        {actions.actionScope === "selected"
+                                            ? `${selectedDebtors.length} dipilih`
+                                            : "Seluruh batch"}
+                                    </span>
+                                </div>
+                            </div>
+                            {(actions.approvalAction === "bulk_approve" || actions.approvalAction === "bulk_revision") && (
+                                <div>
+                                    <label className="text-sm font-medium">
+                                        Remarks {actions.approvalAction === "bulk_revision" && "*"}
+                                    </label>
+                                    <textarea
+                                        className="mt-1 w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        rows={3}
+                                        value={actions.approvalRemarks}
+                                        onChange={(e) => actions.setApprovalRemarks(e.target.value)}
+                                        placeholder={
+                                            actions.approvalAction === "bulk_approve"
+                                                ? "Enter approval notes..."
+                                                : "Enter revision reason..."
+                                        }
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => actions.setShowActionConfirmDialog(false)}>
+                            Batal
+                        </Button>
+                        <Button
+                            onClick={actions.handleActionConfirm}
+                            disabled={
+                                actions.approvalAction === "bulk_revision" &&
+                                !actions.approvalRemarks.trim()
+                            }
+                            className={
+                                actions.approvalAction === "bulk_revision"
+                                    ? "bg-orange-600 hover:bg-orange-700 text-white"
+                                    : actions.approvalAction === "bulk_approve"
+                                    ? "bg-green-600 hover:bg-green-700 text-white"
+                                    : ""
+                            }
+                        >
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            {actions.approvalAction === "bulk_check"
+                                ? "Confirm Check"
+                                : actions.approvalAction === "bulk_approve"
+                                ? "Confirm Approve"
+                                : "Confirm Revision"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

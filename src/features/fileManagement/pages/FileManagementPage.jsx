@@ -102,7 +102,7 @@ const loadFilesForDebtor = async (batchId, debtorName, claims) => {
 const FileGridView = ({ files, onDownload, onPreview, isLoading }) => {
   if (files.length === 0) {
     return (
-      <div className="flex items-center justify-center h-96 text-gray-500">
+      <div className="flex items-center justify-center h-[calc(90vh-300px)] max text-gray-500">
         <p>No files found</p>
       </div>
     );
@@ -165,7 +165,7 @@ const FileGridView = ({ files, onDownload, onPreview, isLoading }) => {
 const FileListView = ({ files, onDownload, onPreview, isLoading }) => {
   if (files.length === 0) {
     return (
-      <div className="flex items-center justify-center h-96 text-gray-500">
+      <div className="flex items-center justify-center h-[calc(90vh-300px)] text-gray-500">
         <p>No files found</p>
       </div>
     );

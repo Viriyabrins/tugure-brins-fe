@@ -30,7 +30,15 @@ export const toNumber = (value) => {
             text = text.replace(/,/g, "");
         }
     } else if (lastComma > -1) {
-        text = text.replace(/\./g, "").replace(",", ".");
+        const commaCount = (text.match(/,/g) || []).length;
+        // Multiple commas or single comma before exactly 3 trailing digits →
+        // accounting/English thousands separators (e.g. "100,000,000" or "1,000")
+        if (commaCount > 1 || /,\d{3}$/.test(text)) {
+            text = text.replace(/,/g, "");
+        } else {
+            // Single comma as Indonesian decimal separator (e.g. "100,5")
+            text = text.replace(/\./g, "").replace(",", ".");
+        }
     } else if (lastDot > -1) {
         if (/^\d{1,3}(\.\d{3})+$/.test(text)) {
             text = text.replace(/\./g, "");

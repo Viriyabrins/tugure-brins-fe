@@ -102,7 +102,7 @@ const loadFilesForDebtor = async (batchId, debtorName, claims) => {
 const FileGridView = ({ files, onDownload, onPreview, isLoading }) => {
   if (files.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[calc(90vh-300px)] max text-gray-500">
+      <div className="flex items-center justify-center h-[calc(88vh-300px)] max text-gray-500">
         <p>No files found</p>
       </div>
     );
@@ -165,7 +165,7 @@ const FileGridView = ({ files, onDownload, onPreview, isLoading }) => {
 const FileListView = ({ files, onDownload, onPreview, isLoading }) => {
   if (files.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[calc(90vh-300px)] text-gray-500">
+      <div className="flex items-center justify-center h-[calc(88vh-300px)] text-gray-500">
         <p>No files found</p>
       </div>
     );
@@ -370,6 +370,33 @@ export default function FileManagementPage() {
     });
   }, [selectedDebtorFiles, searchQuery]);
 
+  // Build breadcrumb items for the right-hand content header
+  const breadcrumbItems = useMemo(() => {
+    const items = ['All Files'];
+
+    if (selectedBatchId) {
+      const batch = tree.find((b) => b.batchId === selectedBatchId);
+      if (batch) items.push(batch.label);
+    }
+
+    // try to find an expanded debtor label
+    let debtorLabel = '';
+    for (const batch of tree) {
+      const found = batch.children.find((d) => expandedNodes.has(d.id));
+      if (found) {
+        debtorLabel = found.label;
+        break;
+      }
+    }
+
+    if (!debtorLabel && selectedDebtorFiles.length > 0) {
+      debtorLabel = selectedDebtorFiles[0].debtorName || '';
+    }
+
+    if (debtorLabel) items.push(debtorLabel);
+    return items;
+  }, [tree, selectedBatchId, expandedNodes, selectedDebtorFiles]);
+
   if (initialLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -515,6 +542,28 @@ export default function FileManagementPage() {
 
           {/* Files Display */}
           <div className="bg-white rounded-lg border p-4">
+            {/* Breadcrumb placed inside the boxed section */}
+            <div className="mb-3">
+              <div className="text-sm text-gray-600 flex items-center gap-2">
+                {breadcrumbItems.map((item, idx) => (
+                  <React.Fragment key={idx}>
+                    <span
+                      className={
+                        idx === 0
+                          ? 'text-gray-600 text-base font-semibold' // style only for "All Files"
+                          : 'text-gray-700 text-sm'
+                      }
+                    >
+                      {item}
+                    </span>
+                    {idx < breadcrumbItems.length - 1 && (
+                      <ChevronRight className="w-3 h-3 text-gray-400" />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+
             {viewMode === 'grid' ? (
               <FileGridView
                 files={filteredFiles}

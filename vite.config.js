@@ -23,6 +23,8 @@ export default defineConfig({
         target: process.env.VITE_API_PROXY || process.env.PROXY_TARGET || 'http://localhost:4000',
         changeOrigin: true,
         secure: false,
+        // Enable WebSocket-like streaming for SSE
+        ws: true,
         // preserve the /api prefix so dev behavior matches production
         rewrite: (path) => path,
         // attach a small logger so dev console shows the exact forwarded URL
@@ -35,6 +37,14 @@ export default defineConfig({
               console.log(`[vite proxy] ${req.method} ${url} -> ${forwarded.href}`);
             } catch (err) {
               // ignore logging errors
+            }
+          });
+          // Ensure SSE streams are not buffered
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            if (req.url.includes('/db-channel/stream')) {
+              console.log('[vite proxy] SSE stream detected, disabling buffering');
+              // Disable buffering for SSE by setting on the destination response
+              res.setHeader('X-Accel-Buffering', 'no');
             }
           });
         }

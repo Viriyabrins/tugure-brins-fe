@@ -20,6 +20,7 @@ import { formatRupiahAdaptive } from "@/utils/currency";
 import { DEFAULT_DR_FILTER, DR_PAGE_SIZE } from "../utils/debtorReviewConstants";
 import { useDebtorReviewData } from "../hooks/useDebtorReviewData";
 import { useDebtorReviewActions } from "../hooks/useDebtorReviewActions";
+import { useDebtorSSE } from "@/hooks/useDebtorSSE";
 
 export default function DebtorReview() {
     const data = useDebtorReviewData();
@@ -32,6 +33,11 @@ export default function DebtorReview() {
     } = data;
 
     const [selectedDebtors, setSelectedDebtors] = useState([]);
+
+    // SSE hook for real-time debtor updates
+    useDebtorSSE(() => {
+        loadData();
+    });
 
     const actions = useDebtorReviewActions({
         user, auditActor, debtors, selectedDebtors, setSelectedDebtors,

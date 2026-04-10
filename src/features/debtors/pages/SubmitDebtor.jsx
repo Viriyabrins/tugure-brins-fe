@@ -29,6 +29,7 @@ import { DEFAULT_DEBTOR_FILTER, DEBTOR_PAGE_SIZE } from "../utils/debtorConstant
 import { useDebtorData } from "../hooks/useDebtorData";
 import { useDebtorUpload } from "../hooks/useDebtorUpload";
 import { useDebtorActions } from "../hooks/useDebtorActions";
+import { useDebtorSSE } from "@/hooks/useDebtorSSE";
 
 // ─── Template download helpers ───────────────────────────────────────────────
 
@@ -128,6 +129,11 @@ export default function SubmitDebtor() {
     const actions = useDebtorActions({
         user, auditActor, debtors, selectedDebtors, setSelectedDebtors,
         selectedContract: upload.selectedContract, loadDebtors, loadInitialData,
+    });
+
+    // SSE hook for real-time debtor updates
+    useDebtorSSE(() => {
+        loadDebtors(page, filters);
     });
 
     // Active contracts for upload dialog

@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import {
     FileText, CheckCircle2, Eye, RefreshCw, Check, Loader2,
-    DollarSign, AlertCircle, Plus, ShieldCheck, Pen,
+    DollarSign, AlertCircle, Plus, ShieldCheck, Pen, Paperclip,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import PageHeader from "@/components/common/PageHeader";
@@ -87,8 +87,8 @@ export default function ClaimReview() {
                     <Button variant="outline" size="sm" onClick={() => { actions.setSelectedClaim(row); actions.setShowViewDialog(true); }}>
                         <Eye className="w-4 h-4" />
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => { setSelectedClaimForFiles(row); setFilePreviewOpen(true); }} className="text-blue-600 hover:text-blue-700">
-                        📎
+                    <Button variant="outline" size="sm" onClick={() => { setSelectedClaimForFiles(row); setFilePreviewOpen(true); }}>
+                        <Paperclip className="w-4 h-4" />
                     </Button>
                     {canCheck && row.status === "SUBMITTED" && (
                         <Button size="sm" variant="outline" onClick={() => { actions.setSelectedClaim(row); actions.setActionType("check"); actions.setShowActionDialog(true); }}>

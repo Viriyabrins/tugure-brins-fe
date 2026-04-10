@@ -12,6 +12,7 @@ import {
     Plus,
     DollarSign,
     TrendingUp,
+    Paperclip,
 } from "lucide-react";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import PageHeader from "@/components/common/PageHeader";
@@ -136,14 +137,13 @@ export default function ClaimSubmit() {
             cell: (row) => (
                 <Button
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={() => {
                         setSelectedClaimForFiles(row);
                         setFilePreviewOpen(true);
                     }}
-                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                 >
-                    📎 Files
+                    <Paperclip className="w-4 h-4" />
                 </Button>
             ),
         },

@@ -64,7 +64,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                     "Orang 29",
                     "0000A.00022.2026.05.00029.1.3",
                     "",
-                    "1,71015E+13",
+                    "17101500875158",
                     "Juni 2023",
                     "27-Jun-23",
                     "200.000.000,00",

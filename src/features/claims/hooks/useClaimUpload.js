@@ -1,4 +1,5 @@
 import { useState } from "react";
+import * as XLSX from "xlsx";
 import { maskKtp, getExcelDate } from "@/shared/utils/dataTransform";
 import { backend } from "@/api/backendClient";
 import { parseClaimFile } from "../services/claimParser";
@@ -31,6 +32,71 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
         setValidationRemarks([]);
         setDialogError("");
         setPreviewValidationError("");
+    };
+
+    /**
+     * Download claim upload template as XLSX file.
+     */
+    const handleDownloadTemplate = () => {
+        try {
+            const headers = [
+                "nama_tertanggung",
+                "nomor_peserta",
+                "no_ktp_npwp",
+                "no_fasilitas_kredit",
+                "bdo_premi",
+                "tanggal_realisasi_kredit",
+                "plafond",
+                "max_coverage",
+                "kol_debitur",
+                "dol",
+                "nilai_klaim",
+                "claim_no",
+                "policy_no",
+                "nomor_sertifikat",
+                "share_tugure_percentage",
+                "share_tugure_amount",
+                "check_bdo_premi",
+            ];
+
+            const sampleData = [
+                [
+                    "Dude 10",
+                    "0000A.00031.2026.03.00010.1.3",
+                    "",
+                    "1,71015E+13",
+                    "Juni 2023",
+                    "27-Jun-23",
+                    "200.000.000,00",
+                    "150.000.000,00",
+                    "Kol 4",
+                    "22-Sep-24",
+                    "114685298",
+                    "811514102500584",
+                    "1117341014000010",
+                    "2239",
+                    "44%",
+                    "50.461.531",
+                    "TRUE",
+                ]
+            ];
+
+            // Create worksheet with headers and sample data
+            const wsData = [headers, ...sampleData];
+            const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+            // Set column widths for better readability
+            ws["!cols"] = headers.map(() => ({ wch: 18 }));
+
+            // Create workbook
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Claim");
+
+            // Generate and download
+            XLSX.writeFile(wb, "claim_template.xlsx");
+        } catch (error) {
+            setDialogError("Failed to generate template: " + error.message);
+        }
     };
 
     /**
@@ -296,5 +362,6 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
         handleBulkUpload,
         reset,
         setDialogError,
+        handleDownloadTemplate,
     };
 }

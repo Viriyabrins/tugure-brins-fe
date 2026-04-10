@@ -70,6 +70,7 @@ export default function ClaimSubmit() {
         previewValidationError,
         handleFileUpload,
         handleBulkUpload,
+        handleDownloadTemplate,
         reset: resetUpload,
     } = useClaimUpload({
         batches,
@@ -174,7 +175,7 @@ export default function ClaimSubmit() {
                             </Button>
                             <Button
                                 variant="outline"
-                                onClick={downloadTemplate}
+                                onClick={handleDownloadTemplate}
                             >
                                 <Download className="w-4 h-4 mr-2" />
                                 Download Template

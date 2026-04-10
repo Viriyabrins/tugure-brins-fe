@@ -14,6 +14,7 @@ import {
     Lock,
     CheckCircle2,
     AlertCircle,
+    Eye,
 } from "lucide-react";
 import PageHeader from "@/components/common/PageHeader";
 import { useProfileData } from "../hooks/useProfileData";
@@ -22,6 +23,7 @@ export default function Profile() {
     const {
         user,
         tokenParsed,
+        isViewer,
         currentRoleInfo,
         displayRole,
         currentPassword,
@@ -48,6 +50,15 @@ export default function Profile() {
                     { label: "Profile" },
                 ]}
             />
+
+            {isViewer && (
+                <Alert className="bg-blue-50 border-blue-200">
+                    <Eye className="h-4 w-4 text-blue-600" />
+                    <AlertDescription className="text-blue-700 font-medium">
+                        Standard Access — You are in read-only mode. Mutating actions are not available for your account.
+                    </AlertDescription>
+                </Alert>
+            )}
 
             {successMessage && (
                 <Alert className="bg-green-50 border-green-200">

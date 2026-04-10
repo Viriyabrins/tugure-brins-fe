@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useKeycloakAuth } from "@/lib/KeycloakContext";
+import { useViewerRole } from "@/hooks/usePermissions";
 import {
     ROLE_INFO,
     extractTokenRoles,
@@ -20,8 +21,13 @@ export function useProfileData() {
     const [changing, setChanging] = useState(false);
 
     const tokenRoles = extractTokenRoles(tokenParsed);
-    const currentRoleKey = deriveRoleKey(tokenRoles, user?.role);
-    const currentRoleInfo = ROLE_INFO[currentRoleKey] || ROLE_INFO.USER;
+    const { isViewer, isTugureViewer, isBrinsViewer } = useViewerRole();
+    const currentRoleKey = isTugureViewer
+        ? "TUGURE_VIEWER"
+        : isBrinsViewer
+        ? "BRINS_VIEWER"
+        : deriveRoleKey(tokenRoles, user?.role);
+    const currentRoleInfo = ROLE_INFO[currentRoleKey] || ROLE_INFO.BRINS;
     const displayRole =
         tokenRoles.length > 0 ? tokenRoles.join(", ") : user?.role || "-";
 
@@ -73,6 +79,7 @@ export function useProfileData() {
         user,
         logout,
         tokenParsed,
+        isViewer,
         currentRoleInfo,
         displayRole,
         currentPassword,

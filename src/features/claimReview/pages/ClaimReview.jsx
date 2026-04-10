@@ -54,13 +54,13 @@ export default function ClaimReview() {
 
     const claimColumns = [
         {
-            header: (
+            header: isViewer ? null : (
                 <Checkbox
                     checked={selectedClaims.length === claims.length && claims.length > 0}
                     onCheckedChange={(checked) => setSelectedClaims(checked ? claims.map((c) => c.id) : [])}
                 />
             ),
-            cell: (row) => (
+            cell: (row) => isViewer ? null : (
                 <Checkbox checked={selectedClaims.includes(row.id)}
                     onCheckedChange={(checked) => setSelectedClaims(checked ? [...selectedClaims, row.id] : selectedClaims.filter((id) => id !== row.id))} />
             ),

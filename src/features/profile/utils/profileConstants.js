@@ -14,9 +14,14 @@ export const ROLE_INFO = {
         color: "bg-green-100 text-green-700 border-green-200",
         access: "TUGURE Review",
     },
-    USER: {
-        label: "User",
-        color: "bg-blue-100 text-blue-700 border-blue-200",
+    TUGURE_VIEWER: {
+        label: "Tugure Viewer",
+        color: "bg-teal-100 text-teal-700 border-teal-200",
+        access: "Standard Access",
+    },
+    BRINS_VIEWER: {
+        label: "Brins Viewer",
+        color: "bg-sky-100 text-sky-700 border-sky-200",
         access: "Standard Access",
     },
 };

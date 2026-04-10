@@ -51,13 +51,13 @@ export default function DebtorReview() {
 
     const columns = [
         {
-            header: (
+            header: isViewer ? null : (
                 <Checkbox
                     checked={selectedDebtors.length === pageData.length && pageData.length > 0}
                     onCheckedChange={(checked) => setSelectedDebtors(checked ? pageData.map((d) => d.id) : [])}
                 />
             ),
-            cell: (row) => (
+            cell: (row) => isViewer ? null : (
                 <Checkbox
                     checked={selectedDebtors.includes(row.id)}
                     onCheckedChange={(checked) =>

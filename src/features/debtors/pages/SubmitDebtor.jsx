@@ -225,7 +225,7 @@ export default function SubmitDebtor() {
     // ─── Table columns ─────────────────────────────────────────────────────
     const columns = [
         {
-            header: (
+            header: isViewer ? null : (
                 <Checkbox
                     checked={selectedDebtors.length === pageData.length && pageData.length > 0}
                     onCheckedChange={(checked) =>
@@ -233,7 +233,7 @@ export default function SubmitDebtor() {
                     }
                 />
             ),
-            cell: (row) => (
+            cell: (row) => isViewer ? null : (
                 <Checkbox
                     checked={selectedDebtors.includes(row.id)}
                     onCheckedChange={(checked) =>

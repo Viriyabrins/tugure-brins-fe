@@ -10,8 +10,10 @@ import {
   LogOut, Menu, X, ChevronRight, Shield, Activity, Lock, Folder
 } from "lucide-react";
 import { useKeycloakAuth } from './lib/KeycloakContext';
+import { useViewerRole } from '@/hooks/usePermissions';
 export default function Layout({ children, currentPageName }) {
   const { user, logout, tokenParsed } = useKeycloakAuth();
+  const { isViewer, isTugureViewer, isBrinsViewer } = useViewerRole();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
@@ -119,8 +121,22 @@ export default function Layout({ children, currentPageName }) {
     ]
   };
 
-  // Filter menu items based on user role
+  // Filter menu items based on user role/access.
+  // Tugure Viewer: common + shared + tugure-review operations (Debtor Review, Claim Review)
+  // Brins Viewer:  common + shared + brins-operation operations (Submit Debtor, Recovery Submit)
   const filterMenuItems = (items) => {
+    if (isTugureViewer) {
+      return items.filter((item) => {
+        if (!item.accesses || item.accesses.length === 0) return true;
+        return item.accesses.map(normalizeAccess).includes('tugure review');
+      });
+    }
+    if (isBrinsViewer) {
+      return items.filter((item) => {
+        if (!item.accesses || item.accesses.length === 0) return true;
+        return item.accesses.map(normalizeAccess).includes('brins operation');
+      });
+    }
     return items.filter(item => {
       if (!item.accesses || item.accesses.length === 0) return true;
 

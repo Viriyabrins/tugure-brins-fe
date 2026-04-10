@@ -19,7 +19,7 @@ export function validateClaimRow(row, batchDebtors) {
     );
     if (!debtor) {
         issues.push(
-            "Debtor not found in batch (match by participant number & policy number)",
+            `Debtor not found: participant number "${row.nomor_peserta}" and policy number "${row.policy_no}" do not exist in the selected batch — check your source file for correct participant and policy numbers`,
         );
     }
     return { debtor, issues };
@@ -116,16 +116,16 @@ export function buildValidationSummary(errors) {
     const parts = [];
     if (counts.debtorNotFound)
         parts.push(
-            `${counts.debtorNotFound} rows where policy number or participant ID do not match any debtor in the selected batch`,
+            `${counts.debtorNotFound} row(s) have policy number and/or participant ID that do NOT exist in the batch's debtor list — verify the correct participant and policy numbers are used`,
         );
     if (counts.duplicateInFile)
         parts.push(
-            `${counts.duplicateInFile} rows duplicated inside the uploaded file`,
+            `${counts.duplicateInFile} rows are duplicated within the uploaded file`,
         );
     if (counts.duplicateInBatch)
         parts.push(
-            `${counts.duplicateInBatch} rows duplicate with existing claims in the selected batch`,
+            `${counts.duplicateInBatch} rows are already claimed in the selected batch`,
         );
-    if (counts.other) parts.push(`${counts.other} rows with other issues`);
+    if (counts.other) parts.push(`${counts.other} rows have other data issues`);
     return `Found ${errors.length} rows with validation issues: ${parts.join("; ")}. Please fix the source file and re-upload, or click Back to adjust. Click 'View details' for row-level information.`;
 }

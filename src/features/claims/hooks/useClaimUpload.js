@@ -61,8 +61,8 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
 
             const sampleData = [
                 [
-                    "Dude 10",
-                    "0000A.00031.2026.03.00010.1.3",
+                    "Orang 29",
+                    "0000A.00022.2026.05.00029.1.3",
                     "",
                     "1,71015E+13",
                     "Juni 2023",
@@ -72,8 +72,8 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                     "Kol 4",
                     "22-Sep-24",
                     "114685298",
-                    "811514102500584",
-                    "1117341014000010",
+                    "811514102500344",
+                    "1127361019000029",
                     "2239",
                     "44%",
                     "50.461.531",
@@ -135,7 +135,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                     tanggal_realisasi_kredit: getExcelDate(row.tanggal_realisasi_kredit),
                     dol: getExcelDate(row.dol),
                 }));
-                await backend.validateClaimsPayload(rowsForValidation);
+                await backend.validateClaimsPayload(rowsForValidation, batch.batch_id);
             } catch (validationError) {
                 setDialogError(validationError?.message || "Validasi tipe data gagal. Periksa isi file dan coba lagi.");
                 setProcessing(false);
@@ -244,6 +244,15 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
             const batch = batches.find((b) => b.batch_id === selectedBatch);
             if (!batch) {
                 setDialogError("Batch not found");
+                setProcessing(false);
+                return;
+            }
+
+            // Block if there are validation errors from preview step
+            if (validationRemarks && validationRemarks.length > 0) {
+                setDialogError(
+                    `❌ BLOCKED: Cannot submit. ${validationRemarks.length} row(s) have validation issues. Please fix the data and re-upload.`,
+                );
                 setProcessing(false);
                 return;
             }

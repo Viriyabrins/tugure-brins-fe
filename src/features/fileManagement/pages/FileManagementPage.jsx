@@ -356,6 +356,43 @@ export default function FileManagementPage() {
     }
   };
 
+  /**
+   * Handle batch toggle - collapse/expand
+   * When collapsing: clear expanded debtors and their files to keep state in sync
+   * When expanding a different batch: clear previous batch's expanded debtors and files
+   */
+  const handleToggleBatch = (batchId) => {
+    const isCurrentlySelected = selectedBatchId === batchId;
+
+    if (isCurrentlySelected) {
+      // Collapsing - clear all state for this batch
+      setSelectedBatchId('');
+      
+      // Remove all debtor nodes from this batch from expandedNodes
+      setExpandedNodes((prev) => {
+        const next = new Set(prev);
+        const batch = tree.find((b) => b.batchId === batchId);
+        if (batch) {
+          batch.children.forEach((debtor) => {
+            next.delete(debtor.id);
+          });
+        }
+        return next;
+      });
+      
+      // Clear selected debtor files
+      setSelectedDebtorFiles([]);
+    } else {
+      // Expanding a different batch - select new batch and clear previous state
+      setSelectedBatchId(batchId);
+      
+      // Clear all expanded debtors (from any batch)
+      setExpandedNodes(new Set());
+      
+      // Clear selected debtor files
+      setSelectedDebtorFiles([]);
+    }
+  };
 
   /**
    * Filter files based on search query
@@ -441,7 +478,7 @@ export default function FileManagementPage() {
                 <div key={batch.id}>
                   {/* Batch */}
                   <div
-                    onClick={() => setSelectedBatchId(selectedBatchId === batch.batchId ? '' : batch.batchId)}
+                    onClick={() => handleToggleBatch(batch.batchId)}
                     className="flex items-center gap-2 px-2 py-2 hover:bg-gray-100 rounded cursor-pointer"
                   >
                     <span className="text-lg">

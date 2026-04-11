@@ -5,7 +5,7 @@ import { isAuthenticated, keycloakLogin } from '@/lib/keycloak';
 /**
  * Home page – acts purely as a redirect gate.
  * If the user is already authenticated → go to /Dashboard.
- * Otherwise → trigger Keycloak login (redirects to cred.sibernetik.co.id).
+ * Otherwise → trigger Keycloak login (redirects to 202.155.91.210:9003).
  */
 export default function Home() {
   const navigate = useNavigate();

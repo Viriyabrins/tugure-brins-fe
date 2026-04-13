@@ -4,7 +4,7 @@ import { maskKtp, getExcelDate } from "@/shared/utils/dataTransform";
 import { backend } from "@/api/backendClient";
 import { parseClaimFile } from "../services/claimParser";
 import { claimService } from "../services/claimService";
-import { uploadFile as uploadToMinIO } from "@/services/minioClient";
+import { uploadFileToStorage } from "@/services/storageService";
 import {
     validateClaimRow,
     validateFileInternalDuplicates,
@@ -304,7 +304,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                     if (attachedFiles.length > 0) {
                         for (const file of attachedFiles) {
                             try {
-                                await uploadToMinIO(file, claimNo, batch.batch_id);
+                                await uploadFileToStorage(file, { recordId: claimNo, batchId: batch.batch_id });
                             } catch (fileErr) {
                                 console.error(
                                     `Failed to upload file ${file.name} for claim ${claimNo}:`,

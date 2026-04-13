@@ -6,10 +6,24 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+// Convert relative endpoint to absolute URL if needed
+function getAbsoluteEndpoint(endpoint) {
+  if (!endpoint) return undefined;
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    return endpoint; // Already absolute
+  }
+  if (endpoint.startsWith('/')) {
+    // Relative path - make it absolute using current origin
+    return `${window.location.origin}${endpoint}`;
+  }
+  return endpoint;
+}
+
 // Initialize S3 client configured for MinIO
+const endpointUrl = getAbsoluteEndpoint(import.meta.env.VITE_MINIO_ENDPOINT);
 const s3Client = new S3Client({
   region: 'us-east-1', // MinIO uses standard regions
-  endpoint: import.meta.env.VITE_MINIO_ENDPOINT,
+  endpoint: endpointUrl,
   credentials: {
     accessKeyId: import.meta.env.VITE_MINIO_ACCESS_KEY,
     secretAccessKey: import.meta.env.VITE_MINIO_SECRET_KEY,

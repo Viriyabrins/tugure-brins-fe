@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Download, Trash2, Loader } from "lucide-react";
-import { listFiles, getPresignedUrl, deleteFile } from "@/services/minioClient";
+import { getFilesForRecord, getDownloadUrl, removeFile } from "@/services/storageService";
 import { formatFileSize, getFileIcon } from "@/utils/fileValidation";
 // import { formatFileSize, getFileIcon } from "../utils/fileValidation"; 
 
@@ -40,7 +40,7 @@ export function FilePreviewModal({ open, onClose, claimId, batchId, onFilesLoade
         setLoading(true);
         setError("");
         try {
-            const fileList = await listFiles(claimId, batchId);
+            const fileList = await getFilesForRecord(claimId, batchId);
             setFiles(fileList);
             onFilesLoaded?.(fileList);
         } catch (err) {
@@ -57,7 +57,7 @@ export function FilePreviewModal({ open, onClose, claimId, batchId, onFilesLoade
 
         setDownloading((prev) => ({ ...prev, [file.key]: true }));
         try {
-            const url = await getPresignedUrl(file.key);
+            const url = await getDownloadUrl(file.key);
             
             // Create a temporary link and click it to download
             const link = document.createElement("a");
@@ -81,7 +81,7 @@ export function FilePreviewModal({ open, onClose, claimId, batchId, onFilesLoade
 
         setDeleting((prev) => ({ ...prev, [file.key]: true }));
         try {
-            await deleteFile(file.key);
+            await removeFile(file.key);
             setFiles((prev) => prev.filter((f) => f.key !== file.key));
         } catch (err) {
             console.error("Failed to delete file:", err);

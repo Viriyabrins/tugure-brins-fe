@@ -1,20 +1,16 @@
 /**
- * Storage service for S3/MinIO operations.
+ * Storage service for file operations via backend API.
  * Centralized wrapper for file upload, download, deletion, and listing.
+ * Backend handles all MinIO interactions (credentials not exposed to frontend).
  * Used by all features: claims, debtors, contracts, master-contracts, etc.
  */
 
-import {
-  uploadFile as minioUpload,
-  deleteFile,
-  listFiles,
-  getPresignedUrl,
-} from './minioClient.js';
 import { validateFile, validateFiles } from '@/utils/fileValidation.js';
 
+const API_BASE = import.meta.env.VITE_API_PROXY || '/api';
+
 /**
- * Upload and validate a file to MinIO storage.
- * Automatically converts File/Blob to ArrayBuffer for browser compatibility.
+ * Upload and validate a file via backend API.
  * 
  * @param {File} file - File to upload
  * @param {Object} options - Upload options
@@ -40,16 +36,32 @@ export async function uploadFileToStorage(file, options) {
   }
 
   try {
-    // Upload to MinIO with automatic ArrayBuffer conversion
-    const result = await minioUpload(file, recordId, batchId);
-    return { success: true, data: result };
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('recordId', recordId);
+    formData.append('batchId', batchId);
+
+    const response = await fetch(`${API_BASE}/files/upload`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || `Upload failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { success: true, data: data.data || data };
   } catch (err) {
+    console.error('Upload error:', err);
     return { success: false, error: err.message };
   }
 }
 
 /**
- * Upload and validate multiple files to storage.
+ * Upload and validate multiple files via backend API.
  * Stops on first error or validates all before uploading.
  * 
  * @param {File[]} files - Array of files to upload
@@ -90,8 +102,13 @@ export async function uploadMultipleFiles(files, options) {
     }
 
     try {
-      const result = await minioUpload(file, recordId, batchId);
-      uploaded.push(result);
+      const result = await uploadFileToStorage(file, { recordId, batchId });
+      if (result.success) {
+        uploaded.push(result.data);
+      } else {
+        errors.push(`${file.name}: ${result.error}`);
+        if (stopOnError) break;
+      }
     } catch (err) {
       errors.push(`${file.name}: ${err.message}`);
       if (stopOnError) break;
@@ -102,11 +119,11 @@ export async function uploadMultipleFiles(files, options) {
 }
 
 /**
- * Get all files for a record.
+ * Get all files for a record via backend API.
  * 
  * @param {string} recordId - Record ID (claim_no, debtor ID, etc.)
  * @param {string} batchId - Batch ID
- * @returns {Promise<Array>} Array of file objects {key, fileName, size, lastModified, bucket}
+ * @returns {Promise<Array>} Array of file objects {key, fileName, size, lastModified}
  * 
  * @example
  * const files = await getFilesForRecord('CLM001', 'BATCH-2026-03');
@@ -114,7 +131,17 @@ export async function uploadMultipleFiles(files, options) {
  */
 export async function getFilesForRecord(recordId, batchId) {
   try {
-    return await listFiles(recordId, batchId);
+    const params = new URLSearchParams({ recordId, batchId });
+    const response = await fetch(`${API_BASE}/files?${params.toString()}`, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch files with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.data?.files || [];
   } catch (err) {
     console.error('Error fetching files:', err);
     return [];
@@ -122,19 +149,29 @@ export async function getFilesForRecord(recordId, batchId) {
 }
 
 /**
- * Get a presigned download URL for a file.
+ * Get a presigned download URL for a file via backend API.
  * URL expires in 30 minutes for security.
  * 
- * @param {string} fileKey - Full file key from MinIO (e.g., 'brins/BATCH-ID/RECORD-ID/filename')
+ * @param {string} fileKey - Full file key (e.g., 'BATCH-ID/RECORD-ID/filename')
  * @returns {Promise<string>} Presigned URL valid for 30 minutes
  * 
  * @example
- * const url = await getDownloadUrl('brins/BATCH-2026-03/CLM001/document.pdf');
+ * const url = await getDownloadUrl('BATCH-2026-03/CLM001/document.pdf');
  * window.open(url); // Opens file in new tab
  */
 export async function getDownloadUrl(fileKey) {
   try {
-    return await getPresignedUrl(fileKey);
+    const params = new URLSearchParams({ key: fileKey });
+    const response = await fetch(`${API_BASE}/files/download-url?${params.toString()}`, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get download URL with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.data?.url || data.url;
   } catch (err) {
     console.error('Error generating download URL:', err);
     throw err;
@@ -142,17 +179,26 @@ export async function getDownloadUrl(fileKey) {
 }
 
 /**
- * Delete a file from storage.
+ * Delete a file from storage via backend API.
  * 
- * @param {string} fileKey - Full file key from MinIO
+ * @param {string} fileKey - Full file key
  * @returns {Promise<void>}
  * 
  * @example
- * await removeFile('brins/BATCH-2026-03/CLM001/document.pdf');
+ * await removeFile('BATCH-2026-03/CLM001/document.pdf');
  */
 export async function removeFile(fileKey) {
   try {
-    await deleteFile(fileKey);
+    // Encode the key for URL
+    const encodedKey = encodeURIComponent(fileKey);
+    const response = await fetch(`${API_BASE}/files/${encodedKey}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete file with status ${response.status}`);
+    }
   } catch (err) {
     console.error('Error deleting file:', err);
     throw err;
@@ -168,7 +214,7 @@ export async function removeFile(fileKey) {
  */
 export async function getTotalFilesSize(recordId, batchId) {
   try {
-    const files = await listFiles(recordId, batchId);
+    const files = await getFilesForRecord(recordId, batchId);
     return files.reduce((sum, file) => sum + (file.size || 0), 0);
   } catch (err) {
     console.error('Error calculating total file size:', err);

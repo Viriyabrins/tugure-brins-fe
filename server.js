@@ -49,7 +49,7 @@ if (PROXY_TARGET) {
   fastify.register(fastifyHttpProxy, {
     upstream: PROXY_TARGET,
     prefix: PROXY_PREFIX,
-    // preserve the /api prefix when forwarding so upstream routes that expect /api match
+    // Preserve the /api prefix when forwarding to backend (backend routes expect /api/files)
     rewritePrefix: PROXY_PREFIX,
     http2: false,
     replyOptions: {

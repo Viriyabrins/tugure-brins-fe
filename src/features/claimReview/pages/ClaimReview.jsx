@@ -22,8 +22,10 @@ import { DEFAULT_CLAIM_FILTER, CLAIM_PAGE_SIZE } from "../utils/claimReviewConst
 import { useClaimReviewData } from "../hooks/useClaimReviewData";
 import { useClaimReviewActions } from "../hooks/useClaimReviewActions";
 import { FilePreviewModal } from "../../claims/components/FilePreviewModal";
+import { useIsViewer } from "@/hooks/usePermissions";
 
 export default function ClaimReview() {
+    const isViewer = useIsViewer();
     const data = useClaimReviewData();
     const {
         user, auditActor, tokenRoles,

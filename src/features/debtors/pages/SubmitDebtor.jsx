@@ -30,6 +30,7 @@ import { useDebtorData } from "../hooks/useDebtorData";
 import { useDebtorUpload } from "../hooks/useDebtorUpload";
 import { useDebtorActions } from "../hooks/useDebtorActions";
 import { useDebtorSSE } from "@/hooks/useDebtorSSE";
+import { useIsViewer } from "@/hooks/usePermissions";
 
 // ─── Template download helpers ───────────────────────────────────────────────
 
@@ -106,6 +107,7 @@ function handleDownloadTemplate() {
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function SubmitDebtor() {
+    const isViewer = useIsViewer();
     const data = useDebtorData();
     const {
         user, auditActor, contracts, batches, debtors, totalDebtors,
@@ -224,29 +226,29 @@ export default function SubmitDebtor() {
 
     // ─── Table columns ─────────────────────────────────────────────────────
     const columns = [
-        // {
-        //     header: isViewer ? null : (
-        //         <Checkbox
-        //             checked={selectedDebtors.length === pageData.length && pageData.length > 0}
-        //             onCheckedChange={(checked) =>
-        //                 setSelectedDebtors(checked ? pageData.map((d) => d.id) : [])
-        //             }
-        //         />
-        //     ),
-        //     cell: (row) => isViewer ? null : (
-        //         <Checkbox
-        //             checked={selectedDebtors.includes(row.id)}
-        //             onCheckedChange={(checked) =>
-        //                 setSelectedDebtors(
-        //                     checked
-        //                         ? [...selectedDebtors, row.id]
-        //                         : selectedDebtors.filter((id) => id !== row.id),
-        //                 )
-        //             }
-        //         />
-        //     ),
-        //     width: "50px",
-        // },
+        {
+            header: isViewer ? null : (
+                <Checkbox
+                    checked={selectedDebtors.length === pageData.length && pageData.length > 0}
+                    onCheckedChange={(checked) =>
+                        setSelectedDebtors(checked ? pageData.map((d) => d.id) : [])
+                    }
+                />
+            ),
+            cell: (row) => isViewer ? null : (
+                <Checkbox
+                    checked={selectedDebtors.includes(row.id)}
+                    onCheckedChange={(checked) =>
+                        setSelectedDebtors(
+                            checked
+                                ? [...selectedDebtors, row.id]
+                                : selectedDebtors.filter((id) => id !== row.id),
+                        )
+                    }
+                />
+            ),
+            width: "50px",
+        },
         {
             header: "Batch ID", accessorKey: "batch_id",
             cell: (row) => <span className="font-mono text-xs">{row.batch_id}</span>,

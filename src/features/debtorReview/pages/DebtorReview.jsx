@@ -21,8 +21,10 @@ import { DEFAULT_DR_FILTER, DR_PAGE_SIZE } from "../utils/debtorReviewConstants"
 import { useDebtorReviewData } from "../hooks/useDebtorReviewData";
 import { useDebtorReviewActions } from "../hooks/useDebtorReviewActions";
 import { useDebtorSSE } from "@/hooks/useDebtorSSE";
+import { useIsViewer } from "@/hooks/usePermissions";
 
 export default function DebtorReview() {
+    const isViewer = useIsViewer();
     const data = useDebtorReviewData();
     const {
         debtors, totalDebtors, contracts, loading, filters, setFilters,

@@ -25,6 +25,7 @@ import { DEFAULT_MC_FILTER, MC_PAGE_SIZE, extractBaseContractNo, PREVIEW_COLUMNS
 import { useMasterContractData } from "../hooks/useMasterContractData";
 import { useMasterContractActions } from "../hooks/useMasterContractActions";
 import { useMasterContractSSE } from "@/hooks/useMasterContractSSE";
+import { useIsViewer } from "@/hooks/usePermissions";
 
 const ApprovalBadge = ({ status }) => {
     const styles = {
@@ -43,6 +44,7 @@ const PreviewCellValue = ({ col, value }) => {
 };
 
 export default function MasterContractManagement() {
+    const isViewer = useIsViewer();
     const data = useMasterContractData();
     const {
         user, auditActor, contracts, total, statsContracts, loading,
@@ -76,16 +78,16 @@ export default function MasterContractManagement() {
 
     const columns = [
         {
-            header: (
+            header: isViewer ? null : (
                 <Checkbox
                     checked={contracts.length > 0 && selectedContractIds.length === contracts.length}
                     onCheckedChange={(checked) => setSelectedContractIds(checked ? contracts.map((c) => c.contract_id || c.id) : [])}
                 />
             ),
-            cell: (row) => {
+            cell: (row) => isViewer ? null : (() => {
                 const cId = row.contract_id || row.id;
                 return <Checkbox checked={selectedContractIds.includes(cId)} onCheckedChange={(checked) => setSelectedContractIds(checked ? [...selectedContractIds, cId] : selectedContractIds.filter((id) => id !== cId))} />;
-            },
+            })(),
             width: "50px",
         },
         { header: "Contract No", cell: (row) => extractBaseContractNo(row.contract_no || row.contract_no_from || row.contract_id || "") || "-" },

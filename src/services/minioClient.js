@@ -36,7 +36,7 @@ export async function uploadFile(file, claimId, batchId) {
     // Generate unique filename with timestamp to avoid collisions
     const timestamp = Date.now();
     const fileName = `${timestamp}-${file.name}`;
-    const key = `${BUCKET}/${batchId}/${claimId}/${fileName}`;
+    const key = `${batchId}/${claimId}/${fileName}`;
 
     // Convert File/Blob to ArrayBuffer for AWS SDK v3 compatibility
     const arrayBuffer = await file.arrayBuffer();
@@ -101,7 +101,7 @@ export async function listFiles(claimId, batchId) {
   if (!batchId) throw new Error('Batch ID is required');
 
   try {
-    const prefix = `${BUCKET}/${batchId}/${claimId}/`;
+    const prefix = `${batchId}/${claimId}/`;
     const command = new ListObjectsV2Command({
       Bucket: BUCKET,
       Prefix: prefix,

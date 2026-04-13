@@ -28,7 +28,9 @@ const {
   HOST = '0.0.0.0',
   PROXY_TARGET = 'http://localhost:3000',
   PROXY_PREFIX = '/api',
-  CORS_ORIGIN = '*'
+  CORS_ORIGIN = '*',
+  MINIO_TARGET_ENDPOINT,
+  MINIO_PROXY_PREFIX = '/minio'
 } = process.env;
 
 // Optional SSL certificate paths (can be relative to the env file directory)
@@ -52,6 +54,20 @@ if (PROXY_TARGET) {
     http2: false,
     replyOptions: {
       // leave headers as-is; you can customize here if needed
+    }
+  });
+}
+
+// Register HTTP proxy for MinIO routes (if MINIO_TARGET_ENDPOINT provided)
+if (MINIO_TARGET_ENDPOINT) {
+  fastify.register(fastifyHttpProxy, {
+    upstream: MINIO_TARGET_ENDPOINT,
+    prefix: MINIO_PROXY_PREFIX,
+    // remove the /minio prefix when forwarding to MinIO
+    rewritePrefix: '',
+    http2: false,
+    replyOptions: {
+      // leave headers as-is
     }
   });
 }
@@ -146,6 +162,9 @@ const start = async () => {
     console.log(`Loaded env file: ${ENV_FILE}`);
     console.log(`Server running: ${httpsOptions ? 'https' : 'http'}://${HOST}:${PORT}`);
     console.log(`Proxy mapping: ${PROXY_PREFIX} -> ${PROXY_TARGET}`);
+    if (MINIO_TARGET_ENDPOINT) {
+      console.log(`MinIO proxy mapping: ${MINIO_PROXY_PREFIX} -> ${MINIO_TARGET_ENDPOINT}`);
+    }
     console.log(`CORS origin: ${CORS_ORIGIN}`);
   } catch (err) {
     console.error('Failed to start server', err);

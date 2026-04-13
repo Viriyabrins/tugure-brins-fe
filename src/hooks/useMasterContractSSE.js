@@ -2,14 +2,14 @@ import { useEffect, useRef } from 'react';
 import { getKeycloakToken } from '@/lib/keycloak';
 
 /**
- * Custom React hook for Server-Sent Events integration with debtor data
- * Connects to /api/db-channel/stream and triggers callback on debtor changes
+ * Custom React hook for Server-Sent Events integration with master contract data
+ * Connects to /api/db-channel/stream and triggers callback on mastercontract changes
  * Includes debouncing to batch rapid updates (e.g., bulk operations)
  * 
- * @param {Function} onDebtorChange - Callback function to execute when debtor data changes
+ * @param {Function} onMasterContractChange - Callback function to execute when mastercontract data changes
  * @returns {void}
  */
-export function useDebtorSSE(onDebtorChange) {
+export function useMasterContractSSE(onMasterContractChange) {
   const eventSourceRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttemptsRef = useRef(5);
@@ -23,8 +23,8 @@ export function useDebtorSSE(onDebtorChange) {
   // Helper function to execute debounced callback
   const executeDebouncedCallback = () => {
     if (pendingChangesRef.current.length > 0) {
-      console.log(`[useDebtorSSE] 🔄 Executing debounced refresh after ${pendingChangesRef.current.length} changes`);
-      onDebtorChange(pendingChangesRef.current);
+      console.log(`[useMasterContractSSE] 🔄 Executing debounced refresh after ${pendingChangesRef.current.length} changes`);
+      onMasterContractChange(pendingChangesRef.current);
       pendingChangesRef.current = [];
     }
   };
@@ -36,12 +36,12 @@ export function useDebtorSSE(onDebtorChange) {
     // Clear existing timer if any
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
-      console.log('[useDebtorSSE] ⏱️  Debounce reset (more changes incoming)');
+      console.log('[useMasterContractSSE] ⏱️  Debounce reset (more changes incoming)');
     }
     
     // Set new timer
     debounceTimerRef.current = setTimeout(() => {
-      console.log('[useDebtorSSE] ⏱️  Debounce complete, triggering refresh');
+      console.log('[useMasterContractSSE] ⏱️  Debounce complete, triggering refresh');
       executeDebouncedCallback();
       debounceTimerRef.current = null;
     }, DEBOUNCE_DELAY);
@@ -52,80 +52,74 @@ export function useDebtorSSE(onDebtorChange) {
       try {
         const token = getKeycloakToken();
         if (!token) {
-          console.warn('[useDebtorSSE] No authentication token available');
+          console.warn('[useMasterContractSSE] No authentication token available');
           return;
         }
 
-        // Use relative path to go through dev proxy (5173 -> 4000)
-        // In production, this will use the same domain as the app
         const apiUrl = `/api/db-channel/stream?access_token=${encodeURIComponent(token)}`;
         
-        console.log('[useDebtorSSE] Connecting to:', apiUrl);
+        console.log('[useMasterContractSSE] Connecting to:', apiUrl);
         const eventSource = new EventSource(apiUrl);
 
         eventSource.addEventListener('connected', (event) => {
-          console.log('[useDebtorSSE] ✅ Connected to SSE stream', event.data);
-          reconnectAttemptsRef.current = 0; // Reset on successful connection
+          console.log('[useMasterContractSSE] ✅ Connected to SSE stream', event.data);
+          reconnectAttemptsRef.current = 0;
           reconnectDelayRef.current = 1000;
         });
 
         eventSource.addEventListener('message', (event) => {
-          console.log('[useDebtorSSE] 📨 Raw message received:', event.data);
+          console.log('[useMasterContractSSE] 📨 Raw message received:', event.data);
           try {
             const payload = JSON.parse(event.data);
-            console.log('[useDebtorSSE] 📦 Parsed payload:', payload.table, payload.operation);
+            console.log('[useMasterContractSSE] 📦 Parsed payload:', payload.table, payload.operation);
             
-            // Filter for debtor table changes only
-            if (payload.table === 'debtor') {
-              console.log('[useDebtorSSE] 🔄 Debtor change detected:', payload.operation, payload.record?.id);
-              // Use debounced callback instead of direct call
+            // Filter for mastercontract table changes only
+            if (payload.table === 'mastercontract') {
+              console.log('[useMasterContractSSE] 🔄 MasterContract change detected:', payload.operation, payload.record?.id);
               debounceCallback(payload);
             } else {
-              console.log('[useDebtorSSE] ⏭️  Skipping non-debtor table:', payload.table);
+              console.log('[useMasterContractSSE] ⏭️  Skipping non-mastercontract table:', payload.table);
             }
           } catch (error) {
-            console.error('[useDebtorSSE] ❌ Parse error:', error, 'Data:', event.data);
+            console.error('[useMasterContractSSE] ❌ Parse error:', error, 'Data:', event.data);
           }
         });
 
         eventSource.onerror = (error) => {
-          console.error('[useDebtorSSE] ❌ Connection error:', error);
+          console.error('[useMasterContractSSE] ❌ Connection error:', error);
           eventSource.close();
           
-          // Exponential backoff reconnection
           if (reconnectAttemptsRef.current < maxReconnectAttemptsRef.current) {
             reconnectAttemptsRef.current += 1;
             const delay = reconnectDelayRef.current * Math.pow(2, reconnectAttemptsRef.current - 1);
-            console.log(`[useDebtorSSE] 🔁 Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttemptsRef.current})`);
+            console.log(`[useMasterContractSSE] 🔁 Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttemptsRef.current})`);
             
             setTimeout(() => {
               connectSSE();
             }, delay);
           } else {
-            console.error('[useDebtorSSE] ❌ Max reconnection attempts reached. SSE connection failed.');
+            console.error('[useMasterContractSSE] ❌ Max reconnection attempts reached. SSE connection failed.');
           }
         };
 
         eventSourceRef.current = eventSource;
       } catch (error) {
-        console.error('[useDebtorSSE] ❌ Connection setup error:', error);
+        console.error('[useMasterContractSSE] ❌ Connection setup error:', error);
       }
     };
 
-    console.log('[useDebtorSSE] Hook mounted, attempting connection');
+    console.log('[useMasterContractSSE] Hook mounted, attempting connection');
     connectSSE();
 
-    // Cleanup: close connection on unmount
     return () => {
-      // Clear any pending debounce timer
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
       
       if (eventSourceRef.current) {
-        console.log('[useDebtorSSE] 🧹 Cleaning up SSE connection');
+        console.log('[useMasterContractSSE] 🧹 Cleaning up SSE connection');
         eventSourceRef.current.close();
-        console.log('[useDebtorSSE] SSE connection closed');
+        console.log('[useMasterContractSSE] SSE connection closed');
         eventSourceRef.current = null;
       }
     };

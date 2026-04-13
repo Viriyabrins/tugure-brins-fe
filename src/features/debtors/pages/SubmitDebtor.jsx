@@ -224,29 +224,29 @@ export default function SubmitDebtor() {
 
     // ─── Table columns ─────────────────────────────────────────────────────
     const columns = [
-        {
-            header: isViewer ? null : (
-                <Checkbox
-                    checked={selectedDebtors.length === pageData.length && pageData.length > 0}
-                    onCheckedChange={(checked) =>
-                        setSelectedDebtors(checked ? pageData.map((d) => d.id) : [])
-                    }
-                />
-            ),
-            cell: (row) => isViewer ? null : (
-                <Checkbox
-                    checked={selectedDebtors.includes(row.id)}
-                    onCheckedChange={(checked) =>
-                        setSelectedDebtors(
-                            checked
-                                ? [...selectedDebtors, row.id]
-                                : selectedDebtors.filter((id) => id !== row.id),
-                        )
-                    }
-                />
-            ),
-            width: "50px",
-        },
+        // {
+        //     header: isViewer ? null : (
+        //         <Checkbox
+        //             checked={selectedDebtors.length === pageData.length && pageData.length > 0}
+        //             onCheckedChange={(checked) =>
+        //                 setSelectedDebtors(checked ? pageData.map((d) => d.id) : [])
+        //             }
+        //         />
+        //     ),
+        //     cell: (row) => isViewer ? null : (
+        //         <Checkbox
+        //             checked={selectedDebtors.includes(row.id)}
+        //             onCheckedChange={(checked) =>
+        //                 setSelectedDebtors(
+        //                     checked
+        //                         ? [...selectedDebtors, row.id]
+        //                         : selectedDebtors.filter((id) => id !== row.id),
+        //                 )
+        //             }
+        //         />
+        //     ),
+        //     width: "50px",
+        // },
         {
             header: "Batch ID", accessorKey: "batch_id",
             cell: (row) => <span className="font-mono text-xs">{row.batch_id}</span>,

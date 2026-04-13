@@ -1,6 +1,6 @@
 /**
  * File Management Page
- * 3-Level Hierarchy: All Files → Batch → Debtor Name → Files
+ * 2-Level Hierarchy: All Files → Batch → Claim → Files
  */
 
 import React, { useEffect, useState, useMemo } from 'react';
@@ -15,9 +15,10 @@ import fileManagerService from '../services/fileManagerService';
 import { toast } from 'sonner';
 
 /**
- * Builds 3-level tree: All Files → Batch → Debtor Name
+ * Builds 2-level tree: All Files → Batch → Claim
+ * Each claim node represents a claim_no (CLM-XXXX)
  */
-const buildThreeLevelTree = async (claims) => {
+const buildClaimTree = async (claims) => {
   // Group by batch
   const byBatch = {};
   claims.forEach((claim) => {
@@ -28,30 +29,20 @@ const buildThreeLevelTree = async (claims) => {
     byBatch[batchId].push(claim);
   });
 
-  // Build tree structure
+  // Build tree structure: Batch → Claims (no debtor grouping)
   const tree = Object.entries(byBatch).map(([batchId, batchClaims]) => {
-    // Group within batch by debtor name (nama_tertanggung)
-    const byDebtor = {};
-    batchClaims.forEach((claim) => {
-      const debtorName = claim.nama_tertanggung || 'Unknown';
-      if (!byDebtor[debtorName]) {
-        byDebtor[debtorName] = [];
-      }
-      byDebtor[debtorName].push(claim);
-    });
-
     return {
       id: `batch-${batchId}`,
       label: batchId,
       type: 'batch',
       batchId,
-      children: Object.entries(byDebtor).map(([debtorName, debtorClaims]) => ({
-        id: `debtor-${batchId}-${debtorName}`,
-        label: debtorName,
-        type: 'debtor',
+      children: batchClaims.map((claim) => ({
+        id: `claim-${batchId}-${claim.claim_no}`,
+        label: claim.claim_no,
+        type: 'claim',
         batchId,
-        debtorName,
-        claims: debtorClaims, // Store claims for file loading
+        claimId: claim.claim_no,
+        claim, // Store full claim object for reference
         children: [], // Will be populated with files on demand
         isLoaded: false,
         isLoading: false,
@@ -63,35 +54,22 @@ const buildThreeLevelTree = async (claims) => {
 };
 
 /**
- * Load files for a debtor (all their claims' files)
+ * Load files for a specific claim
  */
-const loadFilesForDebtor = async (batchId, debtorName, claims) => {
+const loadFilesForClaim = async (batchId, claimId) => {
   try {
-    let allFiles = [];
+    const files = await fileManagerService.loadFilesForRecord(claimId, batchId);
     
-    for (const claim of claims) {
-      try {
-        const claimId = claim.claim_no || claim.id;
-        const files = await fileManagerService.loadFilesForRecord(claimId, batchId);
-        
-        if (Array.isArray(files)) {
-          allFiles = allFiles.concat(
-            files.map((file) => ({
-              ...file,
-              claimNo: claim.claim_no,
-              batchId,
-              debtorName,
-            }))
-          );
-        }
-      } catch (err) {
-        console.warn(`Failed to load files for claim ${claim.claim_no}:`, err);
-      }
+    if (Array.isArray(files)) {
+      return files.map((file) => ({
+        ...file,
+        claimNo: claimId,
+        batchId,
+      }));
     }
-    
-    return allFiles;
+    return [];
   } catch (err) {
-    console.error('Failed to load debtor files:', err);
+    console.error(`Failed to load files for claim ${claimId}:`, err);
     return [];
   }
 };
@@ -267,7 +245,7 @@ export default function FileManagementPage() {
           limit: 1000,
         });
         const claims = res.data || [];
-        const newTree = await buildThreeLevelTree(claims);
+        const newTree = await buildClaimTree(claims);
         setTree(newTree);
       } catch (err) {
         setError(`Failed to load claims: ${err?.message || 'Unknown error'}`);
@@ -281,7 +259,7 @@ export default function FileManagementPage() {
   }, []);
 
   /**
-   * Handle tree node expansion - load files for debtor
+   * Handle tree node expansion - load files for claim
    */
   const handleExpandNode = async (nodeId) => {
     if (expandedNodes.has(nodeId)) {
@@ -295,26 +273,22 @@ export default function FileManagementPage() {
       return;
     }
 
-    // Expand - find the debtor node and load files
+    // Expand - find the claim node and load files
     setLoadingNodeId(nodeId);
     try {
-      let debtorNode = null;
+      let claimNode = null;
       
       for (const batch of tree) {
-        for (const debtor of batch.children) {
-          if (debtor.id === nodeId) {
-            debtorNode = debtor;
+        for (const claim of batch.children) {
+          if (claim.id === nodeId) {
+            claimNode = claim;
             break;
           }
         }
       }
 
-      if (debtorNode) {
-        const files = await loadFilesForDebtor(
-          debtorNode.batchId,
-          debtorNode.debtorName,
-          debtorNode.claims
-        );
+      if (claimNode) {
+        const files = await loadFilesForClaim(claimNode.batchId, claimNode.claimId);
         setSelectedDebtorFiles(files);
         setExpandedNodes((prev) => new Set(prev).add(nodeId));
       }
@@ -358,8 +332,8 @@ export default function FileManagementPage() {
 
   /**
    * Handle batch toggle - collapse/expand
-   * When collapsing: clear expanded debtors and their files to keep state in sync
-   * When expanding a different batch: clear previous batch's expanded debtors and files
+   * When collapsing: clear expanded claims and their files to keep state in sync
+   * When expanding a different batch: clear previous batch's expanded claims and files
    */
   const handleToggleBatch = (batchId) => {
     const isCurrentlySelected = selectedBatchId === batchId;
@@ -368,28 +342,28 @@ export default function FileManagementPage() {
       // Collapsing - clear all state for this batch
       setSelectedBatchId('');
       
-      // Remove all debtor nodes from this batch from expandedNodes
+      // Remove all claim nodes from this batch from expandedNodes
       setExpandedNodes((prev) => {
         const next = new Set(prev);
         const batch = tree.find((b) => b.batchId === batchId);
         if (batch) {
-          batch.children.forEach((debtor) => {
-            next.delete(debtor.id);
+          batch.children.forEach((claim) => {
+            next.delete(claim.id);
           });
         }
         return next;
       });
       
-      // Clear selected debtor files
+      // Clear selected claim files
       setSelectedDebtorFiles([]);
     } else {
       // Expanding a different batch - select new batch and clear previous state
       setSelectedBatchId(batchId);
       
-      // Clear all expanded debtors (from any batch)
+      // Clear all expanded claims (from any batch)
       setExpandedNodes(new Set());
       
-      // Clear selected debtor files
+      // Clear selected claim files
       setSelectedDebtorFiles([]);
     }
   };
@@ -416,21 +390,21 @@ export default function FileManagementPage() {
       if (batch) items.push(batch.label);
     }
 
-    // try to find an expanded debtor label
-    let debtorLabel = '';
+    // Try to find an expanded claim label
+    let claimLabel = '';
     for (const batch of tree) {
-      const found = batch.children.find((d) => expandedNodes.has(d.id));
+      const found = batch.children.find((c) => expandedNodes.has(c.id));
       if (found) {
-        debtorLabel = found.label;
+        claimLabel = found.label;
         break;
       }
     }
 
-    if (!debtorLabel && selectedDebtorFiles.length > 0) {
-      debtorLabel = selectedDebtorFiles[0].debtorName || '';
+    if (!claimLabel && selectedDebtorFiles.length > 0) {
+      claimLabel = selectedDebtorFiles[0].claimNo || '';
     }
 
-    if (debtorLabel) items.push(debtorLabel);
+    if (claimLabel) items.push(claimLabel);
     return items;
   }, [tree, selectedBatchId, expandedNodes, selectedDebtorFiles]);
 
@@ -499,31 +473,31 @@ export default function FileManagementPage() {
                     </span>
                   </div>
 
-                  {/* Debtors */}
+                  {/* Claims */}
                   {selectedBatchId === batch.batchId && (
                     <div className="ml-4 space-y-1">
-                      {batch.children.map((debtor) => (
+                      {batch.children.map((claim) => (
                         <div
-                          key={debtor.id}
-                          onClick={() => handleExpandNode(debtor.id)}
+                          key={claim.id}
+                          onClick={() => handleExpandNode(claim.id)}
                           className={`flex items-center gap-2 px-2 py-2 rounded cursor-pointer ${
-                            expandedNodes.has(debtor.id)
+                            expandedNodes.has(claim.id)
                               ? 'bg-blue-50'
                               : 'hover:bg-gray-100'
                           }`}
                         >
                           <span className="text-lg">
-                            {expandedNodes.has(debtor.id) ? (
+                            {expandedNodes.has(claim.id) ? (
                               <ChevronDown className="w-4 h-4" />
                             ) : (
                               <ChevronRight className="w-4 h-4" />
                             )}
                           </span>
                           <span className="text-sm text-gray-700 truncate">
-                            {debtor.label}
+                            {claim.label}
                           </span>
                           <span className="text-xs text-gray-500 ml-auto">
-                            {loadingNodeId === debtor.id ? (
+                            {loadingNodeId === claim.id ? (
                               <Loader2 className="w-3 h-3 animate-spin" />
                             ) : (
                               selectedDebtorFiles.length || '0'

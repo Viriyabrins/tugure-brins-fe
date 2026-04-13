@@ -24,6 +24,7 @@ import FilterTab from "@/components/common/FilterTab";
 import { DEFAULT_MC_FILTER, MC_PAGE_SIZE, extractBaseContractNo, PREVIEW_COLUMNS } from "../utils/masterContractConstants";
 import { useMasterContractData } from "../hooks/useMasterContractData";
 import { useMasterContractActions } from "../hooks/useMasterContractActions";
+import { useMasterContractSSE } from "@/hooks/useMasterContractSSE";
 
 const ApprovalBadge = ({ status }) => {
     const styles = {
@@ -53,6 +54,13 @@ export default function MasterContractManagement() {
     const clearSelection = () => setSelectedContractIds([]);
 
     const actions = useMasterContractActions({ user, auditActor, contracts, statsContracts, reload, page, filters, loadContracts, loadStats });
+
+    // SSE hook for real-time master contract updates
+    useMasterContractSSE(() => {
+        console.log('[MasterContractManagement] SSE event received, reloading contracts');
+        loadContracts();
+        loadStats();
+    });
 
     const totalPages = Math.max(1, Math.ceil(total / MC_PAGE_SIZE));
     const from = total === 0 ? 0 : (page - 1) * MC_PAGE_SIZE + 1;

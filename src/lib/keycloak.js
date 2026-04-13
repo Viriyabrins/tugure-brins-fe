@@ -256,12 +256,12 @@ export async function initKeycloak() {
     }
 }
 
-// Keycloak Login Function
+// Keycloak Login Function — redirects to the app login page.
+// Previously called the OIDC broker route (/api/auth/keycloak/login) which
+// only supported the brins realm. Direct login on /Home handles all realms.
 /** @param {RedirectOptions} [options={}] */
 export async function keycloakLogin(options = {}) {
-    const redirectUri = options.redirectUri || keycloakConfig.redirectUri;
-    const loginUrl = `${apiBase}/api/auth/keycloak/login?redirect_uri=${encodeURIComponent(redirectUri)}`;
-    window.location.href = loginUrl;
+    window.location.href = '/Home';
 }
 
 // Keycloak Logout Function

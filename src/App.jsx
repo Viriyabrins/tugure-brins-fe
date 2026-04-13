@@ -8,6 +8,7 @@ import { pagesConfig } from './pages.config'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { KeycloakProvider, useKeycloakAuth } from '@/lib/KeycloakContext';
+import LandingPage from './pages/LandingPage';
 
 const { Pages, Layout } = pagesConfig;
 
@@ -45,8 +46,10 @@ const PublicRedirect = () => {
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* Public entry points show Home or redirect authenticated users to Dashboard */}
-      <Route path="/" element={<PublicRedirect />} />
+      {/* Landing page — shown to everyone, no sidebar/header */}
+      <Route path="/" element={<LandingPage />} />
+
+      {/* Login page — show Home or redirect authenticated users to Dashboard */}
       <Route path="/Home" element={<PublicRedirect />} />
 
       {/* All other pages require authentication */}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { isAuthenticated, ingestDirectLoginTokens } from '@/lib/keycloak';
 const SUPPORTED_DOMAINS = ['brins.co.id', 'tugure.co.id'];
 
 export default function Home() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [loggingIn, setLoggingIn] = useState(false);
   const [email, setEmail] = useState('');
@@ -170,6 +172,16 @@ export default function Home() {
               )}
             </Button>
           </form>
+
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={() => navigate('/')}
+              aria-label="Kembali ke Landing Page"
+              className="text-sm text-black/90 bg-transparent border border-white/20 px-3 py-2 rounded-md hover:text-slate-700"
+            >
+              Kembali ke Landing Page
+            </button>
+          </div>
         </CardContent>
       </Card>
     </div>

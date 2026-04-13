@@ -170,14 +170,6 @@ export default function Home() {
               )}
             </Button>
           </form>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800 font-medium mb-1">Supported Domains:</p>
-            <ul className="text-xs text-blue-700 space-y-1">
-              <li><strong>BRINS:</strong> user@brins.co.id</li>
-              <li><strong>TUGURE:</strong> user@tugure.co.id</li>
-            </ul>
-          </div>
         </CardContent>
       </Card>
     </div>

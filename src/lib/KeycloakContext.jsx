@@ -12,13 +12,12 @@ import keycloakService from "@/services/keycloakService";
 const KeycloakContext = createContext(null);
 
 /**
- * Lightweight auth provider backed entirely by Keycloak.
- * No localStorage – everything lives in Keycloak's in-memory token.
+ * Auth provider backed by Keycloak token state with Home.jsx local-session fallback.
  */
 export const KeycloakProvider = ({ children }) => {
     const value = useMemo(
         () => ({
-            /** true when Keycloak has a valid session */
+            /** true when a Keycloak or Home.jsx session is available */
             get isAuthenticated() {
                 return isAuthenticated();
             },
@@ -70,7 +69,7 @@ export const KeycloakProvider = ({ children }) => {
             /** Check a single role */
             hasRole,
 
-            /** Trigger Keycloak logout via service (redirects browser) */
+            /** Trigger logout via service and return to Home */
             logout: () => keycloakService.logout(),
 
             /** Manually refresh the token */

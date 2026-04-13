@@ -6,10 +6,8 @@ import VisualEditAgent from '@/lib/VisualEditAgent'
 import NavigationTracker from '@/lib/NavigationTracker'
 import { pagesConfig } from './pages.config'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
 import PageNotFound from './lib/PageNotFound';
 import { KeycloakProvider, useKeycloakAuth } from '@/lib/KeycloakContext';
-import { keycloakLogin } from '@/lib/keycloak';
 
 const { Pages, Layout } = pagesConfig;
 
@@ -17,59 +15,37 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   <Layout currentPageName={currentPageName}>{children}</Layout>
   : <>{children}</>;
 
-/**
- * Route guard: if user is not authenticated or token expired,
- * force redirect to Keycloak login (via "/").
- */
 const RequireAuth = ({ children }) => {
   const { isAuthenticated } = useKeycloakAuth();
   const location = useLocation();
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      keycloakLogin({ redirectUri: window.location.href });
-    }
-  }, [isAuthenticated, location.pathname]);
-
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-sm text-slate-600">Redirecting to login...</p>
-      </div>
-    );
+    return <Navigate to="/Home" replace state={{ from: location }} />;
   }
 
   return children;
 };
 
-/**
- * For "/" and "/Home": if authenticated → redirect to /Dashboard,
- * otherwise trigger Keycloak login.
- */
 const PublicRedirect = () => {
   const { isAuthenticated } = useKeycloakAuth();
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      keycloakLogin({ redirectUri: window.location.origin + '/Dashboard' });
-    }
-  }, [isAuthenticated]);
 
   if (isAuthenticated) {
     return <Navigate to="/Dashboard" replace />;
   }
 
+  const HomePage = Pages.Home;
+
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <p className="text-sm text-slate-600">Redirecting to login...</p>
-    </div>
+    <LayoutWrapper currentPageName="Home">
+      <HomePage />
+    </LayoutWrapper>
   );
 };
 
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* Public entry points redirect to Dashboard or Keycloak login */}
+      {/* Public entry points show Home or redirect authenticated users to Dashboard */}
       <Route path="/" element={<PublicRedirect />} />
       <Route path="/Home" element={<PublicRedirect />} />
 

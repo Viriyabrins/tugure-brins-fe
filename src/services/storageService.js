@@ -37,9 +37,10 @@ export async function uploadFileToStorage(file, options) {
 
   try {
     const formData = new FormData();
-    formData.append('file', file);
+    // Fields must come before file so backend can read them during stream parsing
     formData.append('recordId', recordId);
     formData.append('batchId', batchId);
+    formData.append('file', file);
 
     const response = await fetch(`${API_BASE}/files/upload`, {
       method: 'POST',

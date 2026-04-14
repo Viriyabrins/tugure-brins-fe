@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Shield, Users, Lock, X, ExternalLink } from "lucide-react";
-import briInsuranceLogo from "@/assets/brins-insurance-logo.png";
+import briInsuranceLogo from "@/assets/BRI.png";
 import tugureLogo from "@/assets/tugure-logo.png";
 
 const MODAL_STYLES = `
@@ -58,18 +58,20 @@ function AdminModal({ onClose }) {
     }, [isClosing]);
 
     const adminOptions = [
-            {
-                label: "Login as Admin — Brins",
-                url: "https://202.155.91.210:9003/admin/brins/console/#/brins/realms",
-                description: "Access the Keycloak Admin Console for the Brins realm",
-                color: "#f5a623",
-            },
-            {
-                label: "Login as Admin — Tugure",
-                url: "https://202.155.91.210:9003/admin/tugure/console/#/tugure/realms",
-                description: "Access the Keycloak Admin Console for the Tugure realm",
-                color: "#a78bfa",
-            },
+        {
+            label: "Login as Admin — Brins",
+            url: "https://202.155.91.210:9003/admin/brins/console/#/brins/realms",
+            description:
+                "Access the Keycloak Admin Console for the Brins realm",
+            color: "#f5a623",
+        },
+        {
+            label: "Login as Admin — Tugure",
+            url: "https://202.155.91.210:9003/admin/tugure/console/#/tugure/realms",
+            description:
+                "Access the Keycloak Admin Console for the Tugure realm",
+            color: "#a78bfa",
+        },
     ];
 
     return (
@@ -112,7 +114,7 @@ function AdminModal({ onClose }) {
                 <div className="px-8 py-8">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
                             <Lock size={18} className="text-purple-300" />
                             <h2
                                 id="admin-modal-title"
@@ -146,8 +148,8 @@ function AdminModal({ onClose }) {
                             lineHeight: 1.6,
                         }}
                     >
-                        Choose one of the options below. The selected Admin Console
-                        will open in a new browser tab.
+                        Choose one of the options below. The selected Admin
+                        Console will open in a new browser tab.
                     </p>
 
                     {/* Options */}
@@ -182,21 +184,21 @@ function AdminModal({ onClose }) {
                                 }}
                             >
                                 <div>
-                                        <p
-                                            className="text-white font-medium"
-                                            style={{ fontSize: "0.9rem" }}
-                                        >
-                                            {opt.label}
-                                        </p>
-                                        <p
-                                            style={{
-                                                fontSize: "0.75rem",
-                                                color: opt.color,
-                                                opacity: 0.85,
-                                            }}
-                                        >
-                                            {opt.description}
-                                        </p>
+                                    <p
+                                        className="text-white font-medium"
+                                        style={{ fontSize: "0.9rem" }}
+                                    >
+                                        {opt.label}
+                                    </p>
+                                    <p
+                                        style={{
+                                            fontSize: "0.75rem",
+                                            color: opt.color,
+                                            opacity: 0.85,
+                                        }}
+                                    >
+                                        {opt.description}
+                                    </p>
                                 </div>
                                 <ExternalLink
                                     size={16}
@@ -284,7 +286,7 @@ export default function LandingPage() {
 
             {/* Header */}
             <header className="relative z-10 flex items-center justify-between px-8 py-5">
-                    <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
                     <Shield className="text-white opacity-80" size={22} />
                     <span
                         className="text-white opacity-80"
@@ -324,7 +326,7 @@ export default function LandingPage() {
                         }}
                     />
 
-                    <div className="px-10 py-12 flex flex-col items-center">
+                    <div className="px-10 py-12 flex flex-col items-center justify-center">
                         {/* Welcome Text */}
                         <p
                             className="text-white mb-8 tracking-widest uppercase"
@@ -334,13 +336,13 @@ export default function LandingPage() {
                                 letterSpacing: "0.15em",
                             }}
                         >
-                                Welcome to
-                            </p>
+                            Welcome to
+                        </p>
 
                         {/* Logos */}
-                        <div className="flex flex-col items-center gap-6 mb-10">
+                        <div className="flex items-center gap-4 mb-10 w-full">
                             <div
-                                className="flex items-center justify-center px-8 py-4 rounded-2xl"
+                                className="flex-1 flex items-center justify-center px-4 py-9 rounded-2xl"
                                 style={{
                                     background: "rgba(255, 255, 255, 0.95)",
                                     boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
@@ -349,14 +351,14 @@ export default function LandingPage() {
                                 <img
                                     src={briInsuranceLogo}
                                     alt="BRInsurance Logo"
-                                    className="h-16 object-contain"
-                                    style={{ maxWidth: "240px" }}
+                                    className="h-12 object-contain w-full"
+                                    style={{ maxWidth: "160px" }}
                                 />
                             </div>
 
-                            <div className="flex items-center gap-4 w-full">
+                            <div className="flex flex-col items-center gap-1 flex-shrink-0">
                                 <div
-                                    className="flex-1 h-px"
+                                    className="w-px h-6"
                                     style={{
                                         background: "rgba(255,255,255,0.25)",
                                     }}
@@ -371,7 +373,7 @@ export default function LandingPage() {
                                     &amp;
                                 </span>
                                 <div
-                                    className="flex-1 h-px"
+                                    className="w-px h-6"
                                     style={{
                                         background: "rgba(255,255,255,0.25)",
                                     }}
@@ -379,7 +381,7 @@ export default function LandingPage() {
                             </div>
 
                             <div
-                                className="flex items-center justify-center px-8 py-4 rounded-2xl"
+                                className="flex-1 flex items-center justify-center px-4 py-4 rounded-2xl"
                                 style={{
                                     background: "rgba(255, 255, 255, 0.95)",
                                     boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
@@ -388,8 +390,8 @@ export default function LandingPage() {
                                 <img
                                     src={tugureLogo}
                                     alt="Tugure Logo"
-                                    className="h-16 object-contain"
-                                    style={{ maxWidth: "240px" }}
+                                    className="h-35 object-contain" // was h-16, now larger
+                                    style={{ maxWidth: "280px" }} // optionally increase max width
                                 />
                             </div>
                         </div>
@@ -397,14 +399,15 @@ export default function LandingPage() {
                         {/* Subtitle */}
                         <p
                             className="text-white text-center mb-10"
-                                style={{
-                                    fontSize: "0.9rem",
-                                    opacity: 0.75,
-                                    lineHeight: 1.7,
-                                }}
-                            >
-                                A secure, reliable, and trusted digital insurance management platform.
-                            </p>
+                            style={{
+                                fontSize: "0.9rem",
+                                opacity: 0.75,
+                                lineHeight: 1.7,
+                            }}
+                        >
+                            A secure, reliable, and trusted digital reinsurance
+                            management platform.
+                        </p>
 
                         {/* Buttons */}
                         <div className="w-full flex flex-col gap-4">
@@ -456,17 +459,23 @@ export default function LandingPage() {
                                     animation: adminBtnActive
                                         ? "lp-btn-pulse 280ms cubic-bezier(0.4,0,0.6,1) forwards"
                                         : "none",
-                                    transition: adminBtnActive ? "none" : "background 200ms, transform 200ms",
+                                    transition: adminBtnActive
+                                        ? "none"
+                                        : "background 200ms, transform 200ms",
                                 }}
                                 onMouseEnter={(e) => {
                                     if (adminBtnActive) return;
-                                    e.currentTarget.style.background = "rgba(255,255,255,0.22)";
-                                    e.currentTarget.style.transform = "translateY(-1px)";
+                                    e.currentTarget.style.background =
+                                        "rgba(255,255,255,0.22)";
+                                    e.currentTarget.style.transform =
+                                        "translateY(-1px)";
                                 }}
                                 onMouseLeave={(e) => {
                                     if (adminBtnActive) return;
-                                    e.currentTarget.style.background = "rgba(255,255,255,0.12)";
-                                    e.currentTarget.style.transform = "translateY(0)";
+                                    e.currentTarget.style.background =
+                                        "rgba(255,255,255,0.12)";
+                                    e.currentTarget.style.transform =
+                                        "translateY(0)";
                                 }}
                             >
                                 <Lock size={20} />
@@ -475,7 +484,7 @@ export default function LandingPage() {
                         </div>
 
                         {/* Help Link */}
-                            <p
+                        <p
                             className="text-white mt-8"
                             style={{ fontSize: "0.8rem", opacity: 0.5 }}
                         >
@@ -499,12 +508,29 @@ export default function LandingPage() {
                     ].map((item) => (
                         <div
                             key={item.text}
-                            className="flex items-center gap-2 px-4 py-2 rounded-full"
+                            className="flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer"
                             style={{
                                 background: "rgba(255,255,255,0.1)",
                                 border: "1px solid rgba(255,255,255,0.15)",
                                 color: "rgba(255,255,255,0.75)",
                                 fontSize: "0.8rem",
+                                transition: "all 0.2s ease",
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background =
+                                    "rgba(255, 255, 255, 0.2)";
+                                e.currentTarget.style.borderColor =
+                                    "rgba(255, 255, 255, 0.25)";
+                                e.currentTarget.style.transform =
+                                    "translateY(-2px)";
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background =
+                                    "rgba(255,255,255,0.1)";
+                                e.currentTarget.style.borderColor =
+                                    "rgba(255,255,255,0.15)";
+                                e.currentTarget.style.transform =
+                                    "translateY(0)";
                             }}
                         >
                             <span>{item.icon}</span>
@@ -515,7 +541,7 @@ export default function LandingPage() {
             </main>
 
             {/* Footer */}
-                <footer className="relative z-10 text-center py-4">
+            <footer className="relative z-10 text-center py-4">
                 <p
                     className="text-white"
                     style={{ fontSize: "0.75rem", opacity: 0.4 }}

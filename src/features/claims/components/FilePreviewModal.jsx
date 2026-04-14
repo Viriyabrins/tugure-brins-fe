@@ -8,10 +8,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Download, Trash2, Loader } from "lucide-react";
-import { getFilesForRecord, getDownloadUrl, removeFile } from "@/services/storageService";
-import { formatFileSize, getFileIcon } from "@/utils/fileValidation";
-// import { formatFileSize, getFileIcon } from "../utils/fileValidation"; 
+import { AlertCircle, Download, Trash2, Loader, Upload as UploadIcon } from "lucide-react";
+import { getFilesForRecord, getDownloadUrl, removeFile, uploadMultipleFiles } from "@/services/storageService";
+import { formatFileSize, getFileIcon } from "@/utils/fileValidation"; 
 
 /**
  * Modal for viewing, downloading, and deleting attached files for a claim.
@@ -19,28 +18,30 @@ import { formatFileSize, getFileIcon } from "@/utils/fileValidation";
  * Props:
  *   open         {boolean}
  *   onClose      {() => void}
- *   claimId      {string} - Claim ID to load files for
+ *   recordId     {string} - Record ID (nomor_peserta, etc.) to load files for
  *   batchId      {string} - Batch ID (used in MinIO path)
+ *   readOnly     {boolean} - If true, disables upload and delete functions
  *   onFilesLoaded {(files) => void} - Callback when files are loaded
  */
-export function FilePreviewModal({ open, onClose, claimId, batchId, onFilesLoaded }) {
+export function FilePreviewModal({ open, onClose, recordId, batchId, readOnly = false, onFilesLoaded }) {
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [downloading, setDownloading] = useState({});
     const [deleting, setDeleting] = useState({});
+    const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
-        if (open && claimId && batchId) {
+        if (open && recordId && batchId) {
             loadFiles();
         }
-    }, [open, claimId, batchId]);
+    }, [open, recordId, batchId]);
 
     const loadFiles = async () => {
         setLoading(true);
         setError("");
         try {
-            const fileList = await getFilesForRecord(claimId, batchId);
+            const fileList = await getFilesForRecord(recordId, batchId);
             setFiles(fileList);
             onFilesLoaded?.(fileList);
         } catch (err) {
@@ -91,6 +92,28 @@ export function FilePreviewModal({ open, onClose, claimId, batchId, onFilesLoade
         }
     };
 
+    const handleUpload = async (e) => {
+        const selectedFiles = Array.from(e.target.files || []);
+        if (!selectedFiles.length) return;
+
+        setUploading(true);
+        setError("");
+        try {
+            const result = await uploadMultipleFiles(selectedFiles, { recordId, batchId });
+            if (!result.success) {
+                setError(`Failed to upload some files:\\n${result.errors.join("\\n")}`);
+            }
+            // Reload files whether successful or partial failure to show what was uploaded
+            await loadFiles();
+        } catch (err) {
+            console.error("Upload failed", err);
+            setError(`Failed to upload files: ${err.message}`);
+        } finally {
+            setUploading(false);
+            e.target.value = ""; // Reset input
+        }
+    };
+
     return (
         <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
             <DialogContent className="max-w-2xl">
@@ -108,8 +131,25 @@ export function FilePreviewModal({ open, onClose, claimId, batchId, onFilesLoade
                 {error && (
                     <Alert variant="destructive">
                         <AlertCircle className="h-4 w-4" />
-                        <AlertDescription>{error}</AlertDescription>
+                        <AlertDescription className="whitespace-pre-wrap">{error}</AlertDescription>
                     </Alert>
+                )}
+
+                {!readOnly && (
+                    <div className="flex items-center gap-2 mb-2">
+                        <label className="cursor-pointer inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2">
+                            {uploading ? <Loader className="w-4 h-4 mr-2 animate-spin" /> : <UploadIcon className="w-4 h-4 mr-2" />}
+                            {uploading ? "Uploading..." : "Upload Files"}
+                            <input
+                                type="file"
+                                multiple
+                                className="hidden"
+                                onChange={handleUpload}
+                                disabled={uploading}
+                                accept=".pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.txt,.csv"
+                            />
+                        </label>
+                    </div>
                 )}
 
                 <div className="min-h-fit max-h-96 overflow-y-auto">
@@ -165,22 +205,24 @@ export function FilePreviewModal({ open, onClose, claimId, batchId, onFilesLoade
                                                 <Download className="w-4 h-4" />
                                             )}
                                         </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => handleDelete(file)}
-                                            disabled={
-                                                downloading[file.key] ||
-                                                deleting[file.key]
-                                            }
-                                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                        >
-                                            {deleting[file.key] ? (
-                                                <Loader className="w-4 h-4 animate-spin" />
-                                            ) : (
-                                                <Trash2 className="w-4 h-4" />
-                                            )}
-                                        </Button>
+                                        {!readOnly && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleDelete(file)}
+                                                disabled={
+                                                    downloading[file.key] ||
+                                                    deleting[file.key]
+                                                }
+                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            >
+                                                {deleting[file.key] ? (
+                                                    <Loader className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                    <Trash2 className="w-4 h-4" />
+                                                )}
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
                             ))}

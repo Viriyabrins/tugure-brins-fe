@@ -326,8 +326,9 @@ export default function ClaimReview() {
                         setFilePreviewOpen(false);
                         setSelectedClaimForFiles(null);
                     }}
-                    claimId={selectedClaimForFiles.claim_no}
+                    recordId={selectedClaimForFiles.nomor_peserta || selectedClaimForFiles.claim_no}
                     batchId={selectedClaimForFiles.batch_id}
+                    readOnly={true}
                 />
             )}
         </div>

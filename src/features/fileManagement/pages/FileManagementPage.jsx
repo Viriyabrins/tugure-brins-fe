@@ -37,11 +37,11 @@ const buildClaimTree = async (claims) => {
       type: 'batch',
       batchId,
       children: batchClaims.map((claim) => ({
-        id: `claim-${batchId}-${claim.claim_no}`,
-        label: claim.claim_no,
+        id: `claim-${batchId}-${claim.nomor_peserta || claim.claim_no}`,
+        label: claim.nomor_peserta || claim.claim_no,
         type: 'claim',
         batchId,
-        claimId: claim.claim_no,
+        claimId: claim.nomor_peserta || claim.claim_no,
         claim, // Store full claim object for reference
         children: [], // Will be populated with files on demand
         isLoaded: false,
@@ -63,7 +63,7 @@ const loadFilesForClaim = async (batchId, claimId) => {
     if (Array.isArray(files)) {
       return files.map((file) => ({
         ...file,
-        claimNo: claimId,
+        participantNo: claimId,
         batchId,
       }));
     }
@@ -156,7 +156,7 @@ const FileListView = ({ files, onDownload, onPreview, isLoading }) => {
           <thead>
             <tr className="border-b bg-gray-50">
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Filename</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Claim</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Nomor Peserta</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Size</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Date</th>
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900">Actions</th>
@@ -168,7 +168,7 @@ const FileListView = ({ files, onDownload, onPreview, isLoading }) => {
                 <td className="px-4 py-3 text-sm text-gray-900 truncate max-w-96" title={file.fileName}>
                   <Files className="w-5 h-5 inline-block mr-2" /> {file.fileName}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-700">{file.claimNo}</td>
+                <td className="px-4 py-3 text-sm text-gray-700">{file.participantNo}</td>
                 <td className="px-4 py-3 text-sm text-gray-600">{formatFileSize(file.size)}</td>
                 <td className="px-4 py-3 text-sm text-gray-600">
                   {formatDate(file.lastModified)}
@@ -376,7 +376,7 @@ export default function FileManagementPage() {
       const query = searchQuery.toLowerCase();
       return (
         (file.fileName || '').toLowerCase().includes(query) ||
-        (file.claimNo || '').toLowerCase().includes(query)
+        (file.participantNo || '').toLowerCase().includes(query)
       );
     });
   }, [selectedDebtorFiles, searchQuery]);
@@ -401,7 +401,7 @@ export default function FileManagementPage() {
     }
 
     if (!claimLabel && selectedDebtorFiles.length > 0) {
-      claimLabel = selectedDebtorFiles[0].claimNo || '';
+      claimLabel = selectedDebtorFiles[0].participantNo || '';
     }
 
     if (claimLabel) items.push(claimLabel);

@@ -103,7 +103,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
      * Step 1: Parse the file, run validation, and populate preview state.
      * Call this when the user clicks "Preview Data →".
      */
-    const handleFileUpload = async (file, selectedBatch, attachedFiles = []) => {
+    const handleFileUpload = async (file, selectedBatch) => {
         if (!file || !selectedBatch) return;
         setProcessing(true);
         setDialogError("");
@@ -225,7 +225,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
      * Step 2: Submit all valid parsed rows to the backend.
      * Call this when the user clicks "Upload N Claims".
      */
-    const handleBulkUpload = async (selectedBatch, attachedFiles = []) => {
+    const handleBulkUpload = async (selectedBatch) => {
         if (
             !Array.isArray(parsedClaims) ||
             parsedClaims.length === 0 ||
@@ -300,22 +300,6 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                     );
                     uploaded++;
 
-                    // Upload attached files for this claim after claim is created
-                    if (attachedFiles.length > 0) {
-                        for (const file of attachedFiles) {
-                            try {
-                                await uploadFileToStorage(file, { recordId: claimNo, batchId: batch.batch_id });
-                            } catch (fileErr) {
-                                console.error(
-                                    `Failed to upload file ${file.name} for claim ${claimNo}:`,
-                                    fileErr,
-                                );
-                                errors.push(
-                                    `Claim ${claimNo}: File "${file.name}" upload failed - ${fileErr.message}`,
-                                );
-                            }
-                        }
-                    }
                 } catch (err) {
                     errors.push(`Row ${uploaded + 1}: ${err.message}`);
                     console.error("Failed to create claim:", err);
@@ -336,9 +320,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
             const message =
                 errors.length > 0
                     ? `Uploaded ${uploaded} ${isBrinsUser ? "recoveries" : "claims"}, but ${errors.length} failed`
-                    : `✓ Successfully uploaded ${uploaded} ${isBrinsUser ? "recoveries" : "claims"}${
-                        attachedFiles.length > 0 ? ` with ${attachedFiles.length} file(s)` : ""
-                      }`;
+                    : `✓ Successfully uploaded ${uploaded} ${isBrinsUser ? "recoveries" : "claims"}`;
 
             if (errors.length > 0) {
                 setDialogError(

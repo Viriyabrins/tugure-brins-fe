@@ -336,7 +336,7 @@ export default function NotaManagement() {
                     filterConfig={[
                         {
                             key: "contract", label: "Contract",
-                            options: [{ value: "all", label: "All Contracts" }, ...contracts.map((c) => ({ value: c.id, label: c.contract_number }))],
+                            options: [{ value: "all", label: "All Contracts" }, ...contracts.map((c) => ({ value: c.id || c.contract_id, label: c.contract_id || c.id || "Unknown Contract" }))],
                         },
                         {
                             key: "status", label: "Status",
@@ -406,7 +406,7 @@ export default function NotaManagement() {
                     </div>
                     <FilterTab filters={dnCnFilters} onFilterChange={setDnCnFilters} defaultFilters={DEFAULT_DNCN_FILTER}
                         filterConfig={[
-                            { key: "contract", label: "Contract", options: [{ value: "all", label: "All Contracts" }, ...contracts.map((c) => ({ value: c.id, label: c.contract_number }))] },
+                            { key: "contract", label: "Contract", options: [{ value: "all", label: "All Contracts" }, ...contracts.map((c) => ({ value: c.id || c.contract_id, label: c.contract_id || c.id || "Unknown Contract" }))] },
                             { key: "status", label: "Recon Status", options: [{ value: "all", label: "All Status" }, { value: "UNPAID", label: "UNPAID" }, { value: "PAID", label: "PAID" }] },
                         ]}
                     />

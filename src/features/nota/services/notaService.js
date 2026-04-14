@@ -20,7 +20,7 @@ export const notaService = {
             subrogationData,
         ] = await Promise.all([
             backend.list("Batch"),
-            backend.list("Contract"),
+            backend.list("MasterContract"),
             backend.list("Payment"),
             backend.list("PaymentIntent"),
             backend.list("DebitCreditNote"),

@@ -23,6 +23,7 @@ import { useClaimReviewData } from "../hooks/useClaimReviewData";
 import { useClaimReviewActions } from "../hooks/useClaimReviewActions";
 import { FilePreviewModal } from "../../claims/components/FilePreviewModal";
 import { useIsViewer } from "@/hooks/usePermissions";
+import { AttachmentCount } from "@/components/common/AttachmentCount";
 
 export default function ClaimReview() {
     const isViewer = useIsViewer();
@@ -82,6 +83,7 @@ export default function ClaimReview() {
         { header: "Claim Amount", cell: (row) => formatRupiahAdaptive(Number(row.nilai_klaim) || 0) },
         { header: "Share Tugure", cell: (row) => formatRupiahAdaptive(Number(row.share_tugure_amount) || 0) },
         { header: "Status", cell: (row) => <StatusBadge status={row.status} /> },
+        { header: "Files Count", cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} batchId={row.batch_id} /> },
         {
             header: "Actions",
             cell: (row) => (

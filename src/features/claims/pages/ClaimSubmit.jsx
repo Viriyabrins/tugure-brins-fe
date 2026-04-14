@@ -30,6 +30,7 @@ import { ClaimUploadDialog } from "../components/ClaimUploadDialog";
 import { SubrogationDialog } from "../components/SubrogationDialog";
 import { FilePreviewModal } from "../components/FilePreviewModal";
 import { ClaimTrendTab } from "../components/ClaimTrendTab";
+import { AttachmentCount } from "@/components/common/AttachmentCount";
 import { DEFAULT_CLAIM_FILTER, CLAIM_TEMPLATE_HEADERS, CLAIM_TEMPLATE_SAMPLE } from "../utils/claimConstants";
 
 export default function ClaimSubmit() {
@@ -131,6 +132,10 @@ export default function ClaimSubmit() {
         {
             header: "Status",
             cell: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+            header: "Files Count",
+            cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} batchId={row.batch_id} />,
         },
         {
             header: "Attachments",

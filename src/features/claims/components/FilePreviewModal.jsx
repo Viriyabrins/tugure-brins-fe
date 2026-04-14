@@ -8,9 +8,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Download, Trash2, Loader, Upload as UploadIcon } from "lucide-react";
+import { AlertCircle, Download, Trash2, Loader, Upload as UploadIcon, Eye } from "lucide-react";
 import { getFilesForRecord, getDownloadUrl, removeFile, uploadMultipleFiles } from "@/services/storageService";
 import { formatFileSize, getFileIcon } from "@/utils/fileValidation"; 
+import { DocumentPreviewModal } from "@/components/common/DocumentPreviewModal"; 
 
 /**
  * Modal for viewing, downloading, and deleting attached files for a claim.
@@ -30,6 +31,9 @@ export function FilePreviewModal({ open, onClose, recordId, batchId, readOnly = 
     const [downloading, setDownloading] = useState({});
     const [deleting, setDeleting] = useState({});
     const [uploading, setUploading] = useState(false);
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState("");
+    const [previewFileName, setPreviewFileName] = useState("");
 
     useEffect(() => {
         if (open && recordId && batchId) {
@@ -70,6 +74,23 @@ export function FilePreviewModal({ open, onClose, recordId, batchId, readOnly = 
         } catch (err) {
             console.error("Failed to download file:", err);
             setError(`Failed to download ${file.fileName}: ${err.message}`);
+        } finally {
+            setDownloading((prev) => ({ ...prev, [file.key]: false }));
+        }
+    };
+
+    const handlePreview = async (file) => {
+        if (!file.key) return;
+
+        setDownloading((prev) => ({ ...prev, [file.key]: true }));
+        try {
+            const url = await getDownloadUrl(file.key);
+            setPreviewUrl(url);
+            setPreviewFileName(file.fileName);
+            setPreviewOpen(true);
+        } catch (err) {
+            console.error("Failed to preview file:", err);
+            setError(`Failed to preview ${file.fileName}: ${err.message}`);
         } finally {
             setDownloading((prev) => ({ ...prev, [file.key]: false }));
         }
@@ -193,6 +214,17 @@ export function FilePreviewModal({ open, onClose, recordId, batchId, readOnly = 
                                         <Button
                                             size="sm"
                                             variant="outline"
+                                            onClick={() => handlePreview(file)}
+                                            disabled={
+                                                downloading[file.key] ||
+                                                deleting[file.key]
+                                            }
+                                        >
+                                            <Eye className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
                                             onClick={() => handleDownload(file)}
                                             disabled={
                                                 downloading[file.key] ||
@@ -239,6 +271,17 @@ export function FilePreviewModal({ open, onClose, recordId, batchId, readOnly = 
                     </Button>
                 </DialogFooter>
             </DialogContent>
+
+            <DocumentPreviewModal
+                open={previewOpen}
+                onClose={() => {
+                    setPreviewOpen(false);
+                    setPreviewUrl("");
+                    setPreviewFileName("");
+                }}
+                url={previewUrl}
+                fileName={previewFileName}
+            />
         </Dialog>
     );
 }

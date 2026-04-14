@@ -13,6 +13,7 @@ import { backend } from '@/api/backendClient';
 import { getDownloadUrl } from '@/services/storageService';
 import fileManagerService from '../services/fileManagerService';
 import { toast } from 'sonner';
+import { DocumentPreviewModal } from '@/components/common/DocumentPreviewModal';
 
 /**
  * Builds 2-level tree: All Files → Batch → Claim
@@ -233,6 +234,9 @@ export default function FileManagementPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('grid');
   const [selectedBatchId, setSelectedBatchId] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewFileName, setPreviewFileName] = useState('');
 
   // Load claims on mount
   useEffect(() => {
@@ -324,7 +328,9 @@ export default function FileManagementPage() {
   const handlePreviewFile = async (file) => {
     try {
       const url = await getDownloadUrl(file.key || file.id);
-      window.open(url, '_blank');
+      setPreviewUrl(url);
+      setPreviewFileName(file.fileName);
+      setPreviewOpen(true);
     } catch (err) {
       toast.error('Failed to preview: ' + (err?.message || 'Unknown error'));
     }
@@ -593,6 +599,17 @@ export default function FileManagementPage() {
           </div>
         </div>
       </div>
+
+      <DocumentPreviewModal
+        open={previewOpen}
+        onClose={() => {
+          setPreviewOpen(false);
+          setPreviewUrl('');
+          setPreviewFileName('');
+        }}
+        url={previewUrl}
+        fileName={previewFileName}
+      />
     </div>
   );
 }

@@ -96,7 +96,7 @@ async function handleDownloadPDF(nota, setSuccessMessage) {
         const fmt = (val) => {
             const n = parseFloat(val) || 0;
             const s = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            return n < 0 ? `(${s})` : s;
+            return n < 0 ? `(-${s})` : s;
         };
 
         const MONTHS_ID = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI",
@@ -171,7 +171,7 @@ async function handleDownloadPDF(nota, setSuccessMessage) {
         // ── Table ────────────────────────────────────────────────────────
         y += 20;
         const rowH = 8;
-        const cols = { kind: marginX, premium: 95, commission: 123, claim: 148, total: 172, netDue: rightEdge };
+        const cols = { kind: marginX, premium: 85, commission: 113, claim: 140, total: 167, netDue: rightEdge };
 
         pdf.setFontSize(9);
         pdf.setLineWidth(0.5);
@@ -193,13 +193,17 @@ async function handleDownloadPDF(nota, setSuccessMessage) {
 
         y += rowH;
         const kindText = nota.reference_id || nota.contract_id || "AUTO FACULTATIVE CREDIT COMMERCIAL";
-        const kindLines = pdf.splitTextToSize(kindText, 75);
+        const kindLines = pdf.splitTextToSize(kindText, 65);
         pdf.text(kindLines, cols.kind, y);
         pdf.text(fmt(nota.premium), cols.premium, y, { align: "right" });
-        pdf.text(fmt(nota.commission), cols.commission, y, { align: "right" });
+        pdf.text(fmt(-Math.abs(parseFloat(nota.commission) || 0)), cols.commission, y, { align: "right" });
         pdf.text(fmt(nota.claim), cols.claim, y, { align: "right" });
         pdf.text(fmt(nota.total), cols.total, y, { align: "right" });
-        pdf.text(fmt(nota.net_due), cols.netDue, y, { align: "right" });
+        
+        const netDueDisplayValue = nota.nota_type === "Claim" 
+            ? -Math.abs(parseFloat(nota.net_due) || 0) 
+            : parseFloat(nota.net_due) || 0;
+        pdf.text(fmt(netDueDisplayValue), cols.netDue, y, { align: "right" });
         y += Math.max(kindLines.length * rowH, rowH) + 2;
 
         pdf.setLineWidth(0.3);

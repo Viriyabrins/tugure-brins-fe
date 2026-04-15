@@ -1,5 +1,4 @@
 import { backend } from "@/api/backendClient";
-import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
 
 export const debtorService = {
     // ─── Read ─────────────────────────────────────────────────────────────────
@@ -181,20 +180,6 @@ export const debtorService = {
                 "DEBTOR", batchId, role,
             ),
         ));
-        sendNotificationEmail({
-            targetGroup: "brins-checker",
-            objectType: "Record",
-            statusTo: "SUBMITTED",
-            recipientRole: "BRINS",
-            variables: {
-                batch_id: batchId,
-                user_name: userEmail,
-                date: new Date().toLocaleDateString("id-ID"),
-                count: String(uploaded),
-            },
-            fallbackSubject: "Debtor Upload Completed – Batch {batch_id}",
-            fallbackBody: "<p>{user_name} has uploaded {count} debtor(s) to batch {batch_id} on {date}. Awaiting review.</p>",
-        }).catch((e) => console.error("Background email failed:", e));
     },
 
     async notifyChecked(processedCount, batchId, userEmail, userRole) {
@@ -206,26 +191,12 @@ export const debtorService = {
                 "DEBTOR", undefined, role,
             ),
         ));
-        sendNotificationEmail({
-            targetGroup: "brins-approver",
-            objectType: "Record",
-            statusTo: "CHECKED_BRINS",
-            recipientRole: "BRINS",
-            variables: {
-                batch_id: batchId,
-                user_name: userEmail,
-                date: new Date().toLocaleDateString("id-ID"),
-                count: String(processedCount),
-            },
-            fallbackSubject: "Debtors Checked – Batch {batch_id}",
-            fallbackBody: "<p>{user_name} has checked {count} debtor(s) in batch {batch_id} on {date}.</p>",
-        }).catch((e) => console.error("Background email failed:", e));
     },
 
     async notifyApproved(processedCount, batchId, userEmail, userRole) {
         const roles = [
             "maker-brins-role", "checker-brins-role", "approver-brins-role",
-            "checker-tugure-role", "approver-tugure-role",
+            "tugure-checker-role", "tugure-approver-role",
         ];
         await Promise.all(roles.map((role) =>
             this._notify(
@@ -234,19 +205,5 @@ export const debtorService = {
                 "DEBTOR", undefined, role,
             ),
         ));
-        sendNotificationEmail({
-            targetGroup: "tugure-checker",
-            objectType: "Record",
-            statusTo: "APPROVED_BRINS",
-            recipientRole: "ALL",
-            variables: {
-                batch_id: batchId,
-                user_name: userEmail,
-                date: new Date().toLocaleDateString("id-ID"),
-                count: String(processedCount),
-            },
-            fallbackSubject: "Debtors Approved by BRINS – Batch {batch_id}",
-            fallbackBody: "<p>{user_name} has approved {count} debtor(s) in batch {batch_id} on {date}.</p>",
-        }).catch((e) => console.error("Background email failed:", e));
     },
 };

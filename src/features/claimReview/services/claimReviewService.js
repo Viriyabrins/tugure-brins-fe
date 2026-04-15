@@ -1,5 +1,4 @@
 import { backend } from "@/api/backendClient";
-import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
 
 async function _audit(action, module, entityType, entityId, oldVal, newVal, userEmail, userRole, reason) {
     try {
@@ -55,57 +54,36 @@ export const claimReviewService = {
             }
         }
         const claimId = claim.claim_no || claim.id;
-        await backend.update("Claim", claimId, {
-            status: "CHECKED",
-            checked_by: user?.email,
-            checked_date: new Date().toISOString(),
-            reviewed_by: user?.email,
-            review_date: new Date().toISOString(),
+        await backend.processClaimWorkflowAction(claimId, {
+            action: "CHECK_BRINS",
+            actorEmail: auditActor?.user_email || user?.email,
+            actorRole: auditActor?.user_role || user?.role,
         });
-        sendNotificationEmail({ targetGroup: "tugure-approver", objectType: "Record", statusTo: "CHECKED", recipientRole: "TUGURE", variables: { claim_no: claim.claim_no, action_by: user?.email }, fallbackSubject: `Claim ${claim.claim_no} Checked`, fallbackBody: `Claim ${claim.claim_no} checked by ${user?.email}.` }).catch(console.warn);
-        await _audit("CLAIM_CHECK", "CLAIM", "Claim", claimId, { status: claim.status }, { status: "CHECKED" }, auditActor?.user_email || user?.email, auditActor?.user_role || user?.role, "");
         await _notify(`Claim CHECKED`, `Claim ${claim.claim_no} moved to CHECKED`, "INFO", "CLAIM", claimId, "tugure-approver-role");
         return { blocked: false };
     },
 
     async approveClaim(claim, remarks, user, auditActor) {
         const claimId = claim.claim_no || claim.id;
-        const claimAmount = claim.nilai_klaim || 0;
+        await backend.processClaimWorkflowAction(claimId, {
+            action: "APPROVE",
+            remarks,
+            actorEmail: auditActor?.user_email || user?.email,
+            actorRole: auditActor?.user_role || user?.role,
+        });
         const notaNumber = `NOTA-${claim.claim_no}-${Date.now()}`;
-        await backend.create("Nota", {
-            nota_number: notaNumber, 
-            nota_type: "Claim", 
-            reference_id: claim.claim_no,
-            contract_id: claim.contract_id, 
-            amount: claimAmount,
-            currency: "IDR", 
-            status: "UNPAID", 
-            issued_by: auditActor?.user_email || user?.email,
-            issued_date: new Date().toISOString(), 
-            is_immutable: false, 
-            total_actual_paid: 0, 
-            reconciliation_status: "PENDING",
-            premium: 0,
-            commission: 0,
-            claim: claimAmount,
-            total: claimAmount,
-            net_due: claimAmount,
-        });
-        await backend.update("Claim", claimId, {
-            status: "APPROVED", approved_by: user?.email, approved_date: new Date().toISOString(),
-            reviewed_by: user?.email, review_date: new Date().toISOString(),
-        });
-        sendNotificationEmail({ targetGroup: "brins-maker", objectType: "Record", statusTo: "APPROVED", recipientRole: "BRINS", variables: { claim_no: claim.claim_no, action_by: user?.email }, fallbackSubject: `Claim ${claim.claim_no} Approved`, fallbackBody: `Claim ${claim.claim_no} approved. Nota ${notaNumber} generated.` }).catch(console.warn);
         await _notify(`Claim APPROVED`, `Nota ${notaNumber} created for Claim ${claim.claim_no}. Remarks: ${remarks}`, "ACTION_REQUIRED", "CLAIM", claimId, "maker-brins-role");
-        await _audit("CLAIM_APPROVE", "CLAIM", "Claim", claimId, { status: claim.status }, { status: "APPROVED" }, auditActor?.user_email || user?.email, auditActor?.user_role || user?.role, remarks);
         return notaNumber;
     },
 
     async reviseClaim(claim, remarks, user, auditActor) {
         const claimId = claim.claim_no || claim.id;
-        await backend.update("Claim", claimId, { status: "REVISION", revision_reason: remarks });
-        sendNotificationEmail({ targetGroup: "brins-maker", objectType: "Record", statusTo: "REVISION", recipientRole: "BRINS", variables: { claim_no: claim.claim_no, action_by: user?.email, remark: remarks || "Please review and revise." }, fallbackSubject: `Claim ${claim.claim_no} Needs Revision`, fallbackBody: `Claim ${claim.claim_no} needs revision. Remarks: ${remarks}` }).catch(console.warn);
-        await _audit("CLAIM_REVISE", "CLAIM", "Claim", claimId, { status: claim.status }, { status: "REVISION" }, auditActor?.user_email || user?.email, auditActor?.user_role || user?.role, remarks);
+        await backend.processClaimWorkflowAction(claimId, {
+            action: "REVISION",
+            remarks,
+            actorEmail: auditActor?.user_email || user?.email,
+            actorRole: auditActor?.user_role || user?.role,
+        });
         await _notify(`Claim REVISION`, `Claim ${claim.claim_no} moved to REVISION`, "WARNING", "CLAIM", claimId, "maker-brins-role");
     },
 

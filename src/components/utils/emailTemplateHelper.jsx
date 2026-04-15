@@ -1,6 +1,7 @@
 /**
  * Email Template Helper
- * Handles email template variable replacement and sending
+ * Handles email template variable replacement and sending.
+ * All recipient resolution uses Keycloak client roles (not groups).
  */
 
 import { backend } from '@/api/backendClient';
@@ -136,13 +137,14 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
 }
 
 /**
- * Send notification email to all users in a Keycloak group.
- * Resolves recipient emails from Keycloak group via backend, then sends using EmailTemplate
- * from DB (with fallback subject/body if no template exists).
+ * Send notification email to users resolved by Keycloak client role.
+ * Resolves recipient emails from Keycloak client roles via backend, then sends using
+ * EmailTemplate from DB (with fallback subject/body if no template exists).
  *
  * @param {object} options
- * @param {string} options.targetGroup - Keycloak group name to resolve recipients from (e.g., 'email')
- * @param {string[]} [options.to] - Optional explicit email addresses (in addition to group resolution)
+ * @param {string} options.targetRealm - Keycloak realm ('brins' or 'tugure')
+ * @param {string} options.targetRole - Keycloak client role name (e.g. 'checker-brins-role', 'tugure-checker-role')
+ * @param {string[]} [options.to] - Optional explicit email addresses (in addition to role resolution)
  * @param {string} options.objectType - Object type for template lookup (Batch, Record, Nota, Claim, Subrogation)
  * @param {string} options.statusTo - Target status for template lookup
  * @param {string} [options.recipientRole='ALL'] - Recipient role for template lookup (BRINS, TUGURE, ALL)
@@ -152,7 +154,8 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
  * @returns {Promise<void>}
  */
 export async function sendNotificationEmail({
-  targetGroup = '',
+  targetRealm = 'brins',
+  targetRole = '',
   to = [],
   objectType,
   statusTo,
@@ -161,27 +164,27 @@ export async function sendNotificationEmail({
   fallbackSubject = '',
   fallbackBody = '',
 }) {
-  // 1. Resolve recipient emails from Keycloak group
+  // 1. Resolve recipient emails from Keycloak client role
   const emailSet = new Set(Array.isArray(to) ? to : (to ? [to] : []));
 
-  if (targetGroup) {
+  if (targetRole) {
     try {
-      const groupUsers = await backend.getUsersByGroup(targetGroup);
-      if (Array.isArray(groupUsers)) {
-        groupUsers.forEach(user => {
+      const roleUsers = await backend.getUsersByRole(targetRealm, targetRole);
+      if (Array.isArray(roleUsers)) {
+        roleUsers.forEach(user => {
           if (user.email) emailSet.add(user.email);
         });
-        console.log(`[sendNotificationEmail] Group "${targetGroup}": found ${groupUsers.length} user(s)`);
+        console.log(`[sendNotificationEmail] Role "${targetRole}" in realm "${targetRealm}": found ${roleUsers.length} user(s)`);
       }
     } catch (err) {
-      console.warn(`[sendNotificationEmail] Failed to get users for group "${targetGroup}":`, err);
+      console.warn(`[sendNotificationEmail] Failed to get users for role "${targetRole}" in realm "${targetRealm}":`, err);
     }
   }
 
   const recipients = [...emailSet].filter(Boolean);
 
   if (recipients.length === 0) {
-    console.warn('[sendNotificationEmail] No recipients resolved from group or explicit list. Skipping.');
+    console.warn('[sendNotificationEmail] No recipients resolved from role or explicit list. Skipping.');
     return;
   }
 
@@ -220,6 +223,46 @@ export async function sendNotificationEmail({
   } catch (err) {
     console.error(`[sendNotificationEmail] Failed to send email for ${objectType} -> ${statusTo}:`, err);
   }
+}
+
+/**
+ * Convenience wrapper for workflow-step emails.
+ * Resolves recipients from a Keycloak client role + optional explicit emails, then sends.
+ *
+ * @param {object} options
+ * @param {'brins'|'tugure'} options.realm - Keycloak realm
+ * @param {string} options.roleName - Client role name (e.g. 'checker-brins-role')
+ * @param {string[]} [options.extraTo=[]] - Additional explicit email addresses
+ * @param {string} options.objectType - Entity type for template lookup
+ * @param {string} options.statusTo - Target status for template lookup
+ * @param {string} [options.recipientRole='ALL'] - Recipient role for template lookup
+ * @param {object} [options.variables={}] - Template variables
+ * @param {string} options.fallbackSubject - Fallback email subject
+ * @param {string} options.fallbackBody - Fallback email body (HTML)
+ * @returns {Promise<void>}
+ */
+export async function sendWorkflowEmail({
+  realm,
+  roleName,
+  extraTo = [],
+  objectType,
+  statusTo,
+  recipientRole = 'ALL',
+  variables = {},
+  fallbackSubject,
+  fallbackBody,
+}) {
+  return sendNotificationEmail({
+    targetRealm: realm,
+    targetRole: roleName,
+    to: extraTo,
+    objectType,
+    statusTo,
+    recipientRole,
+    variables,
+    fallbackSubject,
+    fallbackBody,
+  });
 }
 
 /**

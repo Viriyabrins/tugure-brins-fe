@@ -1,5 +1,4 @@
 import { backend } from "@/api/backendClient";
-import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
 import { ALL_ROLES } from "../utils/debtorReviewConstants";
 
 async function _audit(action, entityId, oldVal, newVal, userEmail, userRole, reason) {
@@ -36,6 +35,7 @@ async function _notify(title, message, type, referenceId) {
         }
     }
 }
+
 
 export const debtorReviewService = {
     async listDebtors(filters, page, pageSize, sortColumn, sortOrder) {
@@ -108,15 +108,6 @@ export const debtorReviewService = {
                 "INFO",
                 debtors[0]?.batch_id,
             );
-            sendNotificationEmail({
-                targetGroup: "tugure-approver",
-                objectType: "Record",
-                statusTo: "CHECKED_TUGURE",
-                recipientRole: "TUGURE",
-                variables: { debtor_count: String(count), action_by: auditActor?.user_email || user?.email },
-                fallbackSubject: "Debtor Checked - Awaiting Approval",
-                fallbackBody: `${count} debtor(s) checked by ${auditActor?.user_email || user?.email} and awaiting your approval.`,
-            }).catch((e) => console.warn("Email failed:", e));
         }
         return count;
     },

@@ -1,7 +1,6 @@
 import { backend } from "@/api/backendClient";
 import { getExcelDate, toNumber } from "@/shared/utils/dataTransform";
 import { CLAIM_PAGE_SIZE } from "../utils/claimConstants";
-import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
 
 /**
  * All API calls and business logic for the Claims feature.
@@ -170,7 +169,7 @@ export const claimService = {
         return maxSeq;
     },
 
-    /** Sends a bulk-upload notification + background email. */
+    /** Sends a bulk-upload notification. */
     async notifyBulkUpload(uploaded, batchId, userEmail, isBrinsUser) {
         await backend.create("Notification", {
             title: isBrinsUser ? "Bulk Recovery Upload" : "Bulk Claim Upload",
@@ -180,21 +179,6 @@ export const claimService = {
             reference_id: batchId,
             target_role: "tugure-checker-role",
         });
-        sendNotificationEmail({
-            targetGroup: "tugure-checker",
-            objectType: "Record",
-            statusTo: "SUBMITTED",
-            recipientRole: "TUGURE",
-            variables: {
-                claim_count: String(uploaded),
-                action_by: userEmail,
-                batch_id: batchId,
-            },
-            fallbackSubject: isBrinsUser
-                ? "New Recoveries Submitted"
-                : "New Claims Submitted",
-            fallbackBody: `${uploaded} ${isBrinsUser ? "recoveries" : "claims"} have been submitted by ${userEmail} for batch ${batchId} and await checking.`,
-        }).catch((e) => console.error("Background email fail:", e));
     },
 
     /** Writes an audit log for a blocked submission attempt. */

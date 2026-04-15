@@ -6,7 +6,6 @@ import {
     readableError, normalizeStatus, MC_TEMPLATE_CSV, normalizeRawRowDatesForValidation,
 } from "../utils/masterContractConstants";
 import { masterContractService } from "../services/masterContractService";
-import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
 import { backend } from "@/api/backendClient";
 
 export function useMasterContractActions({ user, auditActor, contracts, statsContracts, reload, page, filters, loadContracts, loadStats }) {
@@ -173,7 +172,6 @@ export function useMasterContractActions({ user, auditActor, contracts, statsCon
             const result = await masterContractService.uploadContracts({ uploadMode, selectedContractForRevision: uploadMode === "revise" ? selectedContractForRevision : null, contracts: uploadPreviewData });
             const uploaded = Number(result?.createdCount || 0);
             setSuccessMessage(`Berhasil upload ${uploaded} contract${uploaded > 1 ? "s" : ""}.`);
-            sendNotificationEmail({ targetGroup: "brins-checker", objectType: "Contract", statusTo: "SUBMITTED", recipientRole: "BRINS", variables: { user_name: auditActor?.user_email || user?.email || "System", date: new Date().toLocaleDateString("id-ID"), count: String(uploaded) }, fallbackSubject: "Contracts Uploaded", fallbackBody: "<p>{user_name} has uploaded {count} contract(s) on {date}. Awaiting review.</p>" }).catch(console.error);
             closeUploadDialog();
             loadContracts(page, filters); loadStats();
         } catch (error) {

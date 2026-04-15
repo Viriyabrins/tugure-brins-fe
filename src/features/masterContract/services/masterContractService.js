@@ -1,6 +1,5 @@
 import { backend } from "@/api/backendClient";
-import { sendNotificationEmail } from "@/components/utils/emailTemplateHelper";
-import { ALL_ROLE_NAMES, extractBaseContractNo, toNullableString } from "../utils/masterContractConstants";
+import { extractBaseContractNo } from "../utils/masterContractConstants";
 
 const _audit = async (action, entityId, oldValue, newValue, reason, auditActor, user) => {
     try {
@@ -17,16 +16,6 @@ const _audit = async (action, entityId, oldValue, newValue, reason, auditActor, 
         });
     } catch (e) {
         console.warn("Failed to create audit log:", e);
-    }
-};
-
-const _notify = async (title, message, type = "INFO") => {
-    for (const role of ALL_ROLE_NAMES) {
-        try {
-            await backend.create("Notification", { title, message, type, module: "CONFIG", target_role: role });
-        } catch (e) {
-            console.warn("Failed to create notification:", e);
-        }
     }
 };
 
@@ -79,16 +68,12 @@ export const masterContractService = {
             const status = String(c.contract_status || "");
             const approval = String(c.status_approval || "");
             if (status !== "Draft" && approval !== "SUBMITTED") continue;
-            await backend.update("MasterContract", c.contract_id || c.id, { status_approval: "CHECKED_BRINS" });
+            await backend.processMasterContractWorkflowAction(c.contract_id || c.id, {
+                action: "CHECK_BRINS",
+                actorEmail: auditActor?.user_email || user?.email,
+                actorRole: auditActor?.user_role || user?.role,
+            });
             count++;
-            await _audit("CONTRACT_CHECKED_BRINS", c.contract_id || c.id, { approval }, { approval: "CHECKED_BRINS" }, `Checker BRINS checked contract ${c.contract_no || c.contract_id}`, auditActor, user);
-        }
-        if (count > 0) {
-            const brinsRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role"];
-            for (const role of brinsRoles) {
-                try { await backend.create("Notification", { title: "Contracts Checked by BRINS Checker", message: `${auditActor?.user_email || user?.email} checked ${count} contract(s). Awaiting BRINS Approver approval.`, type: "INFO", module: "CONFIG", target_role: role }); } catch (e) { console.warn(e); }
-            }
-            sendNotificationEmail({ targetGroup: "brins-approver", objectType: "Contract", statusTo: "CHECKED_BRINS", recipientRole: "BRINS", variables: { user_name: auditActor?.user_email || user?.email || "System", date: new Date().toLocaleDateString("id-ID"), count: String(count) }, fallbackSubject: "Contracts Checked", fallbackBody: "<p>{user_name} has checked {count} contract(s) on {date}.</p>" }).catch(console.error);
         }
         return count;
     },
@@ -98,13 +83,12 @@ export const masterContractService = {
         for (const contractId of contractIds) {
             const c = contracts.find((x) => (x.contract_id || x.id) === contractId);
             if (!c || (c.status_approval || "") !== "CHECKED_BRINS") continue;
-            await backend.update("MasterContract", c.contract_id || c.id, { status_approval: "APPROVED_BRINS" });
+            await backend.processMasterContractWorkflowAction(c.contract_id || c.id, {
+                action: "APPROVE_BRINS",
+                actorEmail: auditActor?.user_email || user?.email,
+                actorRole: auditActor?.user_role || user?.role,
+            });
             count++;
-            await _audit("CONTRACT_APPROVED_BRINS", c.contract_id || c.id, { approval: "CHECKED_BRINS" }, { approval: "APPROVED_BRINS" }, `Approver BRINS approved contract ${c.contract_no || c.contract_id}`, auditActor, user);
-        }
-        if (count > 0) {
-            await _notify("Contracts Approved by BRINS", `${auditActor?.user_email || user?.email} approved ${count} contract(s). Now available for Tugure review.`);
-            sendNotificationEmail({ targetGroup: "tugure-checker", objectType: "Contract", statusTo: "APPROVED_BRINS", recipientRole: "TUGURE", variables: { user_name: auditActor?.user_email || user?.email || "System", date: new Date().toLocaleDateString("id-ID"), count: String(count) }, fallbackSubject: "Contracts Approved by BRINS", fallbackBody: "<p>{user_name} has approved {count} contract(s) on {date}.</p>" }).catch(console.error);
         }
         return count;
     },
@@ -114,33 +98,29 @@ export const masterContractService = {
         for (const contractId of contractIds) {
             const c = contracts.find((x) => (x.contract_id || x.id) === contractId);
             if (!c || (c.status_approval || "") !== "APPROVED_BRINS") continue;
-            await backend.update("MasterContract", c.contract_id || c.id, { status_approval: "CHECKED_TUGURE" });
+            await backend.processMasterContractWorkflowAction(c.contract_id || c.id, {
+                action: "CHECK_TUGURE",
+                actorEmail: auditActor?.user_email || user?.email,
+                actorRole: auditActor?.user_role || user?.role,
+            });
             count++;
-            await _audit("CONTRACT_CHECKED_TUGURE", c.contract_id || c.id, { approval: "APPROVED_BRINS" }, { approval: "CHECKED_TUGURE" }, `Checker Tugure checked contract ${c.contract_no || c.contract_id}`, auditActor, user);
-        }
-        if (count > 0) {
-            await _notify("Contracts Checked by Tugure", `${auditActor?.user_email || user?.email} checked ${count} contract(s). Awaiting Tugure Approver final decision.`);
-            sendNotificationEmail({ targetGroup: "tugure-approver", objectType: "Contract", statusTo: "CHECKED_TUGURE", recipientRole: "TUGURE", variables: { user_name: auditActor?.user_email || user?.email || "System", date: new Date().toLocaleDateString("id-ID"), count: String(count) }, fallbackSubject: "Contracts Checked by Tugure", fallbackBody: "<p>{user_name} has checked {count} contract(s) on {date}.</p>" }).catch(console.error);
         }
         return count;
     },
 
     async approveTugure(contractIds, contracts, approvalAction, approvalRemarks, auditActor, user) {
-        const newStatus = approvalAction === "REVISION" ? "REVISION" : "APPROVED";
+        const action = approvalAction === "REVISION" ? "REVISION" : "APPROVE";
         let count = 0;
         for (const contractId of contractIds) {
             const c = contracts.find((x) => (x.contract_id || x.id) === contractId);
             if (!c || (c.status_approval || "") !== "CHECKED_TUGURE") continue;
-            const updateData = { status_approval: newStatus };
-            if (newStatus === "APPROVED") { updateData.first_approved_by = auditActor?.user_email || user?.email; updateData.first_approved_date = new Date().toISOString(); }
-            if (newStatus === "REVISION" && approvalRemarks) updateData.revision_reason = approvalRemarks;
-            await backend.update("MasterContract", c.contract_id || c.id, updateData);
+            await backend.processMasterContractWorkflowAction(c.contract_id || c.id, {
+                action,
+                remarks: approvalRemarks,
+                actorEmail: auditActor?.user_email || user?.email,
+                actorRole: auditActor?.user_role || user?.role,
+            });
             count++;
-            await _audit(`CONTRACT_${newStatus}`, c.contract_id || c.id, { approval: "CHECKED_TUGURE" }, { approval: newStatus, remarks: approvalRemarks }, approvalRemarks || `Approver Tugure ${newStatus.toLowerCase()} contract`, auditActor, user);
-        }
-        if (count > 0) {
-            await _notify(newStatus === "APPROVED" ? "Contracts Approved (Final)" : "Contracts Marked for Revision", `${auditActor?.user_email || user?.email} ${newStatus === "APPROVED" ? "approved" : "marked for revision"} ${count} contract(s).`, newStatus === "REVISION" ? "WARNING" : "INFO");
-            sendNotificationEmail({ targetGroup: newStatus === "REVISION" ? "brins-maker" : "tugure-approver", objectType: "Contract", statusTo: newStatus, recipientRole: newStatus === "REVISION" ? "BRINS" : "ALL", variables: { user_name: auditActor?.user_email || user?.email || "System", date: new Date().toLocaleDateString("id-ID"), count: String(count), reason: approvalRemarks || "No remarks" }, fallbackSubject: newStatus === "APPROVED" ? "Contracts Approved (Final)" : "Contracts Marked for Revision", fallbackBody: `<p>{user_name} ${newStatus === "APPROVED" ? "approved" : "marked for revision"} {count} contract(s) on {date}.</p><p>Remarks: {reason}</p>` }).catch(console.error);
         }
         return count;
     },

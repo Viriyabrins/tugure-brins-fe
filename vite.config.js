@@ -1,17 +1,49 @@
-import base44 from "@base44/vite-plugin"
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 // https://vite.dev/config/
-export default defineConfig({
-  logLevel: 'error', // Suppress warnings, only show errors
-  plugins: [
-    base44({
-      // Support for legacy code that imports the base44 SDK with @/integrations, @/entities, etc.
-      // can be removed if the code has been updated to use the new SDK imports from @base44/sdk
-      legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === 'true',
-      hmrNotifier: true
-    }),
-    react(),
-  ]
-});
+export default defineConfig(({ mode }) => {
+  // Muat env file sesuai mode (.env.development, .env.staging, dll)
+  const env = loadEnv(mode, __dirname, '')
+
+  return {
+    logLevel: 'error', // Suppress warnings, only show errors
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, 'src')
+      }
+    },
+    // Dev server proxy settings (useful for local/staging dev)
+    server: {
+      host: '0.0.0.0',
+      proxy: {
+        '/api': {
+          // Prefer explicit Vite proxy env, then production PROXY_TARGET, then fallback
+          target: env.VITE_API_PROXY || env.PROXY_TARGET || 'http://localhost:4000',
+          changeOrigin: true,
+          secure: false,
+          // Enable WebSocket-like streaming for SSE
+          ws: true,
+          // preserve the /api prefix so dev behavior matches production
+          rewrite: (path) => path,
+          configure: (proxy) => {
+            // Ensure SSE streams are not buffered
+            proxy.on('proxyRes', (proxyRes, req, res) => {
+              if (req.url.includes('/db-channel/stream')) {
+                res.setHeader('X-Accel-Buffering', 'no')
+              }
+            })
+          }
+        }
+      }
+    },
+    plugins: [
+      react(),
+    ]
+  }
+})

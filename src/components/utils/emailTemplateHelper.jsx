@@ -1,9 +1,10 @@
 /**
  * Email Template Helper
- * Handles email template variable replacement and sending
+ * Handles email template variable replacement and sending.
+ * All recipient resolution uses Keycloak client roles (not groups).
  */
 
-import { base44 } from '@/api/base44Client';
+import { backend } from '@/api/backendClient';
 
 /**
  * Replace variables in email template
@@ -34,7 +35,7 @@ export function replaceTemplateVariables(template, variables) {
  */
 export async function getEmailTemplate(objectType, statusTo, recipientRole) {
   try {
-    const templates = await base44.entities.EmailTemplate.list();
+    const templates = await backend.list('EmailTemplate');
     
     // Find matching template
     const template = templates.find(t => 
@@ -59,7 +60,7 @@ export async function getEmailTemplate(objectType, statusTo, recipientRole) {
  */
 export async function getNotificationRecipients(targetRole, notificationType) {
   try {
-    const allSettings = await base44.entities.NotificationSetting.list();
+    const allSettings = await backend.list('NotificationSetting');
     
     // Filter settings based on role and notification type preference
     const recipients = allSettings.filter(setting => {
@@ -118,7 +119,7 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
     
     // Send email to all recipients
     const emailPromises = recipients.map(recipient =>
-      base44.integrations.Core.SendEmail({
+      backend.sendEmail({
         to: recipient.notification_email,
         subject: subject,
         body: body
@@ -136,6 +137,135 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
 }
 
 /**
+ * Send notification email to users resolved by Keycloak client role.
+ * Resolves recipient emails from Keycloak client roles via backend, then sends using
+ * EmailTemplate from DB (with fallback subject/body if no template exists).
+ *
+ * @param {object} options
+ * @param {string} options.targetRealm - Keycloak realm ('brins' or 'tugure')
+ * @param {string} options.targetRole - Keycloak client role name (e.g. 'checker-brins-role', 'tugure-checker-role')
+ * @param {string[]} [options.to] - Optional explicit email addresses (in addition to role resolution)
+ * @param {string} options.objectType - Object type for template lookup (Batch, Record, Nota, Claim, Subrogation)
+ * @param {string} options.statusTo - Target status for template lookup
+ * @param {string} [options.recipientRole='ALL'] - Recipient role for template lookup (BRINS, TUGURE, ALL)
+ * @param {object} [options.variables={}] - Variables for template replacement
+ * @param {string} [options.fallbackSubject=''] - Fallback subject if no template found
+ * @param {string} [options.fallbackBody=''] - Fallback body if no template found
+ * @returns {Promise<void>}
+ */
+export async function sendNotificationEmail({
+  targetRealm = 'brins',
+  targetRole = '',
+  to = [],
+  objectType,
+  statusTo,
+  recipientRole = 'ALL',
+  variables = {},
+  fallbackSubject = '',
+  fallbackBody = '',
+}) {
+  // 1. Resolve recipient emails from Keycloak client role
+  const emailSet = new Set(Array.isArray(to) ? to : (to ? [to] : []));
+
+  if (targetRole) {
+    try {
+      const roleUsers = await backend.getUsersByRole(targetRealm, targetRole);
+      if (Array.isArray(roleUsers)) {
+        roleUsers.forEach(user => {
+          if (user.email) emailSet.add(user.email);
+        });
+        console.log(`[sendNotificationEmail] Role "${targetRole}" in realm "${targetRealm}": found ${roleUsers.length} user(s)`);
+      }
+    } catch (err) {
+      console.warn(`[sendNotificationEmail] Failed to get users for role "${targetRole}" in realm "${targetRealm}":`, err);
+    }
+  }
+
+  const recipients = [...emailSet].filter(Boolean);
+
+  if (recipients.length === 0) {
+    console.warn('[sendNotificationEmail] No recipients resolved from role or explicit list. Skipping.');
+    return;
+  }
+
+  console.log(`[sendNotificationEmail] Sending to ${recipients.length} recipient(s): ${recipients.join(', ')}`);
+
+  // 2. Get subject/body from template or fallback
+  let subject = fallbackSubject;
+  let body = fallbackBody;
+
+  try {
+    const template = await getEmailTemplate(objectType, statusTo, recipientRole);
+    if (template) {
+      subject = replaceTemplateVariables(template.email_subject, variables);
+      body = replaceTemplateVariables(template.email_body, variables);
+      console.log(`[sendNotificationEmail] Using DB template for ${objectType} -> ${statusTo}`);
+    } else {
+      console.warn(`[sendNotificationEmail] No template for ${objectType} -> ${statusTo}, using fallback.`);
+      subject = replaceTemplateVariables(subject, variables);
+      body = replaceTemplateVariables(body, variables);
+    }
+  } catch (err) {
+    console.warn('[sendNotificationEmail] Template lookup failed, using fallback:', err.message);
+    subject = replaceTemplateVariables(subject, variables);
+    body = replaceTemplateVariables(body, variables);
+  }
+
+  if (!subject || !body) {
+    console.warn('[sendNotificationEmail] No subject or body available. Skipping.');
+    return;
+  }
+
+  // 3. Send one email to all recipients
+  try {
+    await backend.sendDirectEmail({ to: recipients.join(', '), subject, body });
+    console.log(`[sendNotificationEmail] Sent email to ${recipients.length} recipient(s) for ${objectType} -> ${statusTo}`);
+  } catch (err) {
+    console.error(`[sendNotificationEmail] Failed to send email for ${objectType} -> ${statusTo}:`, err);
+  }
+}
+
+/**
+ * Convenience wrapper for workflow-step emails.
+ * Resolves recipients from a Keycloak client role + optional explicit emails, then sends.
+ *
+ * @param {object} options
+ * @param {'brins'|'tugure'} options.realm - Keycloak realm
+ * @param {string} options.roleName - Client role name (e.g. 'checker-brins-role')
+ * @param {string[]} [options.extraTo=[]] - Additional explicit email addresses
+ * @param {string} options.objectType - Entity type for template lookup
+ * @param {string} options.statusTo - Target status for template lookup
+ * @param {string} [options.recipientRole='ALL'] - Recipient role for template lookup
+ * @param {object} [options.variables={}] - Template variables
+ * @param {string} options.fallbackSubject - Fallback email subject
+ * @param {string} options.fallbackBody - Fallback email body (HTML)
+ * @returns {Promise<void>}
+ */
+export async function sendWorkflowEmail({
+  realm,
+  roleName,
+  extraTo = [],
+  objectType,
+  statusTo,
+  recipientRole = 'ALL',
+  variables = {},
+  fallbackSubject,
+  fallbackBody,
+}) {
+  return sendNotificationEmail({
+    targetRealm: realm,
+    targetRole: roleName,
+    to: extraTo,
+    objectType,
+    statusTo,
+    recipientRole,
+    variables,
+    fallbackSubject,
+    fallbackBody,
+  });
+}
+
+/**
  * Create notification in system
  * @param {string} title - Notification title
  * @param {string} message - Notification message
@@ -147,7 +277,7 @@ export async function sendTemplatedEmail(objectType, statusFrom, statusTo, recip
  */
 export async function createNotification(title, message, type, module, referenceId, targetRole) {
   try {
-    await base44.entities.Notification.create({
+    await backend.create('Notification', {
       title,
       message,
       type,
@@ -176,7 +306,7 @@ export async function createNotification(title, message, type, module, reference
  */
 export async function createAuditLog(action, module, entityType, entityId, oldValue, newValue, userEmail, userRole, reason) {
   try {
-    await base44.entities.AuditLog.create({
+    await backend.create('AuditLog', {
       action,
       module,
       entity_type: entityType,

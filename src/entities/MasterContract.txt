@@ -95,7 +95,6 @@
       "enum": [
         "Draft",
         "Pending First Approval",
-        "Pending Second Approval",
         "Active",
         "Inactive",
         "Archived"

@@ -1,1 +1,1 @@
-# Base44 App
+# BRINS Frontend App

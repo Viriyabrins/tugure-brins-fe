@@ -1,4 +1,5 @@
 import AdvancedReports from './pages/AdvancedReports';
+import RecapSummary from './pages/RecapSummary';
 import AuditLog from './pages/AuditLog';
 import BatchProcessing from './pages/BatchProcessing';
 import BorderoManagement from './pages/BorderoManagement';
@@ -8,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import DebtorReview from './pages/DebtorReview';
 import DocumentClaim from './pages/DocumentClaim';
 import DocumentEligibilityBatch from './pages/DocumentEligibilityBatch';
+import FileManagementPage from './pages/FileManagementPage';
 import Home from './pages/Home';
 import MasterContractManagement from './pages/MasterContractManagement';
 import NotaManagement from './pages/NotaManagement';
@@ -23,6 +25,7 @@ import __Layout from './Layout.jsx';
 
 export const PAGES = {
     "AdvancedReports": AdvancedReports,
+    "RecapSummary": RecapSummary,
     "AuditLog": AuditLog,
     "BatchProcessing": BatchProcessing,
     "BorderoManagement": BorderoManagement,
@@ -32,6 +35,7 @@ export const PAGES = {
     "DebtorReview": DebtorReview,
     "DocumentClaim": DocumentClaim,
     "DocumentEligibilityBatch": DocumentEligibilityBatch,
+    "FileManagementPage": FileManagementPage,
     "Home": Home,
     "MasterContractManagement": MasterContractManagement,
     "NotaManagement": NotaManagement,

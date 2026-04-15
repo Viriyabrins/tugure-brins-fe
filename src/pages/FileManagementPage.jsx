@@ -1,0 +1,1 @@
+export { FileManagementPage as default } from "@/features/fileManagement";

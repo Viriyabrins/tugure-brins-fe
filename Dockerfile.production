@@ -1,0 +1,27 @@
+FROM node:24-bullseye-slim AS builder
+WORKDIR /app
+
+# install dependencies and build
+COPY package*.json ./
+RUN npm ci --silent
+COPY . .
+RUN npm run build -- --mode production
+
+FROM node:24-bullseye-slim
+WORKDIR /app
+
+# copy built files and built node_modules from builder to avoid native compile issues
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/server.js ./server.js
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.env* ./
+
+# expose port the user requested
+ENV PORT=10010
+ENV HOST=0.0.0.0
+ENV NODE_ENV=production
+EXPOSE 10010
+
+# run the user-provided production server script
+CMD ["npm", "run", "server:production"]

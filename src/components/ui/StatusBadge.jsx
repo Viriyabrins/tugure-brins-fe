@@ -4,11 +4,17 @@ import { cn } from "@/lib/utils";
 
 const statusColors = {
   // Debtor Status
-  DRAFT: 'bg-gray-100 text-gray-700 border-gray-200',
+  DRAFT: 'bg-gray-100 text-gray-800',
+  Draft: 'bg-gray-100 text-gray-800',
   SUBMITTED: 'bg-blue-100 text-blue-700 border-blue-200',
   APPROVED: 'bg-green-100 text-green-700 border-green-200',
   REJECTED: 'bg-red-100 text-red-700 border-red-200',
+  REVISION: 'bg-red-100 text-red-700 border-red-200',
   CONDITIONAL: 'bg-orange-100 text-orange-700 border-orange-200',
+  CHECKED: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  CHECKED_BRINS: 'bg-yellow-200 text-orange-500',
+  APPROVED_BRINS: 'bg-emerald-400 text-white',
+  CHECKED_TUGURE: 'bg-violet-100 text-violet-800',
   TERMINATED: 'bg-gray-200 text-gray-600 border-gray-300',
   
   // Admin Status
@@ -18,7 +24,8 @@ const statusColors = {
   WAIVED: 'bg-blue-100 text-blue-700 border-blue-200',
   
   // Exposure Status
-  ACTIVE: 'bg-green-100 text-green-700 border-green-200',
+  ACTIVE: 'bg-blue-100 text-blue-800',
+  Active: 'bg-blue-100 text-blue-800',
   HOLD: 'bg-orange-100 text-orange-700 border-orange-200',
   ADJUSTED: 'bg-blue-100 text-blue-700 border-blue-200',
   PENDING: 'bg-yellow-100 text-yellow-700 border-yellow-200',
@@ -62,17 +69,18 @@ const statusColors = {
   SUCCESS: 'bg-green-100 text-green-700 border-green-200',
   ERROR: 'bg-red-100 text-red-700 border-red-200',
   WARNING: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  INFO: 'bg-blue-100 text-blue-700 border-blue-200'
+  INFO: 'bg-blue-100 text-blue-700 border-blue-200',
+  Unknown: 'bg-gray-200 text-gray-700'
 };
 
-export default function StatusBadge({ status, className }) {
-  const colorClass = statusColors[status] || 'bg-gray-100 text-gray-700 border-gray-200';
+export default function StatusBadge({ status, className = "" }) {
+  const colorClass = statusColors[status] || statusColors.Unknown || 'bg-gray-200 text-gray-700';
   const displayText = status?.replace(/_/g, ' ') || 'Unknown';
   
   return (
     <Badge 
       variant="outline" 
-      className={cn('font-medium border', colorClass, className)}
+      className={cn('font-medium border ml-1', colorClass, className)}
     >
       {displayText}
     </Badge>

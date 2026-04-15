@@ -7,84 +7,90 @@ import { Separator } from "@/components/ui/separator";
 import { 
   LayoutDashboard, FileText, Upload, FileCheck, BarChart3, 
   DollarSign, CreditCard, Scale, Bell, User, Settings, 
-  LogOut, Menu, X, ChevronRight, Shield, Activity, Lock
+  LogOut, Menu, X, ChevronRight, Shield, Activity, Lock, Folder
 } from "lucide-react";
-import { useAuth } from './lib/AuthContext';
+import { useKeycloakAuth } from './lib/KeycloakContext';
+import { useViewerRole } from '@/hooks/usePermissions';
 export default function Layout({ children, currentPageName }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { user, logout, tokenParsed } = useKeycloakAuth();
+  const { isViewer, isTugureViewer, isBrinsViewer } = useViewerRole();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const { bypassAuth, user: authUser } = useAuth();
+
+  const normalizeAccess = (value = '') => String(value).trim().toLowerCase();
+
+  const extractTokenAccesses = () => {
+    const rawAccess = tokenParsed?.access;
+
+    if (!rawAccess) return [];
+    if (Array.isArray(rawAccess)) {
+      return rawAccess.map(normalizeAccess).filter(Boolean);
+    }
+
+    return [normalizeAccess(rawAccess)].filter(Boolean);
+  };
+
+  const tokenAccesses = extractTokenAccesses();
+
+  // Extract ONLY application roles for this app client from Keycloak token:
+  // prefer resource_access['brins-tugure'].roles, fallback to resource_access[azp].roles
+  const extractTokenRoles = () => {
+    const resourceAccess = tokenParsed?.resource_access;
+    const azpClientId = tokenParsed?.azp;
+
+    if (!resourceAccess || typeof resourceAccess !== 'object') {
+      return [];
+    }
+
+    if (Array.isArray(resourceAccess?.['brins-tugure']?.roles)) {
+      return resourceAccess['brins-tugure'].roles.map((r) => String(r));
+    }
+
+    if (azpClientId && Array.isArray(resourceAccess?.[azpClientId]?.roles)) {
+      return resourceAccess[azpClientId].roles.map((r) => String(r));
+    }
+
+    return [];
+  };
+
+  const tokenRoles = extractTokenRoles();
+  const _normalizedRoles = Array.isArray(tokenRoles)
+    ? tokenRoles.map((r) => String(r || "").trim().toLowerCase())
+    : [];
+  const isTugureUser = _normalizedRoles.some((r) => r.includes("tugure"));
+  const isBrinsUser = !isTugureUser && _normalizedRoles.some((r) => r.includes("brins"));
+  const displayRole = tokenRoles.length > 0 ? tokenRoles.join(', ') : (user?.role?.toUpperCase() || 'USER');
 
   useEffect(() => {
-    if (bypassAuth) {
-      if (authUser) {
-        setUser(authUser);
-        loadNotificationCount();
-      }
-      setLoading(false);
-      return;
-    }
-    checkAuth();
-  }, [bypassAuth, authUser]);
-
-  const checkAuth = async () => {
-    try {
-      // Check for demo user in localStorage
-      const demoUserStr = localStorage.getItem('demo_user');
-      if (demoUserStr) {
-        const demoUser = JSON.parse(demoUserStr);
-        setUser(demoUser);
-        loadNotificationCount();
-      } else if (currentPageName !== 'Home') {
-        // Not logged in, redirect to Home
-        window.location.href = createPageUrl('Home');
-      }
-    } catch (error) {
-      // Error, redirect to Home
-      if (currentPageName !== 'Home') {
-        window.location.href = createPageUrl('Home');
-      }
-    }
-    setLoading(false);
-  };
-
-  const logout = async () => {
-    try {
-      localStorage.removeItem('demo_user');
-      window.location.href = createPageUrl('Home');
-    } catch (error) {
-      window.location.href = createPageUrl('Home');
-    }
-  };
-
-  const hasAccess = (allowedRoles) => {
-    if (!user) return false;
-    if (user.role === 'admin') return true;
-    return allowedRoles.includes(user.role?.toUpperCase());
-  };
+    loadNotificationCount();
+  }, []);
 
   const loadNotificationCount = async () => {
     try {
-      const { base44 } = await import('@/api/base44Client');
-      const notifs = await base44.entities.Notification.list();
-      const unread = (notifs || []).filter(n => !n.is_read).length;
-      setUnreadNotifications(unread);
+      const { backend } = await import('@/api/backendClient');
+      
+      let targetRoles = ["ALL"];
+      if (tokenRoles && tokenRoles.length > 0) {
+        const normalizedRoles = tokenRoles.map((r) => String(r || "").trim().toLowerCase());
+        const knownRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role", "admin", "admin-brins-role"];
+        const matchedRoles = normalizedRoles.filter(r => knownRoles.includes(r));
+        if (matchedRoles.length > 0) {
+          targetRoles = [...targetRoles, ...matchedRoles];
+        }
+      }
+
+      const result = await backend.listNotifications({
+        unread: 'true',
+        limit: 1,
+        target_role: targetRoles.join(',')
+      });
+      
+      setUnreadNotifications(Number(result.pagination?.total) || 0);
     } catch (error) {
       console.error('Failed to load notifications:', error);
       setUnreadNotifications(0);
     }
   };
-
-  // Show loading
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
 
   // Menu structure with role-based access control
   const menuItems = {
@@ -92,32 +98,50 @@ export default function Layout({ children, currentPageName }) {
       { name: 'Dashboard Analytics', icon: LayoutDashboard, path: 'Dashboard', roles: [] } // all users
     ],
     operations: [
-      { name: 'Submit Debtor', icon: Upload, path: 'SubmitDebtor', roles: ['BRINS'] },
-      { name: 'Batch Processing', icon: FileText, path: 'BatchProcessing', roles: ['TUGURE'] },
-      { name: 'Document Eligibility', icon: FileCheck, path: 'DocumentEligibilityBatch', roles: ['BRINS'] },
-      { name: 'Debtor Review', icon: FileCheck, path: 'DebtorReview', roles: ['TUGURE'] },
-      { name: 'Nota Management', icon: FileText, path: 'NotaManagement', roles: ['TUGURE'] },
-      { name: 'Payment Intent', icon: DollarSign, path: 'PaymentIntent', roles: ['BRINS'] },
-      { name: 'Claim Submit', icon: FileText, path: 'ClaimSubmit', roles: ['BRINS'] },
-      { name: 'Document Claim', icon: FileCheck, path: 'DocumentClaim', roles: ['BRINS'] },
-      { name: 'Claim Review', icon: FileText, path: 'ClaimReview', roles: ['TUGURE'] }
+      { name: 'Debtor Submit', icon: Upload, path: 'SubmitDebtor', accesses: ['brins operation'] },
+      // { name: 'Batch Processing', icon: FileText, path: 'BatchProcessing', roles: ['TUGURE'] },
+      // { name: 'Document Eligibility', icon: FileCheck, path: 'DocumentEligibilityBatch', roles: ['BRINS'] },
+      { name: 'Debtor Review', icon: FileCheck, path: 'DebtorReview', accesses: ['tugure review'] },
+      // { name: 'Nota Management', icon: FileText, path: 'NotaManagement', accesses: ['tugure review'] },
+      // { name: 'Payment Intent', icon: DollarSign, path: 'PaymentIntent', accesses: ['brins operation'] },
+      { name: isBrinsUser ? 'Recovery Submit' : 'Claim Submit', icon: FileText, path: 'ClaimSubmit', accesses: ['brins operation'] },
+      // { name: 'Document Claim', icon: FileCheck, path: 'DocumentClaim', roles: ['BRINS'] },
+      { name: 'Claim Review', icon: FileText, path: 'ClaimReview', accesses: ['tugure review'] }
     ],
     shared: [
       { name: 'Master Contract', icon: FileText, path: 'MasterContractManagement', roles: [] },
+      { name: 'Nota Management', icon: FileText, path: 'NotaManagement', roles: [] },
       { name: 'Bordero Management', icon: BarChart3, path: 'BorderoManagement', roles: [] },
-      { name: 'Advanced Reports', icon: BarChart3, path: 'AdvancedReports', roles: [] },
+      // { name: 'Advanced Reports', icon: BarChart3, path: 'AdvancedReports', roles: [] },
+      { name: 'File Manager', icon: Folder, path: 'FileManagementPage', roles: [] },
+      { name: 'Recap Summary', icon: BarChart3, path: 'RecapSummary', roles: [] },
       { name: 'Audit Log', icon: Activity, path: 'AuditLog', roles: [] },
-      { name: 'System Configuration', icon: Settings, path: 'SystemConfiguration', badge: unreadNotifications, roles: [] },
+      { name: 'System Configuration', icon: Settings, path: 'SystemConfiguration', roles: [] },
       { name: 'Profile', icon: User, path: 'Profile', roles: [] }
     ]
   };
 
-  // Filter menu items based on user role
+  // Filter menu items based on user role/access.
+  // Tugure Viewer: common + shared + tugure-review operations (Debtor Review, Claim Review)
+  // Brins Viewer:  common + shared + brins-operation operations (Submit Debtor, Recovery Submit)
   const filterMenuItems = (items) => {
+    if (isTugureViewer) {
+      return items.filter((item) => {
+        if (!item.accesses || item.accesses.length === 0) return true;
+        return item.accesses.map(normalizeAccess).includes('tugure review');
+      });
+    }
+    if (isBrinsViewer) {
+      return items.filter((item) => {
+        if (!item.accesses || item.accesses.length === 0) return true;
+        return item.accesses.map(normalizeAccess).includes('brins operation');
+      });
+    }
     return items.filter(item => {
-      if (!item.roles || item.roles.length === 0) return true; // accessible to all
-      if (user?.role === 'admin') return true; // admin can access everything
-      return item.roles.includes(user?.role?.toUpperCase());
+      if (!item.accesses || item.accesses.length === 0) return true;
+
+      const allowedAccesses = item.accesses.map(normalizeAccess);
+      return tokenAccesses.some((access) => allowedAccesses.includes(access));
     });
   };
 
@@ -136,7 +160,7 @@ export default function Layout({ children, currentPageName }) {
         to={createPageUrl(item.path)}
         className={`flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
           isActive 
-            ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md' 
+            ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md' 
             : 'text-gray-700 hover:bg-gray-100'
         }`}
       >
@@ -195,7 +219,7 @@ export default function Layout({ children, currentPageName }) {
               <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
                 <div className="text-right">
                   <p className="text-sm font-medium text-gray-900">{user?.full_name || user?.email}</p>
-                  <p className="text-xs text-gray-500">{user?.role?.toUpperCase() || 'USER'}</p>
+                  <p className="text-xs text-gray-500">{displayRole}</p>
                 </div>
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
                   <User className="w-5 h-5 text-white" />

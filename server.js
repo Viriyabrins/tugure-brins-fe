@@ -41,7 +41,7 @@ const {
 
 // Baca KEYCLOAK_SECRET_KEY langsung dari process.env (setelah dotenv.config())
 // agar nilainya selalu terbaca dari env file, tidak tergantikan default value.
-const KEYCLOAK_SECRET_KEY = process.env.KEYCLOAK_SECRET_KEY || '';
+const KEYCLOAK_SECRET_KEY = process.env.VITE_KEYCLOAK_SECRET_KEY || process.env.KEYCLOAK_SECRET_KEY || '';
 
 if (!KEYCLOAK_SECRET_KEY) {
   console.warn(

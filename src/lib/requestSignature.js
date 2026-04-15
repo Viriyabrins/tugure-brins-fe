@@ -25,6 +25,8 @@
 
 const SIGNATURE_SECRET  = import.meta.env.VITE_KEYCLOAK_SECRET_KEY || '';
 
+import { v4 as uuidv4 } from 'uuid';
+
 /**
  * Waktu hidup maksimum sebuah signature (ms).
  * Harus bernilai sama dengan SIGNATURE_MAX_AGE_MS di server.js.
@@ -132,7 +134,8 @@ export async function createRequestSignature({ method, endpoint }) {
     return null;
   }
 
-  const uuid = crypto.randomUUID();
+  // Use uuid v4 to ensure compatibility across runtimes
+  const uuid = uuidv4();
   const { epochMs: timestamp, jakartaISO: timestampDisplay } = getJakartaTimestamp();
   const normalizedMethod = String(method).toUpperCase();
   const normalizedEndpoint = String(endpoint).split('?')[0]; // Strip query params dari endpoint

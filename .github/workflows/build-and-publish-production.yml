@@ -62,7 +62,7 @@ jobs:
 
   deploy-to-podman:
       needs: build-and-publish
-      runs-on: crp-fe
+      runs-on: ubuntu-latest
       if: success()
       steps:
         - name: Deploy frontend to remote Podman host as brins

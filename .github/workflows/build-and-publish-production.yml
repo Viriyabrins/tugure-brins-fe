@@ -27,15 +27,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push (staging)
+      - name: Build and push (production)
         id: build
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: Dockerfile.staging
+          file: Dockerfile.production
           push: true
           tags: |
-            ghcr.io/viriyabrins/brins-fe:staging-latest
+            ghcr.io/viriyabrins/brins-fe:production-latest
 
       - name: Save pushed image digest
         run: |
@@ -44,21 +44,21 @@ jobs:
       - name: Upload image digest artifact
         uses: actions/upload-artifact@v4
         with:
-          name: staging-image-digest
+          name: production-image-digest
           path: image-digest.txt
 
       - name: Pull pushed image (for export)
         run: |
           echo "Pulling image for packaging...";
-          docker pull ghcr.io/viriyabrins/brins-fe:staging-latest
+          docker pull ghcr.io/viriyabrins/brins-fe:production-latest
       - name: Save image tarball
         run: |
-          docker save ghcr.io/viriyabrins/brins-fe:staging-latest | gzip > image-staging-latest.tar.gz
+          docker save ghcr.io/viriyabrins/brins-fe:production-latest | gzip > image-production-latest.tar.gz
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: staging-image
-          path: image-staging-latest.tar.gz
+          name: production-image
+          path: image-production-latest.tar.gz
 
   deploy-to-podman:
       needs: build-and-publish
@@ -67,30 +67,30 @@ jobs:
       steps:
         - name: Deploy frontend to remote Podman host as brins
           env:
-            IMAGE: ghcr.io/viriyabrins/brins-fe:staging-latest
+            IMAGE: ghcr.io/viriyabrins/brins-fe:production-latest
             GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
             GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-            SSH_HOST: ${{ secrets.SSH_HOST }}
-            SSH_USER: ${{ secrets.SSH_USER }}
-            SSH_PORT: ${{ secrets.SSH_PORT }}
+            SSH_HOST_PROD: ${{ secrets.SSH_HOST_PROD }}
+            SSH_USER_PROD: ${{ secrets.SSH_USER_PROD }}
+            SSH_PORT_PROD: ${{ secrets.SSH_PORT_PROD }}
             SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           run: |
             set -euo pipefail
 
-            if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ]; then
-              echo "Missing SSH_HOST, SSH_USER or SSH_PRIVATE_KEY secrets"
+            if [ -z "${SSH_HOST_PROD:-}" ] || [ -z "${SSH_USER_PROD:-}" ] || [ -z "${SSH_PORT_PROD:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+              echo "Missing SSH_HOST_PROD, SSH_USER_PROD, SSH_PORT_PROD or SSH_PRIVATE_KEY secrets"
               exit 1
             fi
 
-            SSH_PORT=${SSH_PORT:-22}
+            SSH_PORT=${SSH_PORT_PROD:-22}
 
-            echo "Deploying ${IMAGE} to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} using private key auth"
+            echo "Deploying ${IMAGE} to ${SSH_USER_PROD}@${SSH_HOST_PROD}:${SSH_PORT} using private key auth"
 
             mkdir -p ~/.ssh
             echo "${SSH_PRIVATE_KEY}" > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
 
-            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" <<'REMOTE'
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -p "${SSH_PORT}" "${SSH_USER_PROD}@${SSH_HOST_PROD}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" <<'REMOTE'
             set -euo pipefail
             IMAGE="$1"
             GHCR_USER="$2"
@@ -111,26 +111,26 @@ jobs:
             mkdir -p "${BACKUP_DIR}"
 
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            OLD=$(podman ps -a -q -f name=^brins-fe-staging$ || true)
+            OLD=$(podman ps -a -q -f name=^brins-fe-production$ || true)
             if [ -n "${OLD}" ]; then
-              echo "Found existing brins-fe-staging container, backing up (fixed name)..."
-              podman stop brins-fe-staging || true
-              BACKUP_IMAGE=brins-fe-staging:backup
-              podman commit brins-fe-staging "${BACKUP_IMAGE}" || true
-              podman tag "${BACKUP_IMAGE}" brins-fe-staging:previous || true
+              echo "Found existing brins-fe-production container, backing up (fixed name)..."
+              podman stop brins-fe-production || true
+              BACKUP_IMAGE=brins-fe-production:backup
+              podman commit brins-fe-production "${BACKUP_IMAGE}" || true
+              podman tag "${BACKUP_IMAGE}" brins-fe-production:previous || true
               # Save backup tar for off-host retention (timestamped)
-              podman save -o "${BACKUP_DIR}/brins-fe-staging-backup-${TIMESTAMP}.tar" "${BACKUP_IMAGE}" || true
+              podman save -o "${BACKUP_DIR}/brins-fe-production-backup-${TIMESTAMP}.tar" "${BACKUP_IMAGE}" || true
               # Create a stopped backup container with a fixed name for visibility
-              BACKUP_CONTAINER="brins-fe-staging-backup"
+              BACKUP_CONTAINER="brins-fe-production-backup"
               podman rm -f "${BACKUP_CONTAINER}" >/dev/null 2>&1 || true
               podman create --name "${BACKUP_CONTAINER}" "${BACKUP_IMAGE}" >/dev/null 2>&1 || true
               # Show images and containers for visibility
-              podman images --filter reference=brins-fe-staging* || true
+              podman images --filter reference=brins-fe-production* || true
               podman ps -a --filter name=^${BACKUP_CONTAINER}$ || true
-              podman rm brins-fe-staging || true
+              podman rm brins-fe-production || true
             fi
 
-            echo "Starting new brins-fe-staging container from ${IMAGE}"
+            echo "Starting new brins-fe-production container from ${IMAGE}"
             # Run frontend using host networking so it can reach backend at localhost:10011
             # Mount host certs directory /home/brins/cert into the container so private keys
             # remain on the host and are not baked into the image.
@@ -146,7 +146,7 @@ jobs:
               SSL_ENV_ARGS="-e SSL_KEY_PATH=${CERT_CONTAINER_DIR}/server-dev.key -e SSL_CERT_PATH=${CERT_CONTAINER_DIR}/server-dev.crt"
             fi
 
-            podman rm -f brins-fe-staging >/dev/null 2>&1 || true
+            podman rm -f brins-fe-production >/dev/null 2>&1 || true
             # Determine a reachable host IP for containers to access services on the host
             HOST_IP=$(ip route get 1 2>/dev/null | awk '/src/ {for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}') || true
             if [ -z "${HOST_IP}" ]; then
@@ -155,13 +155,13 @@ jobs:
             HOST_IP=${HOST_IP:-127.0.0.1}
 
             # Publish host port 10010 -> container 10010. Pass PORT so app listens on 10010 inside container.
-            podman run -d --name brins-fe-staging --restart=always \
+            podman run -d --name brins-fe-production --restart=always \
               -p 10010:10010 ${MOUNT_ARG} \
               -e PORT=10010 \
               -e BACKEND_URL="http://${HOST_IP}:10011" ${SSL_ENV_ARGS} "${IMAGE}"
 
             sleep 2
-            podman ps -a --filter name=^brins-fe-staging$
+            podman ps -a --filter name=^brins-fe-production$
 
             echo "Frontend deploy complete"
             REMOTE

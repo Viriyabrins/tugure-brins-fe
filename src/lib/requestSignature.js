@@ -29,6 +29,51 @@ import CryptoJS from 'crypto-js';
 
 const SIGNATURE_SECRET = import.meta.env.VITE_SIGNATURE_SECRET || import.meta.env.VITE_KEYCLOAK_SECRET_KEY || '';
 
+// ── Server-time offset sync ────────────────────────────────────────────────────
+// Stores the difference (ms) between server epoch and client epoch so that
+// every signature timestamp is anchored to authoritative server time even if
+// the client clock has drifted.
+let _serverOffset = 0;
+
+/**
+ * Fetch server time from GET /api/time and compute the clock offset.
+ * offset = serverEpoch − clientEpoch (midpoint of round-trip).
+ * Called on app init and on visibility resume.
+ */
+async function _fetchServerOffset() {
+  try {
+    const before = Date.now();
+    const resp = await fetch('/api/time');
+    const after = Date.now();
+    if (!resp.ok) return;
+    const { serverTime } = await resp.json();
+    const serverMs = Date.parse(serverTime);
+    if (isNaN(serverMs)) return;
+    // Use round-trip midpoint to reduce one-way latency bias
+    const clientMid = Math.round((before + after) / 2);
+    _serverOffset = serverMs - clientMid;
+  } catch {
+    // Silently fall back to offset 0 (local clock)
+  }
+}
+
+/**
+ * Initialise server-time offset sync.
+ * Must be called once at app startup. Also re-syncs when the tab becomes visible.
+ * Returns a Promise that resolves when the first sync completes (or fails silently).
+ */
+export function initServerTimeSync() {
+  const p = _fetchServerOffset();
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        _fetchServerOffset();
+      }
+    });
+  }
+  return p;
+}
+
 /**
  * Deteksi apakah Web Crypto SubtleCrypto tersedia.
  * SubtleCrypto hanya tersedia di secure context (HTTPS atau localhost).
@@ -86,14 +131,11 @@ export async function createRequestSignature({ method, endpoint }) {
   }
   const uuid = uuidv4();
   // Timestamp dalam format WIB (UTC+7) eksplisit, contoh: "2026-04-15T14:30:00.000+07:00".
-  // Cara kerja:
-  //   1. Date.now() → epoch UTC sekarang (ms)
-  //   2. Tambah 7 jam → epoch yang merepresentasikan "jam dinding" WIB
-  //   3. .toISOString() → string UTC dari jam dinding WIB (misal "2026-04-15T14:30:00.000Z")
-  //   4. Ganti suffix Z → +07:00 agar backend tahu ini WIB
-  // Backend mem-parse "2026-04-15T14:30:00.000+07:00" → epoch UTC asli (07:30 UTC) dengan benar.
+  // Gunakan waktu yang sudah di-sync dengan server (_serverOffset) untuk mengurangi
+  // risiko penolakan signature akibat drift jam klien.
   const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
-  const timestamp = new Date(Date.now() + WIB_OFFSET_MS).toISOString().slice(0, -1) + '+07:00';
+  const syncedNow = Date.now() + _serverOffset;
+  const timestamp = new Date(syncedNow + WIB_OFFSET_MS).toISOString().slice(0, -1) + '+07:00';
   const normalizedMethod = String(method).toUpperCase();
   const normalizedPath = String(endpoint).split('?')[0];
 

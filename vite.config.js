@@ -23,7 +23,8 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       proxy: {
         '/api': {
-          // Prefer explicit Vite proxy env, then production PROXY_TARGET, then fallback
+          // VITE_API_PROXY must be a full URL (e.g. http://host:10011), never a path like /api.
+          // PROXY_TARGET is the fallback for server.js; use the same value here for consistency.
           target: env.VITE_API_PROXY || env.PROXY_TARGET || 'http://localhost:4000',
           changeOrigin: true,
           secure: false,

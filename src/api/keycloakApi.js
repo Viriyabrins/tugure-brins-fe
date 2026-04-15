@@ -2,7 +2,7 @@ import axios from 'axios'
 import keycloakService from '@/services/keycloakService'
 
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
+    baseURL: import.meta.env.VITE_API_BASE_URL || '',
     headers: {
         'Content-Type': 'application/json',
     },

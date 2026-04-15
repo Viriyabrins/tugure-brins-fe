@@ -7,7 +7,7 @@
 
 import { validateFile, validateFiles } from '@/utils/fileValidation.js';
 
-const API_BASE = import.meta.env.VITE_API_PROXY || '/api';
+const API_BASE = (import.meta.env.VITE_API_PROXY || '') + '/api';
 
 /**
  * Upload and validate a file via backend API.

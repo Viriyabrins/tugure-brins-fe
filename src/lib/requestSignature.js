@@ -9,7 +9,9 @@
  *
  * Payload string yang di-sign: `{uuid}|{timestamp_wib}|{METHOD}|{path}`
  * Timestamp : ISO 8601 WIB (UTC+7), e.g. 2026-04-15T14:00:00.000+07:00
- * Algoritma : HMAC-SHA256 via Web Crypto API (SubtleCrypto)
+ * Algoritma : HMAC-SHA256
+ *   - Secure context (HTTPS / localhost) → Web Crypto API (SubtleCrypto)
+ *   - Non-secure context (plain HTTP)    → CryptoJS fallback
  * Expiry    : 5 detik — divalidasi di backend
  *
  * Headers yang dikirim:
@@ -23,27 +25,49 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import CryptoJS from 'crypto-js';
 
 const SIGNATURE_SECRET = import.meta.env.VITE_SIGNATURE_SECRET || import.meta.env.VITE_KEYCLOAK_SECRET_KEY || '';
 
-async function importHmacKey(secret) {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  return crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-}
+/**
+ * Deteksi apakah Web Crypto SubtleCrypto tersedia.
+ * SubtleCrypto hanya tersedia di secure context (HTTPS atau localhost).
+ * Pada HTTP biasa (misal staging via IP plain-HTTP), crypto.subtle = undefined.
+ */
+const isSubtleCryptoAvailable = () =>
+  typeof crypto !== 'undefined' &&
+  typeof crypto.subtle !== 'undefined' &&
+  typeof crypto.subtle.importKey === 'function';
 
-async function hmacSha256Hex(key, payload) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(payload);
-  const signatureBuffer = await crypto.subtle.sign('HMAC', key, data);
-  const hashArray = Array.from(new Uint8Array(signatureBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+/**
+ * Hitung HMAC-SHA256 hex dari payload.
+ * Otomatis memilih SubtleCrypto (secure) atau CryptoJS (fallback non-secure).
+ *
+ * @param {string} secret
+ * @param {string} payload
+ * @returns {Promise<string>} hex string
+ */
+async function hmacSha256Hex(secret, payload) {
+  if (isSubtleCryptoAvailable()) {
+    // ── Path A: SubtleCrypto — tersedia di HTTPS / localhost ─────────────────
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const data = encoder.encode(payload);
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, data);
+    return Array.from(new Uint8Array(signatureBuffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  // ── Path B: CryptoJS fallback — dipakai saat plain HTTP (non-secure context) ─
+  return CryptoJS.HmacSHA256(payload, secret).toString(CryptoJS.enc.Hex);
 }
 
 /**
@@ -77,8 +101,7 @@ export async function createRequestSignature({ method, endpoint }) {
   const payload = `${uuid}|${timestamp}|${normalizedMethod}|${normalizedPath}`;
 
   try {
-    const key = await importHmacKey(SIGNATURE_SECRET);
-    const signature = await hmacSha256Hex(key, payload);
+    const signature = await hmacSha256Hex(SIGNATURE_SECRET, payload);
     return { uuid, timestamp, method: normalizedMethod, endpoint: normalizedPath, signature };
   } catch (err) {
     console.error('[RequestSignature] Gagal membuat signature:', err);

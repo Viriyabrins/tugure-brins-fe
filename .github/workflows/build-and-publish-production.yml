@@ -106,10 +106,6 @@ jobs:
             echo "Pruning podman images older than 24 hours..."
             podman image prune -a --filter "until=24h" -f || true
 
-            # Prepare host directories (no host app dir needed; containers manage app files)
-            BACKUP_DIR=/home/brins/backups
-            mkdir -p "${BACKUP_DIR}"
-
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
             OLD=$(podman ps -a -q -f name=^brins-fe-production$ || true)
             if [ -n "${OLD}" ]; then
@@ -118,8 +114,6 @@ jobs:
               BACKUP_IMAGE=brins-fe-production:backup
               podman commit brins-fe-production "${BACKUP_IMAGE}" || true
               podman tag "${BACKUP_IMAGE}" brins-fe-production:previous || true
-              # Save backup tar for off-host retention (timestamped)
-              podman save -o "${BACKUP_DIR}/brins-fe-production-backup-${TIMESTAMP}.tar" "${BACKUP_IMAGE}" || true
               # Create a stopped backup container with a fixed name for visibility
               BACKUP_CONTAINER="brins-fe-production-backup"
               podman rm -f "${BACKUP_CONTAINER}" >/dev/null 2>&1 || true
@@ -131,21 +125,6 @@ jobs:
             fi
 
             echo "Starting new brins-fe-production container from ${IMAGE}"
-            # Run frontend using host networking so it can reach backend at localhost:10011
-            # Mount host certs directory /home/brins/cert into the container so private keys
-            # remain on the host and are not baked into the image.
-            CERT_HOST_DIR=/home/brins/cert
-            CERT_CONTAINER_DIR=/app/src/cert
-
-            if [ ! -d "${CERT_HOST_DIR}" ]; then
-              echo "Warning: host cert directory ${CERT_HOST_DIR} does not exist. Container will start without mounted certs." || true
-              MOUNT_ARG=""
-              SSL_ENV_ARGS=""
-            else
-              MOUNT_ARG="-v ${CERT_HOST_DIR}:${CERT_CONTAINER_DIR}:Z"
-              SSL_ENV_ARGS="-e SSL_KEY_PATH=${CERT_CONTAINER_DIR}/server-dev.key -e SSL_CERT_PATH=${CERT_CONTAINER_DIR}/server-dev.crt"
-            fi
-
             podman rm -f brins-fe-production >/dev/null 2>&1 || true
             # Determine a reachable host IP for containers to access services on the host
             HOST_IP=$(ip route get 1 2>/dev/null | awk '/src/ {for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}') || true
@@ -156,9 +135,9 @@ jobs:
 
             # Publish host port 10010 -> container 10010. Pass PORT so app listens on 10010 inside container.
             podman run -d --name brins-fe-production --restart=always \
-              -p 10010:10010 ${MOUNT_ARG} \
+              -p 10010:10010 \
               -e PORT=10010 \
-              -e BACKEND_URL="http://${HOST_IP}:10011" ${SSL_ENV_ARGS} "${IMAGE}"
+              -e BACKEND_URL="http://${HOST_IP}:10011" "${IMAGE}"
 
             sleep 2
             podman ps -a --filter name=^brins-fe-production$

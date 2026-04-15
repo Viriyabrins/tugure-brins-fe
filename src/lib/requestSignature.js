@@ -23,16 +23,17 @@
  * pembangkitan signature; pastikan key ini berbeda dari kredensial kritis Keycloak.
  */
 
-const SIGNATURE_SECRET  = import.meta.env.VITE_KEYCLOAK_SECRET_KEY || '';
+const SIGNATURE_SECRET  = import.meta.env.VITE_KEYCLOAK_SECRET_KEY || import.meta.env.KEYCLOAK_SECRET_KEY || '';
 
 import { v4 as uuidv4 } from 'uuid';
+import CryptoJS from 'crypto-js';
 
 /**
  * Waktu hidup maksimum sebuah signature (ms).
  * Harus bernilai sama dengan SIGNATURE_MAX_AGE_MS di server.js.
  * Dikonfigurasi via VITE_SIGNATURE_MAX_AGE_MS. Default: 5000ms (5 detik).
  */
-const SIGNATURE_MAX_AGE_MS = Number(import.meta.env.VITE_SIGNATURE_MAX_AGE_MS) || 5000;
+const SIGNATURE_MAX_AGE_MS = Number(import.meta.env.VITE_SIGNATURE_MAX_AGE_MS) || import.meta.env.VITE_SIGNATURE_MAX_AGE_MS || 5000;
 
 /**
  * Mengimpor secret key berupa base64 string menjadi CryptoKey untuk HMAC-SHA256.
@@ -40,15 +41,21 @@ const SIGNATURE_MAX_AGE_MS = Number(import.meta.env.VITE_SIGNATURE_MAX_AGE_MS) |
  * @returns {Promise<CryptoKey>}
  */
 async function importHmacKey(secret) {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  return crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
+  // Prefer Web Crypto Subtle when available (browser modern engines).
+  if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.importKey === 'function') {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    return crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+  }
+
+  // Fallback: return raw secret for use with JS HMAC implementation (crypto-js)
+  return secret;
 }
 
 /**
@@ -58,11 +65,22 @@ async function importHmacKey(secret) {
  * @returns {Promise<string>} Signature dalam format hex
  */
 async function hmacSha256Hex(key, payload) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(payload);
-  const signatureBuffer = await crypto.subtle.sign('HMAC', key, data);
-  const hashArray = Array.from(new Uint8Array(signatureBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  // If SubtleCrypto is available and key is a CryptoKey, use it
+  if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.sign === 'function' && typeof key !== 'string') {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(payload);
+    const signatureBuffer = await crypto.subtle.sign('HMAC', key, data);
+    const hashArray = Array.from(new Uint8Array(signatureBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Fallback to crypto-js HMAC-SHA256 (works in older browsers / WebViews / other runtimes)
+  try {
+    const hash = CryptoJS.HmacSHA256(payload, key);
+    return hash.toString(CryptoJS.enc.Hex);
+  } catch (err) {
+    throw err;
+  }
 }
 
 /**

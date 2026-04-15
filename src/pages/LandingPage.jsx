@@ -508,29 +508,12 @@ export default function LandingPage() {
                     ].map((item) => (
                         <div
                             key={item.text}
-                            className="flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer"
+                            className="flex items-center gap-2 px-4 py-2 rounded-full"
                             style={{
                                 background: "rgba(255,255,255,0.1)",
                                 border: "1px solid rgba(255,255,255,0.15)",
                                 color: "rgba(255,255,255,0.75)",
                                 fontSize: "0.8rem",
-                                transition: "all 0.2s ease",
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.background =
-                                    "rgba(255, 255, 255, 0.2)";
-                                e.currentTarget.style.borderColor =
-                                    "rgba(255, 255, 255, 0.25)";
-                                e.currentTarget.style.transform =
-                                    "translateY(-2px)";
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.background =
-                                    "rgba(255,255,255,0.1)";
-                                e.currentTarget.style.borderColor =
-                                    "rgba(255,255,255,0.15)";
-                                e.currentTarget.style.transform =
-                                    "translateY(0)";
                             }}
                         >
                             <span>{item.icon}</span>

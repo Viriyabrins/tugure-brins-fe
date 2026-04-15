@@ -6,8 +6,11 @@
  */
 
 import { validateFile, validateFiles } from '@/utils/fileValidation.js';
+import { authFetchOptions } from '@/api/backendClient.js';
 
-const API_BASE = (import.meta.env.VITE_API_PROXY || '') + '/api';
+// All /api/* requests are proxied by Vite (dev) or server.js (staging/prod).
+// Never use VITE_API_PROXY as a URL prefix — it is the proxy *target*, not a path.
+const API_BASE = '/api';
 
 /**
  * Upload and validate a file via backend API.
@@ -42,11 +45,11 @@ export async function uploadFileToStorage(file, options) {
     formData.append('batchId', batchId);
     formData.append('file', file);
 
-    const response = await fetch(`${API_BASE}/files/upload`, {
+    const url = `${API_BASE}/files/upload`;
+    const response = await fetch(url, await authFetchOptions({
       method: 'POST',
       body: formData,
-      credentials: 'include',
-    });
+    }, url));
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -133,9 +136,8 @@ export async function uploadMultipleFiles(files, options) {
 export async function getFilesForRecord(recordId, batchId) {
   try {
     const params = new URLSearchParams({ recordId, batchId });
-    const response = await fetch(`${API_BASE}/files?${params.toString()}`, {
-      credentials: 'include',
-    });
+    const url = `${API_BASE}/files?${params.toString()}`;
+    const response = await fetch(url, await authFetchOptions({}, url));
 
     if (!response.ok) {
       throw new Error(`Failed to fetch files with status ${response.status}`);
@@ -163,9 +165,8 @@ export async function getFilesForRecord(recordId, batchId) {
 export async function getDownloadUrl(fileKey) {
   try {
     const params = new URLSearchParams({ key: fileKey });
-    const response = await fetch(`${API_BASE}/files/download-url?${params.toString()}`, {
-      credentials: 'include',
-    });
+    const url = `${API_BASE}/files/download-url?${params.toString()}`;
+    const response = await fetch(url, await authFetchOptions({}, url));
 
     if (!response.ok) {
       throw new Error(`Failed to get download URL with status ${response.status}`);
@@ -192,10 +193,8 @@ export async function removeFile(fileKey) {
   try {
     // Encode the key for URL
     const encodedKey = encodeURIComponent(fileKey);
-    const response = await fetch(`${API_BASE}/files/${encodedKey}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    });
+    const url = `${API_BASE}/files/${encodedKey}`;
+    const response = await fetch(url, await authFetchOptions({ method: 'DELETE' }, url));
 
     if (!response.ok) {
       throw new Error(`Failed to delete file with status ${response.status}`);

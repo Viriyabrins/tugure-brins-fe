@@ -11,7 +11,7 @@ const appId = appParams.appId || import.meta.env.VITE_APP_ID || 'brin-app-dev';
  * @param {string} [endpoint=''] - URL path endpoint (untuk canonical payload signature)
  * @returns {Promise<RequestInit>}
  */
-async function authFetchOptions(extra = {}, endpoint = '') {
+export async function authFetchOptions(extra = {}, endpoint = '') {
   const token = getKeycloakToken();
   const headers = { ...(extra.headers || {}) };
   if (token) {

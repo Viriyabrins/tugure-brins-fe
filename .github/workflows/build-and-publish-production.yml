@@ -1,0 +1,168 @@
+name: "Build and publish (Production) - Frontend"
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (staging)
+        id: build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: Dockerfile.staging
+          push: true
+          tags: |
+            ghcr.io/viriyabrins/brins-fe:staging-latest
+
+      - name: Save pushed image digest
+        run: |
+          echo "${{ steps.build.outputs.digest }}" > image-digest.txt
+          echo "Saved image digest to image-digest.txt"
+      - name: Upload image digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-image-digest
+          path: image-digest.txt
+
+      - name: Pull pushed image (for export)
+        run: |
+          echo "Pulling image for packaging...";
+          docker pull ghcr.io/viriyabrins/brins-fe:staging-latest
+      - name: Save image tarball
+        run: |
+          docker save ghcr.io/viriyabrins/brins-fe:staging-latest | gzip > image-staging-latest.tar.gz
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-image
+          path: image-staging-latest.tar.gz
+
+  deploy-to-podman:
+      needs: build-and-publish
+      runs-on: crp-fe
+      if: success()
+      steps:
+        - name: Deploy frontend to remote Podman host as brins
+          env:
+            IMAGE: ghcr.io/viriyabrins/brins-fe:staging-latest
+            GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+            GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+            SSH_HOST: ${{ secrets.SSH_HOST }}
+            SSH_USER: ${{ secrets.SSH_USER }}
+            SSH_PORT: ${{ secrets.SSH_PORT }}
+            SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          run: |
+            set -euo pipefail
+
+            if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ] || [ -z "${SSH_PASSWORD:-}" ]; then
+              echo "Missing SSH_HOST, SSH_USER or SSH_PASSWORD secrets"
+              exit 1
+            fi
+
+            SSH_PORT=${SSH_PORT:-22}
+
+            echo "Deploying ${IMAGE} to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} using password auth"
+
+            sudo apt-get update -y
+            sudo apt-get install -y sshpass
+
+            SSH_CMD="sshpass -p \"${SSH_PASSWORD}\" ssh -o StrictHostKeyChecking=no -p \"${SSH_PORT}\""
+
+            eval "$SSH_CMD" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" <<'REMOTE'
+            set -euo pipefail
+            IMAGE="$1"
+            GHCR_USER="$2"
+            GHCR_TOKEN="$3"
+
+            echo "Logging into GHCR as ${GHCR_USER}"
+            printf '%s' "${GHCR_TOKEN}" | podman login ghcr.io --username "${GHCR_USER}" --password-stdin
+
+            echo "Pulling image ${IMAGE}"
+            podman pull "${IMAGE}"
+
+            # Prune podman images older than 24 hours to free disk space
+            echo "Pruning podman images older than 24 hours..."
+            podman image prune -a --filter "until=24h" -f || true
+
+            # Prepare host directories (no host app dir needed; containers manage app files)
+            BACKUP_DIR=/home/brins/backups
+            mkdir -p "${BACKUP_DIR}"
+
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            OLD=$(podman ps -a -q -f name=^brins-fe-staging$ || true)
+            if [ -n "${OLD}" ]; then
+              echo "Found existing brins-fe-staging container, backing up (fixed name)..."
+              podman stop brins-fe-staging || true
+              BACKUP_IMAGE=brins-fe-staging:backup
+              podman commit brins-fe-staging "${BACKUP_IMAGE}" || true
+              podman tag "${BACKUP_IMAGE}" brins-fe-staging:previous || true
+              # Save backup tar for off-host retention (timestamped)
+              podman save -o "${BACKUP_DIR}/brins-fe-staging-backup-${TIMESTAMP}.tar" "${BACKUP_IMAGE}" || true
+              # Create a stopped backup container with a fixed name for visibility
+              BACKUP_CONTAINER="brins-fe-staging-backup"
+              podman rm -f "${BACKUP_CONTAINER}" >/dev/null 2>&1 || true
+              podman create --name "${BACKUP_CONTAINER}" "${BACKUP_IMAGE}" >/dev/null 2>&1 || true
+              # Show images and containers for visibility
+              podman images --filter reference=brins-fe-staging* || true
+              podman ps -a --filter name=^${BACKUP_CONTAINER}$ || true
+              podman rm brins-fe-staging || true
+            fi
+
+            echo "Starting new brins-fe-staging container from ${IMAGE}"
+            # Run frontend using host networking so it can reach backend at localhost:10011
+            # Mount host certs directory /home/brins/cert into the container so private keys
+            # remain on the host and are not baked into the image.
+            CERT_HOST_DIR=/home/brins/cert
+            CERT_CONTAINER_DIR=/app/src/cert
+
+            if [ ! -d "${CERT_HOST_DIR}" ]; then
+              echo "Warning: host cert directory ${CERT_HOST_DIR} does not exist. Container will start without mounted certs." || true
+              MOUNT_ARG=""
+              SSL_ENV_ARGS=""
+            else
+              MOUNT_ARG="-v ${CERT_HOST_DIR}:${CERT_CONTAINER_DIR}:Z"
+              SSL_ENV_ARGS="-e SSL_KEY_PATH=${CERT_CONTAINER_DIR}/server-dev.key -e SSL_CERT_PATH=${CERT_CONTAINER_DIR}/server-dev.crt"
+            fi
+
+            podman rm -f brins-fe-staging >/dev/null 2>&1 || true
+            # Determine a reachable host IP for containers to access services on the host
+            HOST_IP=$(ip route get 1 2>/dev/null | awk '/src/ {for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}') || true
+            if [ -z "${HOST_IP}" ]; then
+              HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || true
+            fi
+            HOST_IP=${HOST_IP:-127.0.0.1}
+
+            # Publish host port 10010 -> container 10010. Pass PORT so app listens on 10010 inside container.
+            podman run -d --name brins-fe-staging --restart=always \
+              -p 10010:10010 ${MOUNT_ARG} \
+              -e PORT=10010 \
+              -e BACKEND_URL="http://${HOST_IP}:10011" ${SSL_ENV_ARGS} "${IMAGE}"
+
+            sleep 2
+            podman ps -a --filter name=^brins-fe-staging$
+
+            echo "Frontend deploy complete"
+            REMOTE

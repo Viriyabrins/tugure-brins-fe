@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Shield, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { isAuthenticated, ingestDirectLoginTokens } from '@/lib/keycloak';
+import { withSignatureHeaders } from '@/lib/requestSignature';
 
 const SUPPORTED_DOMAINS = ['brins.co.id', 'tugure.co.id'];
 
@@ -58,11 +59,14 @@ export default function Home() {
 
     try {
       const appId = import.meta.env.VITE_APP_ID || 'brin-app-dev';
-      const response = await fetch(`/api/apps/${appId}/auth/login`, {
+      const endpoint = `/api/apps/${appId}/auth/login`;
+      const fetchOpts = await withSignatureHeaders({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password }),
-      });
+      }, endpoint);
+      
+      const response = await fetch(endpoint, fetchOpts);
 
       const result = await response.json().catch(() => ({}));
 

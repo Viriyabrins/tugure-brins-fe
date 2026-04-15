@@ -2,6 +2,8 @@
 /** @typedef {{ redirectUri?: string }} RedirectOptions */
 /** @typedef {{ accessToken?: string | null, refreshToken?: string | null, idToken?: string | null }} TokenSet */
 
+import { withSignatureHeaders } from './requestSignature';
+
 const keycloakConfig = {
     clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'brins-tugure',
     redirectUri: import.meta.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard',
@@ -276,7 +278,8 @@ export async function keycloakLogout(options = {}) {
 
     if (authState.refreshToken || authState.idToken) {
         try {
-            await fetch(`${apiBase}/api/auth/keycloak/logout`, {
+            const logoutEndpoint = `${apiBase}/api/auth/keycloak/logout`;
+            const fetchOpts = await withSignatureHeaders({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -284,7 +287,8 @@ export async function keycloakLogout(options = {}) {
                     idToken: authState.idToken,
                     redirectUri,
                 }),
-            });
+            }, logoutEndpoint);
+            await fetch(logoutEndpoint, fetchOpts);
         } catch (error) {
             console.error('Keycloak logout request failed:', error);
         }
@@ -326,7 +330,8 @@ export async function refreshKeycloakToken() {
             tokenExp: authState.tokenParsed?.exp || null,
         });
 
-        const response = await fetch(`${apiBase}/api/auth/keycloak/refresh`, {
+        const refreshEndpoint = `${apiBase}/api/auth/keycloak/refresh`;
+        const fetchOpts = await withSignatureHeaders({
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             // Send idToken alongside refreshToken so the backend can detect
@@ -335,7 +340,9 @@ export async function refreshKeycloakToken() {
                 refreshToken: authState.refreshToken,
                 idToken: authState.idToken,
             }),
-        });
+        }, refreshEndpoint);
+
+        const response = await fetch(refreshEndpoint, fetchOpts);
 
         const payload = await response.json().catch(() => ({}));
         console.log('[Keycloak] refreshKeycloakToken: refresh response', { status: response.status, ok: response.ok, payload });

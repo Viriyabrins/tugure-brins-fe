@@ -815,4 +815,152 @@ export const backend = {
       return null;
     }
   },
+
+  // ── Debtor aggregates ────────────────────────────────────────────────────
+
+  async getDebtorStatusCounts() {
+    const url = `/api/apps/${encodeURIComponent(appId)}/debtors/status-counts`;
+    const res = await fetch(url, await authFetchOptions({}, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
+
+  async getDebtorBatchSummary(batchId) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/debtors/batch-summary/${encodeURIComponent(batchId)}`;
+    const res = await fetch(url, await authFetchOptions({}, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
+
+  async batchDebtorWorkflowAction(payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/debtors/batch-workflow-action`;
+    const res = await fetch(url, await authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
+
+  // ── Master Contract extras ───────────────────────────────────────────────
+
+  async closeMasterContract(contractId, payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/${encodeURIComponent(contractId)}/close-or-invalidate`;
+    const res = await fetch(url, await authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
+
+  // ── Claim extras ─────────────────────────────────────────────────────────
+
+  async getNextClaimSequence(prefix) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/claims/next-sequence?prefix=${encodeURIComponent(prefix)}`;
+    const res = await fetch(url, await authFetchOptions({}, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data?.sequence ?? 0;
+      return 0;
+    } catch { return 0; }
+  },
+
+  async createSubrogationEntry(payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/subrogations`;
+    const res = await fetch(url, await authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
+
+  async processSubrogationWorkflowAction(subId, payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/subrogations/${encodeURIComponent(subId)}/workflow-action`;
+    const res = await fetch(url, await authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
+
+  async getClaimReviewContext() {
+    const url = `/api/apps/${encodeURIComponent(appId)}/claim-review/context`;
+    const res = await fetch(url, await authFetchOptions({}, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
+
+  // ── Nota extras ──────────────────────────────────────────────────────────
+
+  async getNotaContext() {
+    const url = `/api/apps/${encodeURIComponent(appId)}/nota/context`;
+    const res = await fetch(url, await authFetchOptions({}, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
+
+  async recordNotaPayment(notaId, payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/notas/${encodeURIComponent(notaId)}/record-payment`;
+    const res = await fetch(url, await authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
 };

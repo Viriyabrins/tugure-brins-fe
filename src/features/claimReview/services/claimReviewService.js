@@ -26,19 +26,13 @@ export const claimReviewService = {
     },
 
     async listAll() {
-        const [subrogationData, notaData, contractData, debtorData, batchData] = await Promise.all([
-            backend.list("Subrogation"),
-            backend.list("Nota"),
-            backend.list("Contract"),
-            backend.list("Debtor"),
-            backend.list("Batch"),
-        ]);
+        const ctx = await backend.getClaimReviewContext();
         return {
-            subrogations: Array.isArray(subrogationData) ? subrogationData : [],
-            notas: Array.isArray(notaData) ? notaData : [],
-            contracts: Array.isArray(contractData) ? contractData : [],
-            debtors: Array.isArray(debtorData) ? debtorData : [],
-            batches: Array.isArray(batchData) ? batchData : [],
+            subrogations: Array.isArray(ctx?.subrogations) ? ctx.subrogations : [],
+            notas: Array.isArray(ctx?.notas) ? ctx.notas : [],
+            contracts: Array.isArray(ctx?.contracts) ? ctx.contracts : [],
+            debtors: Array.isArray(ctx?.debtors) ? ctx.debtors : [],
+            batches: Array.isArray(ctx?.batches) ? ctx.batches : [],
         };
     },
 
@@ -89,8 +83,7 @@ export const claimReviewService = {
 
     async checkSubrogation(subrogation, user, auditActor) {
         const subId = subrogation.subrogation_id || subrogation.id;
-        await backend.update("Subrogation", subId, { status: "CHECKED", checked_by: user?.email, checked_date: new Date().toISOString(), reviewed_by: user?.email, review_date: new Date().toISOString() });
-        await _audit("SUBROGATION_CHECK", "SUBROGATION", "Subrogation", subId, { status: subrogation.status }, { status: "CHECKED" }, auditActor?.user_email || user?.email, auditActor?.user_role || user?.role, "");
+        await backend.processSubrogationWorkflowAction(subId, { action: "check" });
     },
 
     async approveSubrogation(subrogation, claims, remarks, user, auditActor) {
@@ -98,30 +91,12 @@ export const claimReviewService = {
         const associatedClaim = claims.find((c) => c.claim_no === subrogation.claim_id);
         const contractId = associatedClaim?.contract_id || "";
         const recoveryAmount = parseFloat(subrogation.recovery_amount || 0);
-        const notaNumber = `NOTA-SBR-${subId}-${Date.now()}`;
-        await backend.create("Nota", {
-            nota_number: notaNumber, nota_type: "Subrogation", reference_id: subId,
-            contract_id: contractId, amount: recoveryAmount,
-            currency: "IDR", status: "UNPAID", issued_by: auditActor?.user_email || user?.email,
-            issued_date: new Date().toISOString(), is_immutable: false, total_actual_paid: 0, reconciliation_status: "PENDING",
-            premium: 0,
-            commission: 0,
-            claim: recoveryAmount,
-            total: recoveryAmount,
-            net_due: recoveryAmount,
-        });
-        await backend.update("Subrogation", subId, {
-            status: "APPROVED", approved_by: user?.email, approved_date: new Date().toISOString(),
-            invoiced_by: user?.email, invoiced_date: new Date().toISOString(),
-            ...(remarks ? { remarks } : {}),
-        });
-        await _notify("Subrogation Nota Generated", `Nota ${notaNumber} created for Subrogation ${subId}. Remarks: ${remarks || "-"}`, "ACTION_REQUIRED", "SUBROGATION", subId, "maker-brins-role");
-        await _audit("SUBROGATION_APPROVE", "SUBROGATION", "Subrogation", subId, { status: subrogation.status }, { status: "APPROVED" }, auditActor?.user_email || user?.email, auditActor?.user_role || user?.role, remarks);
+        const result = await backend.processSubrogationWorkflowAction(subId, { action: "approve", contractId, recoveryAmount, remarks });
+        return result?.notaNumber;
     },
 
     async reviseSubrogation(subrogation, remarks, user, auditActor) {
         const subId = subrogation.subrogation_id || subrogation.id;
-        await backend.update("Subrogation", subId, { status: "REVISION", remarks });
-        await _audit("SUBROGATION_REVISE", "SUBROGATION", "Subrogation", subId, { status: subrogation.status }, { status: "REVISION" }, auditActor?.user_email || user?.email, auditActor?.user_role || user?.role, remarks);
+        await backend.processSubrogationWorkflowAction(subId, { action: "revise", remarks });
     },
 };

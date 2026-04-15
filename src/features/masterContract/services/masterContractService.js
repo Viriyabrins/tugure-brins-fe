@@ -130,9 +130,7 @@ export const masterContractService = {
     },
 
     async closeOrInvalidate(contract, actionType, remarks, auditActor, user) {
-        const newStatus = actionType === "close" ? "Inactive" : "Archived";
         const contractId = contract.contract_id || contract.id;
-        await backend.update("MasterContract", contractId, { effective_status: newStatus, remark: remarks });
-        await _audit(`CONTRACT_${actionType.toUpperCase()}`, contractId, { status: contract.effective_status }, { status: newStatus }, remarks, auditActor, user);
+        return backend.closeMasterContract(contractId, { actionType, remarks });
     },
 };

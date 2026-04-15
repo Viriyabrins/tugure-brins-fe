@@ -151,22 +151,9 @@ export const claimService = {
 
     /** Returns the highest existing sequence number for claim IDs with the given prefix. */
     async getNextClaimSequence(prefix) {
-        let maxSeq = 0;
         try {
-            const result = await backend.listPaginated("Claim", {
-                limit: 9999,
-            });
-            for (const c of result?.data || []) {
-                if (c.claim_no?.startsWith(prefix)) {
-                    const seq = parseInt(
-                        c.claim_no.replace(prefix, ""),
-                        10,
-                    );
-                    if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
-                }
-            }
-        } catch (_) { }
-        return maxSeq;
+            return await backend.getNextClaimSequence(prefix);
+        } catch (_) { return 0; }
     },
 
     /** Sends a bulk-upload notification. */

@@ -10,31 +10,15 @@ export const notaService = {
     },
 
     async listAll() {
-        const [
-            batchData,
-            contractData,
-            paymentData,
-            paymentIntentData,
-            dnCnData,
-            debtorData,
-            subrogationData,
-        ] = await Promise.all([
-            backend.list("Batch"),
-            backend.list("MasterContract"),
-            backend.list("Payment"),
-            backend.list("PaymentIntent"),
-            backend.list("DebitCreditNote"),
-            backend.list("Debtor"),
-            backend.list("Subrogation"),
-        ]);
+        const ctx = await backend.getNotaContext();
         return {
-            batches: Array.isArray(batchData) ? batchData : [],
-            contracts: Array.isArray(contractData) ? contractData : [],
-            payments: Array.isArray(paymentData) ? paymentData : [],
-            paymentIntents: Array.isArray(paymentIntentData) ? paymentIntentData : [],
-            dnCnRecords: Array.isArray(dnCnData) ? dnCnData : [],
-            debtors: Array.isArray(debtorData) ? debtorData : [],
-            subrogations: Array.isArray(subrogationData) ? subrogationData : [],
+            batches: Array.isArray(ctx?.batches) ? ctx.batches : [],
+            contracts: Array.isArray(ctx?.contracts) ? ctx.contracts : [],
+            payments: Array.isArray(ctx?.payments) ? ctx.payments : [],
+            paymentIntents: Array.isArray(ctx?.paymentIntents) ? ctx.paymentIntents : [],
+            dnCnRecords: Array.isArray(ctx?.dnCnRecords) ? ctx.dnCnRecords : [],
+            debtors: Array.isArray(ctx?.debtors) ? ctx.debtors : [],
+            subrogations: Array.isArray(ctx?.subrogations) ? ctx.subrogations : [],
         };
     },
 
@@ -71,38 +55,8 @@ export const notaService = {
     // ─── Reconciliation ────────────────────────────────────────────────────────
 
     async recordPayment({ notaNumber, contractId, paidAmount, paymentDate, bankReference, matchStatus, exceptionType, reconStatus, newTotalPaid, userEmail }) {
-        const paymentRef = bankReference || `PAY-${notaNumber}-${Date.now()}`;
-        const paymentDateISO = new Date(paymentDate).toISOString();
-
-        await backend.create("Payment", {
-            payment_ref: paymentRef,
-            invoice_id: notaNumber,
-            contract_id: contractId,
-            amount: paidAmount,
-            payment_date: paymentDateISO,
-            bank_reference: bankReference,
-            currency: "IDR",
-            match_status: matchStatus,
-            exception_type: exceptionType,
-            matched_by: userEmail,
-            matched_date: new Date().toISOString(),
-            is_actual_payment: true,
-        });
-
-        await backend.update("Nota", notaNumber, {
-            total_actual_paid: newTotalPaid,
-            reconciliation_status: reconStatus,
-        });
-
-        if (reconStatus === "MATCHED") {
-            await backend.update("Nota", notaNumber, {
-                status: "PAID",
-                paid_date: paymentDateISO,
-                payment_reference: paymentRef,
-            });
-        }
-
-        return paymentRef;
+        const result = await backend.recordNotaPayment(notaNumber, { contractId, paidAmount, paymentDate, bankReference, matchStatus, exceptionType, reconStatus, newTotalPaid, userEmail });
+        return result?.payment_ref;
     },
 
     async markReconFinal(notaNumber) {

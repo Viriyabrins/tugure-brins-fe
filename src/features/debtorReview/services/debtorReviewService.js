@@ -58,152 +58,29 @@ export const debtorReviewService = {
     },
 
     async loadStatusCounts() {
-        const statuses = ["APPROVED_BRINS", "CHECKED_TUGURE", "APPROVED", "REVISION"];
-        const results = await Promise.all(
-            statuses.map((s) =>
-                backend.listPaginated("Debtor", { page: 1, limit: 1, q: JSON.stringify({ submitStatus: s }) })
-            )
-        );
-        const counts = results.map((r) => Number(r.pagination?.total) || 0);
-
-        let totalPlafond = 0;
-        try {
-            const sample = await backend.listPaginated("Debtor", {
-                page: 1, limit: 100, q: JSON.stringify({ submitStatus: "APPROVED" }),
-            });
-            totalPlafond = (Array.isArray(sample.data) ? sample.data : [])
-                .reduce((s, d) => s + (parseFloat(d.plafon) || 0), 0);
-        } catch (e) {
-            console.warn("Failed to load plafon sample:", e);
-        }
-
-        return {
-            pending: counts[0],       // APPROVED_BRINS
-            checkedTugure: counts[1], // CHECKED_TUGURE
-            approved: counts[2],      // APPROVED
-            revision: counts[3],      // REVISION
-            totalPlafond,
-        };
+        const counts = await backend.getDebtorStatusCounts();
+        return counts ?? { pending: 0, checkedTugure: 0, approved: 0, revision: 0, totalPlafond: 0 };
     },
 
     async checkDebtors(debtors, user, auditActor) {
-        let count = 0;
-        for (const d of debtors) {
-            if (!d?.id || d.status !== "APPROVED_BRINS") continue;
-            await backend.update("Debtor", d.id, { status: "CHECKED_TUGURE" });
-            count++;
-            await _audit(
-                "DEBTOR_CHECKED_TUGURE", d.id,
-                { status: d.status },
-                { status: "CHECKED_TUGURE", remarks: "" },
-                auditActor?.user_email || user?.email,
-                auditActor?.user_role || user?.role,
-                `Tugure Checker checked debtor ${d.nama_peserta || d.debtor_name}`,
-            );
-        }
-        if (count > 0) {
-            await _notify(
-                "Debtors Checked by Tugure",
-                `${auditActor?.user_email || user?.email} checked ${count} debtor(s).`,
-                "INFO",
-                debtors[0]?.batch_id,
-            );
-        }
-        return count;
+        const debtorIds = debtors.filter((d) => d?.id && d.status === "APPROVED_BRINS").map((d) => d.id);
+        if (!debtorIds.length) return 0;
+        const result = await backend.batchDebtorWorkflowAction({ action: "check", debtorIds });
+        return result?.processedCount ?? 0;
     },
 
     async approveDebtors(debtors, remarks, user, auditActor) {
-        let count = 0, totalPlafon = 0, totalNetPremi = 0;
-        const batchId = debtors[0]?.batch_id;
-        const contractId = debtors[0]?.contract_id;
-
-        for (const d of debtors) {
-            if (!d?.id || d.status !== "CHECKED_TUGURE") continue;
-            await backend.update("Debtor", d.id, { status: "APPROVED", revision_reason: null, validation_remarks: null });
-            await backend.create("Record", {
-                batch_id: d.batch_id, debtor_id: d.id,
-                record_status: "Accepted",
-                exposure_amount: parseFloat(d.plafon) || 0,
-                premium_amount: parseFloat(d.net_premi) || 0,
-                revision_count: 0,
-                accepted_by: user?.email,
-                accepted_date: new Date().toISOString(),
-            });
-            count++;
-            totalPlafon += parseFloat(d.plafon) || 0;
-            totalNetPremi += parseFloat(d.net_premi) || 0;
-            await _audit(
-                "DEBTOR_APPROVED", d.id,
-                { status: d.status },
-                { status: "APPROVED", remarks },
-                auditActor?.user_email || user?.email,
-                auditActor?.user_role || user?.role,
-                remarks,
-            );
-        }
-
-        // Generate Nota
-        if (count > 0 && contractId) {
-            try {
-                let batchData = null;
-                try { batchData = await backend.get("Batch", batchId); } catch (e) { /* skip */ }
-                await backend.create("Nota", {
-                    nota_number: `NOTA-${contractId}-${Date.now()}`,
-                    nota_type: "Batch",
-                    reference_id: batchId,
-                    contract_id: contractId,
-                    amount: totalNetPremi,
-                    currency: "IDR",
-                    status: "UNPAID",
-                    issued_by: auditActor?.user_email || user?.email,
-                    issued_date: new Date().toISOString(),
-                    total_actual_paid: 0,
-                    reconciliation_status: "PENDING",
-                    premium: parseFloat(batchData?.premium) || 0,
-                    commission: parseFloat(batchData?.commission) || 0,
-                    claim: parseFloat(batchData?.claim) || 0,
-                    total: parseFloat(batchData?.total) || 0,
-                    net_due: parseFloat(batchData?.net_due) || 0,
-                });
-            } catch (e) {
-                console.warn("Nota generation failed:", e);
-            }
-            await _notify(
-                "Debtors Approved (Final)",
-                `${auditActor?.user_email || user?.email} approved ${count} debtor(s).`,
-                "INFO", batchId,
-            );
-        }
-        return count;
+        const debtorIds = debtors.filter((d) => d?.id && d.status === "CHECKED_TUGURE").map((d) => d.id);
+        if (!debtorIds.length) return 0;
+        const result = await backend.batchDebtorWorkflowAction({ action: "approve", debtorIds, remarks });
+        return result?.processedCount ?? 0;
     },
 
     async reviseDebtors(debtors, remarks, user, auditActor) {
-        let count = 0;
-        for (const d of debtors) {
-            if (!d?.id || d.status !== "CHECKED_TUGURE") continue;
-            await backend.update("Debtor", d.id, {
-                status: "REVISION",
-                revision_reason: remarks,
-                validation_remarks: remarks,
-            });
-            count++;
-            await _audit(
-                "DEBTOR_REVISION", d.id,
-                { status: d.status },
-                { status: "REVISION", remarks },
-                auditActor?.user_email || user?.email,
-                auditActor?.user_role || user?.role,
-                remarks,
-            );
-        }
-        if (count > 0) {
-            await _notify(
-                "Debtors Marked for Revision",
-                `${auditActor?.user_email || user?.email} marked ${count} debtor(s) for revision.`,
-                "WARNING", debtors[0]?.batch_id,
-            );
-        }
-        return count;
+        const debtorIds = debtors.filter((d) => d?.id && d.status === "CHECKED_TUGURE").map((d) => d.id);
+        if (!debtorIds.length) return 0;
+        const result = await backend.batchDebtorWorkflowAction({ action: "revise", debtorIds, remarks });
+        return result?.processedCount ?? 0;
     },
 
     async startBulkAction(action, batchId, filters, remarks, contractId) {

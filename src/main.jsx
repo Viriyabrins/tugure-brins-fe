@@ -4,6 +4,7 @@ import App from '@/App.jsx'
 import '@/index.css'
 
 import { initKeycloak } from './lib/keycloak'
+import { initServerTimeSync } from './lib/requestSignature'
 
 console.log('Frontend env', {
   mode: import.meta.env.MODE,
@@ -24,6 +25,8 @@ const renderApp = () => {
     </React.StrictMode>
   )
 }
+
+initServerTimeSync()
 
 initKeycloak()
   .then(() => {

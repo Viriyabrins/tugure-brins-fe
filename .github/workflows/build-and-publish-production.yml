@@ -73,25 +73,24 @@ jobs:
             SSH_HOST: ${{ secrets.SSH_HOST }}
             SSH_USER: ${{ secrets.SSH_USER }}
             SSH_PORT: ${{ secrets.SSH_PORT }}
-            SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+            SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           run: |
             set -euo pipefail
 
-            if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ] || [ -z "${SSH_PASSWORD:-}" ]; then
-              echo "Missing SSH_HOST, SSH_USER or SSH_PASSWORD secrets"
+            if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_USER:-}" ] || [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+              echo "Missing SSH_HOST, SSH_USER or SSH_PRIVATE_KEY secrets"
               exit 1
             fi
 
             SSH_PORT=${SSH_PORT:-22}
 
-            echo "Deploying ${IMAGE} to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} using password auth"
+            echo "Deploying ${IMAGE} to ${SSH_USER}@${SSH_HOST}:${SSH_PORT} using private key auth"
 
-            sudo apt-get update -y
-            sudo apt-get install -y sshpass
+            mkdir -p ~/.ssh
+            echo "${SSH_PRIVATE_KEY}" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
 
-            SSH_CMD="sshpass -p \"${SSH_PASSWORD}\" ssh -o StrictHostKeyChecking=no -p \"${SSH_PORT}\""
-
-            eval "$SSH_CMD" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" <<'REMOTE'
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -p "${SSH_PORT}" "${SSH_USER}@${SSH_HOST}" 'bash -s' -- "${IMAGE}" "${GHCR_USERNAME}" "${GHCR_TOKEN}" <<'REMOTE'
             set -euo pipefail
             IMAGE="$1"
             GHCR_USER="$2"

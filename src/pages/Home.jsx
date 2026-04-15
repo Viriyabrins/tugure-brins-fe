@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Shield, ArrowRight, AlertCircle, Loader2, Eye, EyeOff, User, Lock } from "lucide-react";
+import { Shield, ArrowLeft, ArrowRight, AlertCircle, Loader2, Eye, EyeOff, User, Lock } from "lucide-react";
 import brinsLogo from '@/assets/brins.png';
 import tugureLogo from '@/assets/tugure-logo.png';
 import { isAuthenticated, ingestDirectLoginTokens } from '@/lib/keycloak';
@@ -121,7 +121,10 @@ export default function Home() {
       <div className="absolute bottom-[80px] left-[-80px] w-[300px] h-[300px] rounded-full opacity-10" style={{ background: "radial-gradient(circle, #93c5fd, transparent)" }} />
 
       <div className="w-full max-w-md z-10 p-4">
-        <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ background: "rgba(255,255,255,0.08)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.15)" }}>
+        <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{ background: "rgba(255,255,255,0.08)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.15)" }}>
+          <button type="button" onClick={() => navigate(-1)} aria-label="Back" className="absolute top-3 left-3 z-30 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/90">
+            <ArrowLeft className="w-4 h-4" />
+          </button>
           <div className="h-1 w-full" style={{ background: "linear-gradient(90deg, #f59e0b, #fbbf24, #f59e0b)" }} />
 
           <div className="p-8">

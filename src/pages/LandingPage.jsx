@@ -243,32 +243,13 @@ export default function LandingPage() {
                 className="absolute inset-0 z-0"
                 style={{
                     background:
-                        "linear-gradient(135deg, #003087 0%, #0057b8 40%, #0074d9 70%, #1a8fe3 100%)",
+                        "linear-gradient(135deg, #0a1f6e 0%, #1a4bbd 40%, #2563eb 70%, #3b82f6 100%)",
                 }}
             />
 
-            {/* Decorative Circles */}
-            <div
-                className="absolute -top-32 -left-32 w-96 h-96 rounded-full opacity-10 z-0"
-                style={{
-                    background:
-                        "radial-gradient(circle, #ffffff 0%, transparent 70%)",
-                }}
-            />
-            <div
-                className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full opacity-10 z-0"
-                style={{
-                    background:
-                        "radial-gradient(circle, #ffffff 0%, transparent 70%)",
-                }}
-            />
-            <div
-                className="absolute top-1/3 -right-20 w-64 h-64 rounded-full opacity-5 z-0"
-                style={{
-                    background:
-                        "radial-gradient(circle, #ffffff 0%, transparent 70%)",
-                }}
-            />
+            {/* Decorative Circles (match Home.jsx) */}
+            <div className="absolute top-[-120px] right-[-120px] w-[400px] h-[400px] rounded-full opacity-10" style={{ background: "radial-gradient(circle, #60a5fa, transparent)" }} />
+            <div className="absolute bottom-[80px] left-[-80px] w-[300px] h-[300px] rounded-full opacity-10" style={{ background: "radial-gradient(circle, #93c5fd, transparent)" }} />
 
             {/* Decorative Wave Bottom */}
             <div className="absolute bottom-0 left-0 right-0 z-0 opacity-10">
@@ -279,7 +260,7 @@ export default function LandingPage() {
                 >
                     <path
                         d="M0 100C240 20 480 180 720 100C960 20 1200 180 1440 100V200H0V100Z"
-                        fill="white"
+                        fill="rgba(255,255,255,0.05)"
                     />
                 </svg>
             </div>

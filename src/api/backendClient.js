@@ -6,10 +6,9 @@ const appId = appParams.appId || import.meta.env.VITE_APP_ID || 'brin-app-dev';
 
 /**
  * Build default fetch options dengan Keycloak Bearer token dan Request Signature.
- * Signature terdiri dari UUID, Timestamp (WIB), Method, dan Endpoint,
- * di-hash menggunakan HMAC-SHA256 dengan VITE_SIGNATURE_SECRET_KEY.
+ * Signature dibuat di frontend dan divalidasi sepenuhnya di backend.
  * @param {RequestInit} [extra={}] - Fetch options tambahan
- * @param {string} [endpoint=''] - URL path endpoint yang akan di-request (untuk signature)
+ * @param {string} [endpoint=''] - URL path endpoint (untuk canonical payload signature)
  * @returns {Promise<RequestInit>}
  */
 async function authFetchOptions(extra = {}, endpoint = '') {
@@ -141,8 +140,7 @@ export const backend = {
     const params = { limit: '0', ...query };
     const qs = new URLSearchParams(params).toString();
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}`;
-    const res = await fetch(url, await authFetchOptions({}, endpoint));
+    const res = await fetch(url, await authFetchOptions({}, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -156,8 +154,7 @@ export const backend = {
   async listPaginated(entityName, query = {}) {
     const qs = new URLSearchParams(query).toString();
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}${qs ? `?${qs}` : ''}`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}`;
-    const res = await fetch(url, await authFetchOptions({}, endpoint));
+    const res = await fetch(url, await authFetchOptions({}, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -166,8 +163,7 @@ export const backend = {
 
   async get(entityName, id) {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
-    const res = await fetch(url, await authFetchOptions({}, endpoint));
+    const res = await fetch(url, await authFetchOptions({}, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -191,12 +187,11 @@ export const backend = {
 
   async create(entityName, payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -220,12 +215,11 @@ export const backend = {
 
   async update(entityName, id, payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
     const res = await fetch(url, await authFetchOptions({
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -249,10 +243,9 @@ export const backend = {
 
   async delete(entityName, id) {
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}/${encodeURIComponent(id)}`;
     const res = await fetch(url, await authFetchOptions({
       method: 'DELETE',
-    }, endpoint));
+    }));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -269,8 +262,7 @@ export const backend = {
   async filter(entityName, query = {}) {
     const qs = new URLSearchParams({ limit: '0', q: JSON.stringify(query) }).toString();
     const url = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}?${qs}`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/entities/${encodeURIComponent(entityName)}`;
-    const res = await fetch(url, await authFetchOptions({}, endpoint));
+    const res = await fetch(url, await authFetchOptions({}, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -279,12 +271,11 @@ export const backend = {
 
   async validateMasterContractsPayload(rows) {
     const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/validate`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/master-contracts/validate`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rows }),
-    }, endpoint));
+    }, url));
 
     if (!res.ok) {
       await throwBackendError(res);
@@ -302,12 +293,11 @@ export const backend = {
 
   async validateDebtorsPayload(rows) {
     const url = `/api/apps/${encodeURIComponent(appId)}/debtors/validate`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/debtors/validate`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rows }),
-    }, endpoint));
+    }, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -323,12 +313,11 @@ export const backend = {
 
   async validateClaimsPayload(rows, batchId) {
     const url = `/api/apps/${encodeURIComponent(appId)}/claims/validate`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/claims/validate`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rows, batch_id: batchId }),
-    }, endpoint));
+    }, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -344,12 +333,11 @@ export const backend = {
 
   async validateSubrogationPayload(data) {
     const url = `/api/apps/${encodeURIComponent(appId)}/subrogations/validate`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/subrogations/validate`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
-    }, endpoint));
+    }, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -365,12 +353,11 @@ export const backend = {
 
   async uploadMasterContractsAtomic(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/upload`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/master-contracts/upload`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
 
     if (!res.ok) {
       await throwBackendError(res);
@@ -388,12 +375,11 @@ export const backend = {
 
   async uploadDebtorsAtomic(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/debtors/upload`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/debtors/upload`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
 
     if (!res.ok) {
       await throwBackendError(res);
@@ -411,12 +397,11 @@ export const backend = {
 
   async checkUploadDuplicates(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/debtors/check-duplicates`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/debtors/check-duplicates`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
 
     if (!res.ok) {
       await throwBackendError(res);
@@ -434,12 +419,11 @@ export const backend = {
 
   async processMasterContractApproval(contractId, payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/master-contracts/${encodeURIComponent(contractId)}/approval`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/master-contracts/${encodeURIComponent(contractId)}/approval`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
 
     if (!res.ok) {
       await throwBackendError(res);
@@ -463,7 +447,7 @@ export const backend = {
   async listNotifications(query = {}) {
     const qs = new URLSearchParams(query).toString();
     const url = `/api/notifications${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url, await authFetchOptions({}, '/api/notifications'));
+    const res = await fetch(url, await authFetchOptions({}, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -508,12 +492,11 @@ export const backend = {
    */
   async updateNotification(id, payload) {
     const url = `/api/notifications/${encodeURIComponent(id)}`;
-    const endpoint = `/api/notifications/${encodeURIComponent(id)}`;
     const res = await fetch(url, await authFetchOptions({
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -541,11 +524,10 @@ export const backend = {
    */
   async markNotificationAsRead(id) {
     const url = `/api/notifications/${encodeURIComponent(id)}/read`;
-    const endpoint = `/api/notifications/${encodeURIComponent(id)}/read`;
     const res = await fetch(url, await authFetchOptions({
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-    }, endpoint));
+    }));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -573,10 +555,9 @@ export const backend = {
    */
   async deleteNotification(id) {
     const url = `/api/notifications/${encodeURIComponent(id)}`;
-    const endpoint = `/api/notifications/${encodeURIComponent(id)}`;
     const res = await fetch(url, await authFetchOptions({
       method: 'DELETE',
-    }, endpoint));
+    }));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -597,7 +578,7 @@ export const backend = {
   async getMyNotificationSettings(keycloakUserId) {
     const qs = new URLSearchParams({ keycloak_user_id: keycloakUserId }).toString();
     const url = `/api/notification-settings/me?${qs}`;
-    const res = await fetch(url, await authFetchOptions({}, '/api/notification-settings/me'));
+    const res = await fetch(url, await authFetchOptions({}, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -642,8 +623,7 @@ export const backend = {
 
   async logUserInApp(pageName) {
     const url = `/api/app-logs/${encodeURIComponent(appId)}/log-user-in-app/${encodeURIComponent(pageName)}`;
-    const endpoint = `/api/app-logs/${encodeURIComponent(appId)}/log-user-in-app/${encodeURIComponent(pageName)}`;
-    const res = await fetch(url, await authFetchOptions({ method: 'POST' }, endpoint));
+    const res = await fetch(url, await authFetchOptions({ method: 'POST' }, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -657,8 +637,7 @@ export const backend = {
    */
   async getUsersByGroup(groupName) {
     const url = `/api/users-by-group/${encodeURIComponent(groupName)}`;
-    const endpoint = `/api/users-by-group/${encodeURIComponent(groupName)}`;
-    const res = await fetch(url, await authFetchOptions({}, endpoint));
+    const res = await fetch(url, await authFetchOptions({}, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -701,12 +680,11 @@ export const backend = {
 
   async sendEmail(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/integration-endpoints/Core/SendEmail`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/integration-endpoints/Core/SendEmail`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
     if (!res.ok) {
       await throwBackendError(res);
     }
@@ -723,14 +701,13 @@ export const backend = {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const endpoint = `/api/apps/${encodeURIComponent(appId)}/integration-endpoints/Core/UploadFile`;
       const url = endpoint;
       const res = await fetch(url, await authFetchOptions({
         method: 'POST',
         body: formData,
         // Content-Type header TIDAK di-set manual untuk FormData;
         // browser akan menambahkan boundary-nya secara otomatis
-      }, endpoint));
+      }));
       if (res.ok) {
         const text = await res.text();
         const parsed = text ? JSON.parse(text) : null;
@@ -751,12 +728,11 @@ export const backend = {
    */
   async startBulkDebtorAction(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/bulk-debtor-action`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/bulk-debtor-action`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }, endpoint));
+    }, url));
 
     if (!res.ok) {
       await throwBackendError(res);
@@ -778,8 +754,7 @@ export const backend = {
    */
   async getDebtorJobStatus(jobId) {
     const url = `/api/apps/${encodeURIComponent(appId)}/debtor-jobs/${encodeURIComponent(jobId)}`;
-    const endpoint = `/api/apps/${encodeURIComponent(appId)}/debtor-jobs/${encodeURIComponent(jobId)}`;
-    const res = await fetch(url, await authFetchOptions({}, endpoint));
+    const res = await fetch(url, await authFetchOptions({}, url));
 
     if (!res.ok) {
       await throwBackendError(res);

@@ -4,6 +4,7 @@
 
 import { withSignatureHeaders } from './requestSignature';
 
+
 const keycloakConfig = {
     clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'brins-tugure',
     redirectUri: import.meta.env.VITE_KEYCLOAK_REDIRECT_URI || 'http://localhost:5173/Dashboard',
@@ -331,7 +332,7 @@ export async function refreshKeycloakToken() {
         });
 
         const refreshEndpoint = `${apiBase}/api/auth/keycloak/refresh`;
-        const fetchOpts = await withSignatureHeaders({
+        const refreshOpts = await withSignatureHeaders({
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             // Send idToken alongside refreshToken so the backend can detect
@@ -341,8 +342,7 @@ export async function refreshKeycloakToken() {
                 idToken: authState.idToken,
             }),
         }, refreshEndpoint);
-
-        const response = await fetch(refreshEndpoint, fetchOpts);
+        const response = await fetch(refreshEndpoint, refreshOpts);
 
         const payload = await response.json().catch(() => ({}));
         console.log('[Keycloak] refreshKeycloakToken: refresh response', { status: response.status, ok: response.ok, payload });

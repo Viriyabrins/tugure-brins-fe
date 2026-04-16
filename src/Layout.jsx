@@ -234,8 +234,8 @@ export default function Layout({ children, currentPageName }) {
         {/* Sidebar */}
         <aside className={`
           fixed lg:sticky top-[73px] left-0 h-[calc(100vh-73px)] bg-white border-r shadow-lg
-          transition-all duration-300 z-30 overflow-y-auto
-          ${sidebarOpen ? 'w-64 lg:w-64' : 'w-0 lg:w-64'}
+          transition-all duration-300 z-30 shrink-0
+          ${sidebarOpen ? 'w-64 overflow-y-auto' : 'w-0 overflow-hidden lg:w-64 lg:overflow-y-auto'}
         `}>
           <div className="p-4 space-y-6">
             {/* Common */}

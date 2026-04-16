@@ -1,9 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import jsPDF from "jspdf";
-
-// ── Logo imports for PDF ─────────────────────────────────────────────────────
-import logoLeftUrl from "@/assets/mari.png";
-import logoRightUrl from "@/assets/brins.png";
+import html2canvas from "html2canvas";
+import { createRoot } from "react-dom/client";
+import NotaPDFTemplate from "../components/NotaPDFTemplate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,169 +63,6 @@ function PaymentCalculationDisplay({ paymentAmount, previousPaid, notaAmount }) 
     );
 }
 
-// ─── PDF download ─────────────────────────────────────────────────────────────
-
-/**
- * Load an image URL into a base64 data URL for jsPDF
- */
-function loadImageAsBase64(url) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-            const canvas = document.createElement("canvas");
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0);
-            resolve({ dataUrl: canvas.toDataURL("image/png"), width: img.naturalWidth, height: img.naturalHeight });
-        };
-        img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
-        img.src = url;
-    });
-}
-
-async function handleDownloadPDF(nota, setSuccessMessage) {
-    try {
-        const pdf = new jsPDF("p", "mm", "a4");
-        const pageWidth = 210;
-        const marginX = 15;
-        const rightEdge = pageWidth - marginX;
-
-        const fmt = (val) => {
-            const n = parseFloat(val) || 0;
-            const s = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            return n < 0 ? `(-${s})` : s;
-        };
-
-        const MONTHS_ID = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI",
-            "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"];
-        const now = new Date();
-        const dateStr = `JAKARTA, ${now.getDate()} ${MONTHS_ID[now.getMonth()]} ${now.getFullYear()}`;
-
-        // ── Logos ────────────────────────────────────────────────────────
-        const logoHeight = 10, logoY = 5;
-        try {
-            const [left, right] = await Promise.all([
-                loadImageAsBase64(logoLeftUrl),
-                loadImageAsBase64(logoRightUrl),
-            ]);
-            const leftAspect = left.width / left.height;
-            const rightAspect = right.width / right.height;
-            const leftW = logoHeight * leftAspect;
-            const rightW = logoHeight * rightAspect;
-            pdf.addImage(left.dataUrl, "PNG", marginX, logoY, leftW, logoHeight);
-            pdf.addImage(right.dataUrl, "PNG", rightEdge - rightW, logoY, rightW, logoHeight);
-        } catch (logoErr) {
-            console.warn("Logo loading failed, continuing without logos:", logoErr);
-        }
-
-        // ── Header ───────────────────────────────────────────────────────
-        let y = 30;
-        pdf.setFontSize(12);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("TREATY NOTE", pageWidth / 2, y, { align: "center" });
-        const titleWidth = pdf.getTextWidth("TREATY NOTE");
-        const titleX = (pageWidth - titleWidth) / 2;
-        pdf.setLineWidth(0.3);
-        pdf.line(titleX, y + 1, titleX + titleWidth, y + 1);
-
-        y += 6;
-        pdf.setFontSize(10);
-        pdf.setFont("helvetica", "normal");
-        pdf.text("XXX/XX/XX/XX/XXXXXX", pageWidth / 2, y, { align: "center" });
-
-        y += 6;
-        let contract = null;
-        try {
-            contract = await notaService.getMasterContract(nota.contract_id);
-        } catch (e) {
-            console.warn("[PDF] Could not fetch MasterContract:", e);
-        }
-        const fmtDate = (d) => {
-            if (!d) return "";
-            const dt = new Date(d);
-            return `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}/${dt.getFullYear()}`;
-        };
-        const periodStart = fmtDate(contract?.contract_start_date);
-        const periodEnd = fmtDate(contract?.contract_end_date);
-        const periodLine = periodStart && periodEnd
-            ? `For The Period Of ${periodStart} - ${periodEnd}`
-            : "";
-        if (periodLine) pdf.text(periodLine, pageWidth / 2, y, { align: "center" });
-
-        // ── Name / Address ───────────────────────────────────────────────
-        y += 12;
-        const labelX = marginX;
-        const colonX = marginX + 22;
-        pdf.setFontSize(9);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("NAME", labelX, y);
-        pdf.text("ADDRESS", labelX, y + 5);
-        pdf.setFont("helvetica", "normal");
-        pdf.text(": PT Tugu Reasuransi Indonesia (O01TR00001)", colonX, y);
-        pdf.text(": Gedung TUGURE", colonX, y + 5);
-        pdf.text("  Jl. Raden Saleh No 50 Menteng, Jakarta Pusat", colonX, y + 10);
-
-        // ── Table ────────────────────────────────────────────────────────
-        y += 20;
-        const rowH = 8;
-        const cols = { kind: marginX, premium: 85, commission: 113, claim: 140, total: 167, netDue: rightEdge };
-
-        pdf.setFontSize(9);
-        pdf.setLineWidth(0.5);
-        pdf.line(marginX, y, rightEdge, y);
-        y += rowH;
-        pdf.setFont("helvetica", "bold");
-        pdf.text("Kind Of Treaty", cols.kind, y);
-        pdf.text("Premium", cols.premium, y, { align: "right" });
-        pdf.text("Commission", cols.commission, y, { align: "right" });
-        pdf.text("Claim", cols.claim, y, { align: "right" });
-        pdf.text("Total", cols.total, y, { align: "right" });
-        pdf.text("Net Due", cols.netDue, y, { align: "right" });
-        y += 2;
-        pdf.line(marginX, y, rightEdge, y);
-
-        y += 6;
-        pdf.setFont("helvetica", "normal");
-        pdf.text("Currency : IDR", cols.kind, y);
-
-        y += rowH;
-        const kindText = nota.reference_id || nota.contract_id || "AUTO FACULTATIVE CREDIT COMMERCIAL";
-        const kindLines = pdf.splitTextToSize(kindText, 65);
-        pdf.text(kindLines, cols.kind, y);
-        pdf.text(fmt(nota.premium), cols.premium, y, { align: "right" });
-        pdf.text(fmt(-Math.abs(parseFloat(nota.commission) || 0)), cols.commission, y, { align: "right" });
-        pdf.text(fmt(nota.claim), cols.claim, y, { align: "right" });
-        pdf.text(fmt(nota.total), cols.total, y, { align: "right" });
-        
-        const netDueDisplayValue = nota.nota_type === "Claim" 
-            ? -Math.abs(parseFloat(nota.net_due) || 0) 
-            : parseFloat(nota.net_due) || 0;
-        pdf.text(fmt(netDueDisplayValue), cols.netDue, y, { align: "right" });
-        y += Math.max(kindLines.length * rowH, rowH) + 2;
-
-        pdf.setLineWidth(0.3);
-        pdf.line(marginX, y, rightEdge, y);
-        y += 1;
-        pdf.line(marginX, y, rightEdge, y);
-
-        // ── Today's date & signature ─────────────────────────────────────
-        y += 12;
-        pdf.setFontSize(9);
-        pdf.setFont("helvetica", "normal");
-        pdf.text(dateStr, rightEdge, y, { align: "right" });
-        y += 18;
-        pdf.text("Authorized Signature", rightEdge, y, { align: "right" });
-
-        pdf.save(`${nota.nota_number}.pdf`);
-        setSuccessMessage("PDF downloaded successfully");
-    } catch (e) {
-        console.error("Failed to generate PDF:", e);
-        setSuccessMessage("Failed to generate PDF");
-    }
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function NotaManagement() {
@@ -248,6 +84,9 @@ export default function NotaManagement() {
     const [activeTab, setActiveTab] = useState("notas");
     const [dnCnFilters, setDnCnFilters] = useState(DEFAULT_DNCN_FILTER);
     const [reconFilters, setReconFilters] = useState({ contract: "all", status: "all", hasException: "all" });
+    const [pdfPreview, setPdfPreview] = useState(/** @type {{ nota: any, contract: any } | null} */(null));
+    const [pdfDownloading, setPdfDownloading] = useState(false);
+    const pdfContainerRef = useRef(/** @type {HTMLDivElement | null} */(null));
 
     // Derived nota lists per tab
     const activeCategoryNotas = notas.filter((n) => {
@@ -316,13 +155,75 @@ export default function NotaManagement() {
                     <Button variant="outline" size="sm" onClick={() => { actions.setSelectedNota(row); actions.setShowViewDialog(true); }}>
                         <Eye className="w-4 h-4 mr-1" />View
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDownloadPDF(row, actions.setSuccessMessage)}>
+                    <Button variant="outline" size="sm" onClick={() => handleOpenPDFPreview(row)}>
                         <Download className="w-4 h-4 mr-1" />PDF
                     </Button>
                 </div>
             ),
         },
     ];
+
+    async function handleOpenPDFPreview(row) {
+        let contract = null;
+        try {
+            contract = await notaService.getMasterContract(row.contract_id);
+        } catch (e) {
+            console.warn("[PDF Preview] Could not fetch MasterContract:", e);
+        }
+        setPdfPreview({ nota: row, contract });
+    }
+
+    async function handleDownloadFromPreview() {
+        if (!pdfPreview || !pdfContainerRef.current) return;
+        setPdfDownloading(true);
+        try {
+            const container = pdfContainerRef.current;
+            const root = createRoot(container);
+
+            // Render template and wait two frames for React to flush
+            await new Promise((resolve) => {
+                root.render(<NotaPDFTemplate nota={pdfPreview.nota} contract={pdfPreview.contract} />);
+                requestAnimationFrame(() => requestAnimationFrame(resolve));
+            });
+
+            // Wait for <img> tags to finish loading
+            const imgs = [...container.querySelectorAll("img")];
+            if (imgs.length > 0) {
+                await Promise.all(
+                    imgs.map((img) =>
+                        img.complete
+                            ? Promise.resolve()
+                            : new Promise((r) => { img.onload = r; img.onerror = r; })
+                    )
+                );
+            }
+
+            // scale: 1.5 + JPEG 88% quality  →  ~5-10× smaller than PNG at scale 2
+            const captureTarget = /** @type {HTMLElement} */ (container.firstChild);
+            const canvas = await html2canvas(captureTarget, {
+                scale: 1.5,
+                useCORS: true,
+                logging: false,
+                backgroundColor: "#ffffff",
+            });
+
+            const pdf = new jsPDF("p", "mm", "a4");
+            const imgData = canvas.toDataURL("image/jpeg", 0.88);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`${pdfPreview.nota.nota_number}.pdf`);
+
+            root.unmount();
+            actions.setSuccessMessage("PDF (HTML template) downloaded successfully");
+            setPdfPreview(null);
+        } catch (e) {
+            console.error("Failed to generate HTML PDF:", e);
+            actions.setSuccessMessage("Failed to generate HTML PDF");
+        } finally {
+            setPdfDownloading(false);
+        }
+    }
 
     function renderNotaTabContent() {
         return (
@@ -774,6 +675,45 @@ export default function NotaManagement() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* ── PDF Preview Dialog ─────────────────────────────────────────── */}
+            <Dialog open={!!pdfPreview} onOpenChange={(open) => { if (!open) setPdfPreview(null); }}>
+                <DialogContent className="max-w-[720px]">
+                    <DialogHeader>
+                        <DialogTitle>PDF Preview — {pdfPreview?.nota?.nota_number}</DialogTitle>
+                    </DialogHeader>
+                    {/* Scaled preview — actual capture uses the hidden off-screen container */}
+                    <div style={{ overflowY: "auto", maxHeight: "70vh", background: "#f3f4f6", padding: "8px", borderRadius: "4px" }}>
+                        <div style={{
+                            width: `${Math.round(794 * 0.82)}px`,
+                            height: `${Math.round(1123 * 0.82)}px`,
+                            overflow: "hidden",
+                            margin: "0 auto",
+                        }}>
+                            <div style={{ transform: "scale(0.82)", transformOrigin: "top left" }}>
+                                {pdfPreview && (
+                                    <NotaPDFTemplate nota={pdfPreview.nota} contract={pdfPreview.contract} />
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPdfPreview(null)}>Close</Button>
+                        <Button onClick={handleDownloadFromPreview} disabled={pdfDownloading}>
+                            {pdfDownloading
+                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating...</>
+                                : <><Download className="w-4 h-4 mr-2" />Download PDF</>}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Hidden off-screen container for html2canvas capture */}
+            <div
+                ref={pdfContainerRef}
+                style={{ position: "absolute", left: "-9999px", top: "0", overflow: "hidden", pointerEvents: "none" }}
+                aria-hidden="true"
+            />
         </div>
     );
 }

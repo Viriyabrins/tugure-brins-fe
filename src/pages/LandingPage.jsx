@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Shield, Users, Lock, X, ExternalLink } from "lucide-react";
+import { Users, Lock, X, ExternalLink } from "lucide-react";
 import briInsuranceLogo from "@/assets/BRI.png";
+import { PortalHeader, PortalFooter } from "@/components/common/PortalChrome";
 import tugureLogo from "@/assets/tugure-logo.png";
 
 const MODAL_STYLES = `
@@ -266,26 +267,7 @@ export default function LandingPage() {
             </div>
 
             {/* Header */}
-            <header className="relative z-10 flex items-center justify-between px-8 py-5">
-                <div className="flex items-center gap-2">
-                    <Shield className="text-white opacity-80" size={22} />
-                    <span
-                        className="text-white opacity-80"
-                        style={{
-                            fontSize: "0.875rem",
-                            letterSpacing: "0.05em",
-                        }}
-                    >
-                        Insurance Service Portal
-                    </span>
-                </div>
-                <div
-                    className="text-white opacity-60"
-                    style={{ fontSize: "0.8rem" }}
-                >
-                    © 2026 BRInsurance &amp; Tugure
-                </div>
-            </header>
+            <PortalHeader />
 
             {/* Main Content */}
             <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-10">
@@ -505,14 +487,7 @@ export default function LandingPage() {
             </main>
 
             {/* Footer */}
-            <footer className="relative z-10 text-center py-4">
-                <p
-                    className="text-white"
-                    style={{ fontSize: "0.75rem", opacity: 0.4 }}
-                >
-                    PT BRI Insurance Indonesia · PT Tugure Insurance Indonesia
-                </p>
-            </footer>
+            <PortalFooter />
         </div>
     );
 }

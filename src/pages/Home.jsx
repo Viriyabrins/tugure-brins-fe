@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Shield, ArrowLeft, ArrowRight, AlertCircle, Loader2, Eye, EyeOff, User, Lock } from "lucide-react";
+import { ArrowLeft, ArrowRight, AlertCircle, Loader2, Eye, EyeOff, User, Lock } from "lucide-react";
 import brinsLogo from '@/assets/brins.png';
+import { PortalHeader, PortalFooter } from '@/components/common/PortalChrome';
 import tugureLogo from '@/assets/tugure-logo.png';
 import { isAuthenticated, ingestDirectLoginTokens } from '@/lib/keycloak';
 import { withSignatureHeaders } from '@/lib/requestSignature';
@@ -105,21 +106,14 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center" style={{ background: "linear-gradient(135deg, #0a1f6e 0%, #1a4bbd 40%, #2563eb 70%, #3b82f6 100%)" }}>
-      {/* Top-left badge */}
-      <div className="absolute top-4 left-4 z-20 flex items-center gap-3">
-        <Shield className="w-5 h-5 text-white/90" />
-        <span className="text-xs text-white/90">Insurance Service Portal</span>
-      </div>
-
-      {/* Top-right small copyright/info */}
-      <div className="absolute top-4 right-4 z-20 text-xs text-blue-200 opacity-80">
-        © 2026 BRInsurance &amp; Tugure
-      </div>
+    <div className="min-h-screen w-full relative overflow-hidden flex flex-col" style={{ background: "linear-gradient(135deg, #0a1f6e 0%, #1a4bbd 40%, #2563eb 70%, #3b82f6 100%)" }}>
       {/* Decorative circles */}
       <div className="absolute top-[-120px] right-[-120px] w-[400px] h-[400px] rounded-full opacity-10" style={{ background: "radial-gradient(circle, #60a5fa, transparent)" }} />
       <div className="absolute bottom-[80px] left-[-80px] w-[300px] h-[300px] rounded-full opacity-10" style={{ background: "radial-gradient(circle, #93c5fd, transparent)" }} />
 
+      <PortalHeader />
+
+      <main className="flex-1 flex items-center justify-center">
       <div className="w-full max-w-md z-10 p-4">
         <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{ background: "rgba(255,255,255,0.08)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.15)" }}>
           <button type="button" onClick={() => navigate(-1)} aria-label="Back" className="absolute top-3 left-3 z-30 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/90">
@@ -247,11 +241,9 @@ export default function Home() {
 
         <p className="text-center text-xs text-blue-300 mt-4 opacity-70">Your session is protected with end-to-end encryption.</p>
       </div>
+      </main>
 
-      {/* Footer note */}
-      <div className="absolute bottom-4 w-full flex items-center justify-center z-10">
-        <p className="text-xs text-blue-200 opacity-70">PT BRI Insurance Indonesia - PT Tugure Insurance Indonesia</p>
-      </div>
+      <PortalFooter />
     </div>
   );
 }

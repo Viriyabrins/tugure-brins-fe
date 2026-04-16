@@ -24,6 +24,7 @@ import { useClaimReviewActions } from "../hooks/useClaimReviewActions";
 import { FilePreviewModal } from "../../claims/components/FilePreviewModal";
 import { useIsViewer } from "@/hooks/usePermissions";
 import { AttachmentCount } from "@/components/common/AttachmentCount";
+import { useClaimSSE } from "@/hooks/useDebtorSSE";
 
 export default function ClaimReview() {
     const isViewer = useIsViewer();
@@ -34,6 +35,8 @@ export default function ClaimReview() {
         loading, filters, setFilters, claimPage, setClaimPage,
         loadData, isCheckerBrins, isApproverBrins, isCheckerTugure, isApproverTugure,
     } = data;
+
+    useClaimSSE(() => loadData());
 
     const [selectedClaims, setSelectedClaims] = useState([]);
     const [activeTab, setActiveTab] = useState("review");

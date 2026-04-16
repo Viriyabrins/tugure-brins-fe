@@ -42,6 +42,7 @@ import { FilePreviewModal } from "../components/FilePreviewModal";
 import { ClaimTrendTab } from "../components/ClaimTrendTab";
 import { AttachmentCount } from "@/components/common/AttachmentCount";
 import { DEFAULT_CLAIM_FILTER, CLAIM_TEMPLATE_HEADERS, CLAIM_TEMPLATE_SAMPLE } from "../utils/claimConstants";
+import { useClaimSSE } from "@/hooks/useDebtorSSE";
 
 export default function ClaimSubmit() {
     const { isBrinsUser, isTugureUser } = useUserTenant();
@@ -151,6 +152,8 @@ export default function ClaimSubmit() {
     useEffect(() => {
         loadAll();
     }, []);
+
+    useClaimSSE(() => loadAll());
 
     const downloadTemplate = () => {
         const csvContent =

@@ -90,10 +90,12 @@ export function useDebtorReviewActions({
                         acc.totalKomisi += parseFloat(d.ric_amount) || 0;
                         acc.totalPlafon += parseFloat(d.plafon) || 0;
                         acc.totalNominalPremi += parseFloat(d.nominal_premi) || 0;
+                        // grossPremi aggregates the raw PREMIUM / premium_amount field
+                        acc.grossPremi += parseFloat(d.premium_amount || d.premium) || 0;
                         acc.count += 1;
                         return acc;
                     },
-                    { totalNetPremi: 0, totalKomisi: 0, totalPlafon: 0, totalNominalPremi: 0, count: 0 }
+                    { totalNetPremi: 0, totalKomisi: 0, totalPlafon: 0, totalNominalPremi: 0, grossPremi: 0, count: 0 }
                 );
                 summary.batchId = selectedBatchForAction || eligibleDebtors[0]?.batch_id || "-";
                 summary.contractId = eligibleDebtors[0]?.contract_id || "-";

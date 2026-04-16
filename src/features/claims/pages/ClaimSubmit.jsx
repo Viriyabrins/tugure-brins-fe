@@ -42,6 +42,7 @@ import { FilePreviewModal } from "../components/FilePreviewModal";
 import { ClaimTrendTab } from "../components/ClaimTrendTab";
 import { AttachmentCount } from "@/components/common/AttachmentCount";
 import { DEFAULT_CLAIM_FILTER, CLAIM_TEMPLATE_HEADERS, CLAIM_TEMPLATE_SAMPLE } from "../utils/claimConstants";
+import { useClaimSSE } from "@/hooks/useDebtorSSE";
 
 export default function ClaimSubmit() {
     const { isBrinsUser, isTugureUser } = useUserTenant();
@@ -132,7 +133,6 @@ export default function ClaimSubmit() {
         handleDownloadTemplate,
         reset: resetUpload,
     } = useClaimUpload({
-        batches,
         debtors,
         user,
         isBrinsUser,
@@ -152,6 +152,8 @@ export default function ClaimSubmit() {
         loadAll();
     }, []);
 
+    useClaimSSE(() => loadAll());
+
     const downloadTemplate = () => {
         const csvContent =
             CLAIM_TEMPLATE_HEADERS.join(",") + "\n" + CLAIM_TEMPLATE_SAMPLE;
@@ -168,7 +170,7 @@ export default function ClaimSubmit() {
 
     const claimColumns = [
         { header: "Claim No", accessorKey: "claim_no" },
-        { header: "Batch ID", accessorKey: "batch_id" },
+        { header: "Policy No", accessorKey: "policy_no" },
         {
             header: "Debtor",
             accessorKey: "nama_tertanggung",
@@ -192,7 +194,7 @@ export default function ClaimSubmit() {
         },
         {
             header: "Files Count",
-            cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} batchId={row.batch_id} />,
+            cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} />,
         },
         {
             header: "Attachments",
@@ -514,7 +516,6 @@ export default function ClaimSubmit() {
                     closeDialog("upload");
                     resetUpload();
                 }}
-                batches={batches}
                 isBrinsUser={isBrinsUser}
                 parsedClaims={parsedClaims}
                 validationRemarks={validationRemarks}
@@ -546,7 +547,6 @@ export default function ClaimSubmit() {
                         setSelectedClaimForFiles(null);
                     }}
                     recordId={selectedClaimForFiles.nomor_peserta || selectedClaimForFiles.claim_no}
-                    batchId={selectedClaimForFiles.batch_id}
                 />
             )}
 

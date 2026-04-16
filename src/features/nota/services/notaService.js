@@ -40,6 +40,10 @@ export const notaService = {
         });
     },
 
+    async bulkMarkNotasPaid(notaNumbers, userEmail) {
+        return backend.bulkMarkNotasPaid(notaNumbers, userEmail);
+    },
+
     async closeNota(notaNumber) {
         return backend.update("Nota", notaNumber, {
             status: "PAID",

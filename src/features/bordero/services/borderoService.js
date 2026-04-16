@@ -39,6 +39,31 @@ export const borderoService = {
         return { data: Array.isArray(result.data) ? result.data : [], total: Number(result.pagination?.total) || 0 };
     },
 
+    async exportAll(filters) {
+        const debtorQuery = { page: 1, limit: 10000 };
+        if (filters) debtorQuery.q = JSON.stringify(filters);
+
+        const borderoQuery = { page: 1, limit: 10000 };
+        if (filters?.period) borderoQuery.q = JSON.stringify({ period: filters.period });
+
+        const claimQuery = { page: 1, limit: 10000 };
+        if (filters) claimQuery.q = JSON.stringify({ claimStatus: filters.claimStatus, startDate: filters.startDate, endDate: filters.endDate });
+
+        const [debtorRes, borderoRes, claimRes, subrogationData] = await Promise.all([
+            backend.listPaginated("Debtor", debtorQuery),
+            backend.listPaginated("Bordero", borderoQuery),
+            backend.listPaginated("Claim", claimQuery),
+            backend.list("Subrogation"),
+        ]);
+
+        return {
+            debtors: Array.isArray(debtorRes.data) ? debtorRes.data : [],
+            borderos: Array.isArray(borderoRes.data) ? borderoRes.data : [],
+            claims: Array.isArray(claimRes.data) ? claimRes.data : [],
+            subrogations: Array.isArray(subrogationData) ? subrogationData : [],
+        };
+    },
+
     async advanceBorderoStatus(bordero, userEmail) {
         const nextStatus = getNextBorderoStatus(bordero.status);
         if (!nextStatus) throw new Error("No next status available");

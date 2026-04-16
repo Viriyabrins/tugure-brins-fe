@@ -24,6 +24,7 @@ import { useClaimReviewActions } from "../hooks/useClaimReviewActions";
 import { FilePreviewModal } from "../../claims/components/FilePreviewModal";
 import { useIsViewer } from "@/hooks/usePermissions";
 import { AttachmentCount } from "@/components/common/AttachmentCount";
+import { useClaimSSE } from "@/hooks/useDebtorSSE";
 
 export default function ClaimReview() {
     const isViewer = useIsViewer();
@@ -34,6 +35,8 @@ export default function ClaimReview() {
         loading, filters, setFilters, claimPage, setClaimPage,
         loadData, isCheckerBrins, isApproverBrins, isCheckerTugure, isApproverTugure,
     } = data;
+
+    useClaimSSE(() => loadData());
 
     const [selectedClaims, setSelectedClaims] = useState([]);
     const [activeTab, setActiveTab] = useState("review");
@@ -72,7 +75,7 @@ export default function ClaimReview() {
             width: "50px",
         },
         { header: "Claim No", accessorKey: "claim_no" },
-        { header: "Batch ID", accessorKey: "batch_id" },
+        { header: "Policy No", accessorKey: "policy_no" },
         {
             header: "Debtor", accessorKey: "nama_tertanggung",
             cell: (row) => (
@@ -85,7 +88,7 @@ export default function ClaimReview() {
         { header: "Claim Amount", cell: (row) => formatRupiahAdaptive(Number(row.nilai_klaim) || 0) },
         { header: "Share Tugure", cell: (row) => formatRupiahAdaptive(Number(row.share_tugure_amount) || 0) },
         { header: "Status", cell: (row) => <StatusBadge status={row.status} /> },
-        { header: "Files Count", cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} batchId={row.batch_id} /> },
+        { header: "Files Count", cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} /> },
         {
             header: "Actions",
             cell: (row) => (
@@ -361,7 +364,6 @@ export default function ClaimReview() {
                         setSelectedClaimForFiles(null);
                     }}
                     recordId={selectedClaimForFiles.nomor_peserta || selectedClaimForFiles.claim_no}
-                    batchId={selectedClaimForFiles.batch_id}
                     readOnly={true}
                 />
             )}

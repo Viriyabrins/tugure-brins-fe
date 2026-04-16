@@ -7,6 +7,7 @@ import {
 } from "../utils/masterContractConstants";
 import { masterContractService } from "../services/masterContractService";
 import { backend } from "@/api/backendClient";
+import { uploadFileToPath } from "@/services/storageService";
 
 export function useMasterContractActions({ user, auditActor, contracts, statsContracts, reload, page, filters, loadContracts, loadStats }) {
     // Dialog state
@@ -171,6 +172,17 @@ export function useMasterContractActions({ user, auditActor, contracts, statsCon
             }
             const result = await masterContractService.uploadContracts({ uploadMode, selectedContractForRevision: uploadMode === "revise" ? selectedContractForRevision : null, contracts: uploadPreviewData });
             const uploaded = Number(result?.createdCount || 0);
+
+            // Store raw Excel file in MinIO (non-blocking)
+            if (uploadFile) {
+                const contractNo = toNullableString(uploadPreviewData[0]?.contract_no) || '';
+                uploadFileToPath(uploadFile, {
+                    folder: 'master-contract',
+                    subfolder: 'excel',
+                    identifier: contractNo,
+                }).catch((err) => console.error('[MC Excel] Failed to store Excel in MinIO:', err));
+            }
+
             setSuccessMessage(`Berhasil upload ${uploaded} contract${uploaded > 1 ? "s" : ""}.`);
             closeUploadDialog();
             loadContracts(page, filters); loadStats();

@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
-import { getFilesForRecord } from "@/services/storageService";
+import { getFilesByPath } from "@/services/storageService";
 
-export function AttachmentCount({ recordId, batchId }) {
+export function AttachmentCount({ recordId }) {
     const [count, setCount] = useState(null);
 
     useEffect(() => {
-        if (!recordId || !batchId) {
+        if (!recordId) {
             setCount(0);
             return;
         }
 
         let isMounted = true;
         
-        getFilesForRecord(recordId, batchId)
+        getFilesByPath('claim', 'attachment', recordId)
             .then(files => {
                 if (isMounted) setCount(files.length || 0);
             })
@@ -24,7 +24,7 @@ export function AttachmentCount({ recordId, batchId }) {
         return () => {
              isMounted = false;
         };
-    }, [recordId, batchId]);
+    }, [recordId]);
 
     if (count === null) {
         return <Loader2 className="w-4 h-4 animate-spin text-gray-400" />;

@@ -23,9 +23,10 @@ export const claimService = {
 
     /**
      * Creates a single Claim (Tugure flow) or Subrogation (Brins recovery flow).
-     * Also creates the corresponding Subrogation + audit log + notification.
+     * Also creates the corresponding audit log + notification.
+     * batch_id and contract_id are taken from the claim object (auto-populated from matched debtor).
      */
-    async uploadClaim(claim, claimNo, batch, user, isBrinsUser) {
+    async uploadClaim(claim, claimNo, user, isBrinsUser) {
         const tanggalRealisasiISO = getExcelDate(
             claim.tanggal_realisasi_kredit,
         );
@@ -51,7 +52,7 @@ export const claimService = {
                 check_bdo_premi: claim.check_bdo_premi,
                 debtor_id: claim.debtor_id || "",
                 contract_id: claim.contract_id || "",
-                batch_id: batch.batch_id,
+                batch_id: claim.batch_id || "",
                 nomor_peserta: claim.nomor_peserta,
                 status: "SUBMITTED",
                 version_no: 1,
@@ -63,7 +64,7 @@ export const claimService = {
                 "Claim",
                 claimNo,
                 {
-                    batch_id: batch.batch_id,
+                    batch_id: claim.batch_id,
                     nilai_klaim: claim.nilai_klaim,
                 },
                 user,
@@ -89,7 +90,7 @@ export const claimService = {
                 check_bdo_premi: claim.check_bdo_premi,
                 debtor_id: claim.debtor_id || "",
                 contract_id: claim.contract_id || "",
-                batch_id: batch.batch_id,
+                batch_id: claim.batch_id || "",
                 nomor_peserta: claim.nomor_peserta,
                 status: "SUBMITTED",
                 version_no: 1,
@@ -101,7 +102,7 @@ export const claimService = {
                 "Claim",
                 claimNo,
                 {
-                    batch_id: batch.batch_id,
+                    batch_id: claim.batch_id,
                     nilai_klaim: claim.nilai_klaim,
                 },
                 user,
@@ -141,11 +142,11 @@ export const claimService = {
         return subrogationId;
     },
 
-    /** Returns Nota records for a given batch. */
-    async checkNotaPayment(batchId) {
+    /** Returns Nota records for a given contract. */
+    async checkNotaPayment(contractId) {
         const notas = await backend.list("Nota");
         return notas.filter(
-            (n) => n.reference_id === batchId && n.nota_type === "Batch",
+            (n) => n.reference_id === contractId && n.nota_type === "Batch",
         );
     },
 
@@ -157,24 +158,24 @@ export const claimService = {
     },
 
     /** Sends a bulk-upload notification. */
-    async notifyBulkUpload(uploaded, batchId, userEmail, isBrinsUser) {
+    async notifyBulkUpload(uploaded, contractId, userEmail, isBrinsUser) {
         await backend.create("Notification", {
             title: isBrinsUser ? "Bulk Recovery Upload" : "Bulk Claim Upload",
-            message: `${uploaded} ${isBrinsUser ? "recoveries" : "claims"} uploaded for batch ${batchId}`,
+            message: `${uploaded} ${isBrinsUser ? "recoveries" : "claims"} uploaded for contract ${contractId}`,
             type: "INFO",
             module: "CLAIM",
-            reference_id: batchId,
+            reference_id: contractId,
             target_role: "tugure-checker-role",
         });
     },
 
     /** Writes an audit log for a blocked submission attempt. */
-    async auditBlockedSubmission(batchId, userEmail, userRole) {
+    async auditBlockedSubmission(contractId, userEmail, userRole) {
         await backend.create("AuditLog", {
             action: "BLOCKED_CLAIM_SUBMISSION",
             module: "CLAIM",
-            entity_type: "Batch",
-            entity_id: batchId,
+            entity_type: "Claim",
+            entity_id: contractId,
             old_value: "{}",
             new_value: JSON.stringify({ blocked_reason: "Nota not PAID" }),
             user_email: userEmail,

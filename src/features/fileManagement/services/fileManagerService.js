@@ -1,169 +1,163 @@
 /**
  * File Manager Service
- * Handles file tree structure, lazy loading, and caching
+ * Handles folder-based file tree: Folder → Subfolder → [RecordId] → Files
  * Optimized to minimize MinIO calls - only loads files when node is expanded
  */
 
-import { getFilesForRecord } from '@/services/storageService';
+import { getFilesByPath } from '@/services/storageService';
 
 /**
- * Build file tree structure WITHOUT loading individual files (optimization)
- * Creates tree: Batch → Record (with empty children, loaded on demand)
- * 
- * @param {Array} records - Array of claim/debtor records
- * @returns {Array} Tree structure [{id, label, type, batchId, recordId, children: [], isLoaded: false}, ...]
+ * Folder definitions for the file tree.
+ * Maps to MinIO path structure: {folder}/{subfolder}/[recordId/]{file}
  */
-export async function buildFileTreeStructure(records) {
-  if (!Array.isArray(records) || records.length === 0) {
-    return [];
-  }
+const FOLDER_STRUCTURE = {
+  'master-contract': { label: 'Master Contract', subfolders: ['excel'] },
+  'claim':           { label: 'Claim',           subfolders: ['excel', 'attachment'] },
+  'batch':           { label: 'Batch',           subfolders: ['excel'] },
+  'subrogation':     { label: 'Subrogation',     subfolders: ['excel', 'attachment'] },
+};
 
-  // Group records by batch_id
-  const byBatch = {};
-  records.forEach((record) => {
-    const batchId = record.batch_id || 'Unknown';
-    if (!byBatch[batchId]) {
-      byBatch[batchId] = [];
-    }
-    byBatch[batchId].push(record);
-  });
-
-  // Build tree: Batch → Record (files loaded lazily)
-  const tree = Object.entries(byBatch).map(([batchId, batchRecords]) => ({
-    id: `batch-${batchId}`,
-    label: batchId,
-    type: 'batch',
-    batchId,
-    children: batchRecords.map((record) => ({
-      id: `record-${record.id || record.claim_id || record.claim_no}`,
-      label: record.nama_tertanggung || record.nama_peserta || record.claim_no || record.nomor_peserta || record.id,
-      type: 'record',
-      batchId,
-      recordId: record.id || record.claim_id || record.claim_no,
-      recordName: record.claim_no || record.nomor_peserta || record.id,
-      status: record.status,
-      children: [], // Will be populated on expand
-      isLoaded: false, // Track if files have been loaded
-      isLoading: false, // Track loading state
+/**
+ * Build the static folder tree (no MinIO calls).
+ * Returns Folder → Subfolder nodes. Files loaded lazily on expand.
+ */
+export function buildFolderTree() {
+  return Object.entries(FOLDER_STRUCTURE).map(([folder, { label, subfolders }]) => ({
+    id: `folder-${folder}`,
+    label,
+    type: 'folder',
+    folder,
+    children: subfolders.map((sub) => ({
+      id: `subfolder-${folder}-${sub}`,
+      label: sub.charAt(0).toUpperCase() + sub.slice(1),
+      type: 'subfolder',
+      folder,
+      subfolder: sub,
+      children: [],
+      isLoaded: false,
+      isLoading: false,
     })),
   }));
-
-  return tree;
 }
 
 /**
- * Load files for a specific record (LAZY LOADING)
- * Called when user expands a record node
- * 
- * @param {string} recordId - Record ID (claim_no, debtor ID, etc)
- * @param {string} batchId - Batch ID
- * @returns {Promise<Array>} File objects {id, key, fileName, size, lastModified, bucket, icon}
+ * Load files for a subfolder and organise into record groups when applicable.
+ *
+ * For "attachment" subfolders the MinIO keys have a recordId segment:
+ *   claim/attachment/{recordId}/{file}
+ * We group them into intermediate record nodes.
+ *
+ * For "excel" subfolders files sit directly under the prefix:
+ *   master-contract/excel/{file}
+ * Returned as flat file nodes.
  */
-export async function loadFilesForRecord(recordId, batchId) {
+export async function loadSubfolderContents(folder, subfolder) {
   try {
-    const files = await getFilesForRecord(recordId, batchId);
-    return files.map((file) => ({
-      ...file,
-      id: file.key, // Use key as unique ID
-      icon: getFileIconFromName(file.fileName),
+    const files = await getFilesByPath(folder, subfolder);
+    const decorated = (files || []).map((f) => ({
+      ...f,
+      id: f.key,
+      icon: getFileIconFromName(f.fileName),
     }));
+
+    if (subfolder === 'attachment') {
+      // Group by recordId extracted from key: {folder}/{subfolder}/{recordId}/{file}
+      const byRecord = {};
+      decorated.forEach((file) => {
+        const parts = (file.key || '').split('/');
+        // parts: [folder, subfolder, recordId, filename]
+        const recordId = parts.length >= 4 ? parts[2] : 'unknown';
+        if (!byRecord[recordId]) byRecord[recordId] = [];
+        byRecord[recordId].push(file);
+      });
+
+      return Object.entries(byRecord).map(([recordId, recordFiles]) => ({
+        id: `record-${folder}-${subfolder}-${recordId}`,
+        label: recordId,
+        type: 'record',
+        folder,
+        subfolder,
+        recordId,
+        children: recordFiles,
+      }));
+    }
+
+    // For excel-type subfolders, return flat file list
+    return decorated;
   } catch (err) {
-    console.error(`Error loading files for record ${recordId}:`, err);
+    console.error(`Error loading ${folder}/${subfolder}:`, err);
     return [];
   }
 }
 
 /**
  * Get file icon based on file extension
- * @param {string} fileName
- * @returns {string} Icon emoji
  */
 function getFileIconFromName(fileName) {
   if (!fileName) return '📎';
-  
   const ext = fileName.split('.').pop()?.toLowerCase() || '';
   const iconMap = {
-    pdf: '📄',
-    xlsx: '📊',
-    xls: '📊',
-    csv: '📊',
-    docx: '📝',
-    doc: '📝',
-    pptx: '🎯',
-    ppt: '🎯',
-    txt: '📃',
+    pdf: '📄', xlsx: '📊', xls: '📊', csv: '📊',
+    docx: '📝', doc: '📝', pptx: '🎯', ppt: '🎯', txt: '📃',
   };
   return iconMap[ext] || '📎';
 }
 
 /**
- * Update tree node's children after lazy loading
- * 
- * @param {Array} tree - Current tree
- * @param {string} nodeId - Node ID to update (record-*)
- * @param {Array} children - Files to set as children
- * @returns {Array} Updated tree (immutable)
+ * Update a subfolder node's children after lazy loading (immutable).
  */
-export function updateTreeNode(tree, nodeId, children) {
-  return tree.map((batch) => ({
-    ...batch,
-    children: batch.children.map((record) => {
-      if (record.id === nodeId) {
-        return {
-          ...record,
-          children,
-          isLoaded: true,
-          isLoading: false,
-        };
-      }
-      return record;
-    }),
-  }));
-}
-
-/**
- * Mark node as loading
- * @param {Array} tree
- * @param {string} nodeId
- * @returns {Array} Updated tree
- */
-export function setNodeLoading(tree, nodeId, isLoading) {
-  return tree.map((batch) => ({
-    ...batch,
-    children: batch.children.map((record) => 
-      record.id === nodeId 
-        ? { ...record, isLoading }
-        : record
+export function updateSubfolderNode(tree, nodeId, children) {
+  return tree.map((folder) => ({
+    ...folder,
+    children: folder.children.map((sub) =>
+      sub.id === nodeId
+        ? { ...sub, children, isLoaded: true, isLoading: false }
+        : sub
     ),
   }));
 }
 
 /**
- * Search files across all records in tree
- * 
- * @param {Array} tree - File tree
- * @param {string} query - Search query
- * @returns {Array} Matching files with parent info {id, fileName, size, parentRecord, parentBatch}
+ * Mark a subfolder node as loading (immutable).
+ */
+export function setSubfolderLoading(tree, nodeId, isLoading) {
+  return tree.map((folder) => ({
+    ...folder,
+    children: folder.children.map((sub) =>
+      sub.id === nodeId ? { ...sub, isLoading } : sub
+    ),
+  }));
+}
+
+/**
+ * Collect every file across all loaded subfolders matching a search query.
  */
 export function searchFilesInTree(tree, query) {
   const results = [];
-  const lowerQuery = query.toLowerCase();
+  const q = query.toLowerCase();
 
-  tree.forEach((batch) => {
-    batch.children.forEach((record) => {
-      record.children.forEach((file) => {
-        if (
-          file.fileName?.toLowerCase().includes(lowerQuery) ||
-          file.key?.toLowerCase().includes(lowerQuery)
-        ) {
-          results.push({
-            ...file,
-            parentRecord: record.label,
-            parentRecordId: record.recordId,
-            parentBatch: batch.label,
-          });
-        }
-      });
+  tree.forEach((folder) => {
+    folder.children.forEach((sub) => {
+      const collectFiles = (items, parentLabel) => {
+        items.forEach((item) => {
+          if (item.type === 'record') {
+            collectFiles(item.children, item.label);
+          } else if (item.fileName) {
+            if (
+              item.fileName.toLowerCase().includes(q) ||
+              (item.key || '').toLowerCase().includes(q)
+            ) {
+              results.push({
+                ...item,
+                parentFolder: folder.label,
+                parentSubfolder: sub.label,
+                parentRecord: parentLabel || '',
+              });
+            }
+          }
+        });
+      };
+      collectFiles(sub.children, null);
     });
   });
 
@@ -171,61 +165,29 @@ export function searchFilesInTree(tree, query) {
 }
 
 /**
- * Filter tree by batch and/or status
- * 
- * @param {Array} tree - File tree
- * @param {Object} filters - {batchId, status}
- * @returns {Array} Filtered tree (removes empty batches)
- */
-export function filterTree(tree, filters) {
-  if (!filters.batchId && !filters.status) {
-    return tree;
-  }
-
-  return tree
-    .filter((batch) => !filters.batchId || batch.batchId === filters.batchId)
-    .map((batch) => ({
-      ...batch,
-      children: batch.children.filter((record) => {
-        if (filters.status && record.status !== filters.status) {
-          return false;
-        }
-        return true;
-      }),
-    }))
-    .filter((batch) => batch.children.length > 0); // Remove empty batches
-}
-
-/**
- * Get total file count in tree
- * @param {Array} tree
- * @returns {number} Total files
+ * Count total files across the whole tree.
  */
 export function getTreeFileCount(tree) {
-  return tree.reduce((sum, batch) => 
-    sum + batch.children.reduce((recordSum, record) => 
-      recordSum + record.children.length, 0), 0);
-}
-
-/**
- * Get total file size in tree
- * @param {Array} tree
- * @returns {number} Total size in bytes
- */
-export function getTreeTotalSize(tree) {
-  return tree.reduce((sum, batch) => 
-    sum + batch.children.reduce((recordSum, record) => 
-      recordSum + record.children.reduce((fileSum, file) => 
-        fileSum + (file.size || 0), 0), 0), 0);
+  let count = 0;
+  tree.forEach((folder) => {
+    folder.children.forEach((sub) => {
+      sub.children.forEach((item) => {
+        if (item.type === 'record') {
+          count += item.children.length;
+        } else if (item.fileName) {
+          count += 1;
+        }
+      });
+    });
+  });
+  return count;
 }
 
 export default {
-  buildFileTreeStructure,
-  loadFilesForRecord,
-  updateTreeNode,
-  setNodeLoading,
+  buildFolderTree,
+  loadSubfolderContents,
+  updateSubfolderNode,
+  setSubfolderLoading,
   searchFilesInTree,
-  filterTree,
   getTreeFileCount,
-  getTreeTotalSize,
 };

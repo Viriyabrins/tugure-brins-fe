@@ -289,6 +289,39 @@ export function useNotaActions({ user, auditActor, notas, dnCnRecords, loadData,
         setProcessing(false);
     }
 
+    const [showBulkPaidDialog, setShowBulkPaidDialog] = useState(false);
+
+    // ─── Bulk Mark Notas Paid ──────────────────────────────────────────────────
+
+    async function handleBulkMarkPaid(selectedNotaNumbers, setSelectedNotas) {
+        if (!selectedNotaNumbers || selectedNotaNumbers.length === 0) return;
+        setProcessing(true);
+        try {
+            await notaService.bulkMarkNotasPaid(selectedNotaNumbers, auditActor?.user_email || user?.email);
+            await notaService._notify(
+                "Notas marked as PAID",
+                `${selectedNotaNumbers.length} nota(s) have been marked as PAID.`,
+                "INFO", "DEBTOR", selectedNotaNumbers[0], "ALL",
+            );
+            await notaService._audit(
+                "BULK_NOTA_MARKED_PAID", "DEBTOR", "Nota",
+                selectedNotaNumbers.join(","),
+                JSON.stringify({ status: "UNPAID" }),
+                JSON.stringify({ status: "PAID", count: selectedNotaNumbers.length }),
+                auditActor?.user_email || user?.email,
+                auditActor?.user_role || user?.role,
+                `Bulk mark paid: ${selectedNotaNumbers.length} notas`,
+            );
+            setSuccessMessage(`${selectedNotaNumbers.length} nota(s) marked as PAID`);
+            setShowBulkPaidDialog(false);
+            setSelectedNotas([]);
+            await loadNotas(notaPage, filters);
+        } catch (e) {
+            console.error("Bulk mark paid error:", e);
+        }
+        setProcessing(false);
+    }
+
     // ─── Close Nota ────────────────────────────────────────────────────────────
 
     async function handleCloseNota(nota) {
@@ -325,6 +358,7 @@ export function useNotaActions({ user, auditActor, notas, dnCnRecords, loadData,
         showDnCnActionDialog, setShowDnCnActionDialog,
         showPaymentDialog, setShowPaymentDialog,
         showNotaStatusDialog, setShowNotaStatusDialog,
+        showBulkPaidDialog, setShowBulkPaidDialog,
         selectedNota, setSelectedNota,
         selectedDnCn, setSelectedDnCn,
         selectedRecon, setSelectedRecon,
@@ -335,6 +369,7 @@ export function useNotaActions({ user, auditActor, notas, dnCnRecords, loadData,
         dnCnFormData, setDnCnFormData,
         handleNotaAction,
         handleChangeNotaStatus,
+        handleBulkMarkPaid,
         handleRecordPayment,
         handleMarkReconFinal,
         handleCreateDnCn,

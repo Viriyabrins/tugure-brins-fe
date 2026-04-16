@@ -5,12 +5,12 @@ export const claimKey = (r) =>
     `${String(r.policy_no || "").trim().toLowerCase()}||${String(r.nomor_peserta || "").trim().toLowerCase()}`;
 
 /**
- * Validates a single parsed row against the batch's debtor list.
+ * Validates a single parsed row against the debtor list.
  * Returns the matched debtor and any validation issues found.
  */
-export function validateClaimRow(row, batchDebtors) {
+export function validateClaimRow(row, allDebtors) {
     const issues = [];
-    const debtor = batchDebtors.find(
+    const debtor = allDebtors.find(
         (d) =>
             String(d.nomor_peserta || "").trim() ===
                 String(row.nomor_peserta || "").trim() &&
@@ -19,7 +19,7 @@ export function validateClaimRow(row, batchDebtors) {
     );
     if (!debtor) {
         issues.push(
-            `Debtor not found: participant number "${row.nomor_peserta}" and policy number "${row.policy_no}" do not exist in the selected batch — check your source file for correct participant and policy numbers`,
+            `Debtor not found: participant number "${row.nomor_peserta}" and policy number "${row.policy_no}" do not exist in debtors — check your source file for correct participant and policy numbers`,
         );
     }
     return { debtor, issues };
@@ -57,24 +57,22 @@ export function validateFileInternalDuplicates(parsed) {
 }
 
 /**
- * Fetches existing claims and flags rows that are already present in the batch.
+ * Fetches existing claims and flags rows that already exist.
  * Mutates `item.validation_remarks` on affected rows and returns error records.
  */
-export async function validateBatchDuplicates(parsed, batchId) {
+export async function validateExistingDuplicates(parsed) {
     const errors = [];
     try {
         const claimResult = await backend.listPaginated("Claim", {
             limit: 9999,
         });
         const existingKeys = new Set(
-            (claimResult?.data || [])
-                .filter((c) => c.batch_id === batchId)
-                .map((c) => claimKey(c)),
+            (claimResult?.data || []).map((c) => claimKey(c)),
         );
         for (const item of parsed) {
             if (existingKeys.has(claimKey(item))) {
                 const issue =
-                    "Duplicate with existing claim in selected batch (policy number & participant)";
+                    "Duplicate with existing claim (policy number & participant)";
                 errors.push({
                     row: item.excelRow,
                     participant: item.nomor_peserta || "Unknown",
@@ -86,7 +84,7 @@ export async function validateBatchDuplicates(parsed, batchId) {
             }
         }
     } catch (err) {
-        console.warn("Batch duplicate check failed:", err);
+        console.warn("Duplicate check failed:", err);
     }
     return errors;
 }

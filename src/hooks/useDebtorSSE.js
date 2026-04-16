@@ -131,3 +131,73 @@ export function useDebtorSSE(onDebtorChange) {
     };
   }, []);
 }
+
+// ── Claim SSE ─────────────────────────────────────────────────────────────────
+
+export function useClaimSSE(onClaimChange) {
+  const eventSourceRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttemptsRef = useRef(5);
+  const reconnectDelayRef = useRef(1000);
+  const debounceTimerRef = useRef(null);
+  const pendingChangesRef = useRef([]);
+  const DEBOUNCE_DELAY = 500;
+
+  const executeDebouncedCallback = () => {
+    if (pendingChangesRef.current.length > 0) {
+      onClaimChange(pendingChangesRef.current);
+      pendingChangesRef.current = [];
+    }
+  };
+
+  const debounceCallback = (payload) => {
+    pendingChangesRef.current.push(payload);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      executeDebouncedCallback();
+      debounceTimerRef.current = null;
+    }, DEBOUNCE_DELAY);
+  };
+
+  useEffect(() => {
+    const connectSSE = async () => {
+      try {
+        const token = getKeycloakToken();
+        if (!token) return;
+        const apiUrl = `/api/db-channel/stream?access_token=${encodeURIComponent(token)}`;
+        const eventSource = new EventSource(apiUrl);
+        eventSource.addEventListener('connected', () => {
+          reconnectAttemptsRef.current = 0;
+          reconnectDelayRef.current = 1000;
+        });
+        eventSource.addEventListener('message', (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.table === 'claim') {
+              console.log('[useClaimSSE] 🔄 Claim change:', payload.action);
+              debounceCallback(payload);
+            }
+          } catch (err) {
+            console.error('[useClaimSSE] ❌ Parse error:', err);
+          }
+        });
+        eventSource.onerror = () => {
+          eventSource.close();
+          if (reconnectAttemptsRef.current < maxReconnectAttemptsRef.current) {
+            reconnectAttemptsRef.current += 1;
+            const delay = reconnectDelayRef.current * Math.pow(2, reconnectAttemptsRef.current - 1);
+            setTimeout(() => connectSSE(), delay);
+          }
+        };
+        eventSourceRef.current = eventSource;
+      } catch (err) {
+        console.error('[useClaimSSE] ❌ Setup error:', err);
+      }
+    };
+    connectSSE();
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      if (eventSourceRef.current) { eventSourceRef.current.close(); eventSourceRef.current = null; }
+    };
+  }, []);
+}

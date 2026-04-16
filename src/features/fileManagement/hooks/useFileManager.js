@@ -1,57 +1,45 @@
 /**
  * useFileManager Hook
- * Manages file tree state, lazy loading, search, and filters
+ * Manages folder-based file tree: Folder → Subfolder → [RecordId] → Files
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  buildFileTreeStructure,
-  loadFilesForRecord,
-  updateTreeNode,
-  setNodeLoading,
+  buildFolderTree,
+  loadSubfolderContents,
+  updateSubfolderNode,
+  setSubfolderLoading,
   searchFilesInTree,
-  filterTree,
   getTreeFileCount,
 } from '../services/fileManagerService';
 
 /**
- * Hook for managing file tree and operations
- * @param {Array} records - Claim/debtor records to build tree from
- * @returns {Object} {tree, expandNode, searchQuery, setSearchQuery, filters, setFilters, ...}
+ * Hook for managing folder-based file tree
+ * @returns {Object} {tree, expandNode, searchQuery, setSearchQuery, ...}
  */
-export function useFileManager(records) {
+export function useFileManager() {
   const [tree, setTree] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState({ batchId: '', status: '' });
   const [expandedNodes, setExpandedNodes] = useState(new Set());
   const [selectedFile, setSelectedFile] = useState(null);
 
-  // Build initial tree structure (no file loading)
+  // Build initial folder structure (no MinIO calls)
   useEffect(() => {
-    const initTree = async () => {
-      setLoading(true);
-      try {
-        const newTree = await buildFileTreeStructure(records);
-        setTree(newTree);
-      } catch (err) {
-        console.error('Error building file tree:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initTree();
-  }, [records]);
+    setLoading(true);
+    const folderTree = buildFolderTree();
+    setTree(folderTree);
+    setLoading(false);
+  }, []);
 
   /**
-   * Expand a tree node and lazy-load its files
-   * @param {string} nodeId - record-* node ID
+   * Toggle a folder or subfolder node.
+   * When expanding a subfolder that hasn't been loaded, fetch its files.
    */
   const expandNode = useCallback(
     async (nodeId) => {
       if (expandedNodes.has(nodeId)) {
-        // Already expanded, toggle collapse
+        // Collapse
         setExpandedNodes((prev) => {
           const next = new Set(prev);
           next.delete(nodeId);
@@ -60,61 +48,73 @@ export function useFileManager(records) {
         return;
       }
 
-      // Find the node and check if already loaded
-      let isAlreadyLoaded = false;
-      tree.forEach((batch) => {
-        batch.children.forEach((record) => {
-          if (record.id === nodeId && record.isLoaded) {
-            isAlreadyLoaded = true;
-          }
-        });
-      });
-
-      // If already loaded, just expand it
-      if (isAlreadyLoaded) {
+      // If it's a folder-level node, just toggle expand
+      if (nodeId.startsWith('folder-')) {
         setExpandedNodes((prev) => new Set(prev).add(nodeId));
         return;
       }
 
-      // Otherwise, load files
-      setTree((prev) => setNodeLoading(prev, nodeId, true));
-
-      try {
-        let recordData = null;
-        tree.forEach((batch) => {
-          batch.children.forEach((record) => {
-            if (record.id === nodeId) {
-              recordData = { batchId: batch.batchId, ...record };
-            }
-          });
-        });
-
-        if (recordData) {
-          const files = await loadFilesForRecord(recordData.recordId, recordData.batchId);
-          setTree((prev) => updateTreeNode(prev, nodeId, files));
-          setExpandedNodes((prev) => new Set(prev).add(nodeId));
+      // If it's a subfolder, check if already loaded
+      let subNode = null;
+      for (const folder of tree) {
+        for (const sub of folder.children) {
+          if (sub.id === nodeId) {
+            subNode = sub;
+            break;
+          }
         }
-      } catch (err) {
-        console.error(`Error expanding node ${nodeId}:`, err);
+        if (subNode) break;
+      }
+
+      if (subNode?.isLoaded) {
+        setExpandedNodes((prev) => new Set(prev).add(nodeId));
+        return;
+      }
+
+      // Load files for this subfolder
+      if (subNode) {
+        setTree((prev) => setSubfolderLoading(prev, nodeId, true));
+        try {
+          const contents = await loadSubfolderContents(subNode.folder, subNode.subfolder);
+          setTree((prev) => updateSubfolderNode(prev, nodeId, contents));
+          setExpandedNodes((prev) => new Set(prev).add(nodeId));
+        } catch (err) {
+          console.error(`Error expanding ${nodeId}:`, err);
+          setTree((prev) => setSubfolderLoading(prev, nodeId, false));
+        }
       }
     },
     [tree, expandedNodes]
   );
 
   /**
-   * Get filtered and searchable results
+   * Toggle a record node (inside attachment subfolders)
+   */
+  const toggleRecord = useCallback(
+    (recordId) => {
+      setExpandedNodes((prev) => {
+        const next = new Set(prev);
+        if (next.has(recordId)) {
+          next.delete(recordId);
+        } else {
+          next.add(recordId);
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  /**
+   * Get search results or the full tree
    */
   const displayTree = searchQuery
     ? searchFilesInTree(tree, searchQuery)
-    : filterTree(tree, filters);
+    : tree;
 
-  /**
-   * Get file count and stats
-   */
   const stats = {
     totalFiles: getTreeFileCount(tree),
-    totalBatches: tree.length,
-    totalRecords: tree.reduce((sum, b) => sum + b.children.length, 0),
+    totalFolders: tree.length,
   };
 
   return {
@@ -123,10 +123,9 @@ export function useFileManager(records) {
     loading,
     expandedNodes,
     expandNode,
+    toggleRecord,
     searchQuery,
     setSearchQuery,
-    filters,
-    setFilters,
     selectedFile,
     setSelectedFile,
     stats,

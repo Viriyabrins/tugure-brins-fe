@@ -1,6 +1,6 @@
 /**
  * FileTree Component
- * Displays expandable tree of batches and records with lazy-loaded files
+ * Displays expandable folder tree: Folder → Subfolder → [RecordId] → Files
  */
 
 import React from 'react';
@@ -8,12 +8,13 @@ import { ChevronDown, ChevronRight, Loader } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * FileTree - Hierarchical tree view with lazy loading
- * 
+ * FileTree - Hierarchical folder tree with lazy loading
+ *
  * Props:
- *   tree {Array} - Tree structure from fileManagerService
+ *   tree {Array} - Folder tree from fileManagerService
  *   expandedNodes {Set} - Set of expanded node IDs
- *   onExpandNode {(nodeId: string) => void} - Called when node expand/collapse clicked
+ *   onExpandNode {(nodeId: string) => void} - Called for folder/subfolder expand
+ *   onToggleRecord {(nodeId: string) => void} - Called for record node expand
  *   selectedFile {string} - Selected file ID (for highlighting)
  *   onFileSelect {(file: object) => void} - Called when file clicked
  *   isLoading {boolean} - Show loading spinner
@@ -22,59 +23,52 @@ export default function FileTree({
   tree,
   expandedNodes,
   onExpandNode,
+  onToggleRecord,
   selectedFile,
   onFileSelect,
   isLoading,
 }) {
-  const renderBatch = (batch) => {
-    const isExpanded = expandedNodes.has(batch.id);
+  const renderFolder = (folder) => {
+    const isExpanded = expandedNodes.has(folder.id);
 
     return (
-      <div key={batch.id} className="mb-1">
-        {/* Batch header */}
+      <div key={folder.id} className="mb-1">
         <div className="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 rounded cursor-pointer group">
           <button
-            onClick={() => onExpandNode(batch.id)}
+            onClick={() => onExpandNode(folder.id)}
             className="p-0 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
           >
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
+            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
           <span className="text-sm font-semibold text-gray-700 flex-1">
-            📁 {batch.label}
+            📁 {folder.label}
           </span>
           <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
-            {batch.children.length}
+            {folder.children.length}
           </span>
         </div>
 
-        {/* Records (visible when batch expanded) */}
         {isExpanded && (
           <div className="ml-4 mt-1">
-            {batch.children.map((record) => renderRecord(batch, record))}
+            {folder.children.map((sub) => renderSubfolder(sub))}
           </div>
         )}
       </div>
     );
   };
 
-  const renderRecord = (batch, record) => {
-    const isExpanded = expandedNodes.has(record.id);
-    const isLoading = record.isLoading;
+  const renderSubfolder = (sub) => {
+    const isExpanded = expandedNodes.has(sub.id);
 
     return (
-      <div key={record.id} className="mb-1">
-        {/* Record header */}
+      <div key={sub.id} className="mb-1">
         <div className="flex items-center gap-1 px-2 py-1 hover:bg-blue-50 rounded cursor-pointer group">
           <button
-            onClick={() => onExpandNode(record.id)}
-            disabled={isLoading}
+            onClick={() => onExpandNode(sub.id)}
+            disabled={sub.isLoading}
             className="p-0 hover:bg-gray-200 rounded transition-colors flex-shrink-0 disabled:opacity-50"
           >
-            {isLoading ? (
+            {sub.isLoading ? (
               <Loader className="w-4 h-4 animate-spin" />
             ) : isExpanded ? (
               <ChevronDown className="w-4 h-4" />
@@ -83,24 +77,58 @@ export default function FileTree({
             )}
           </button>
           <span className="text-sm text-gray-600 flex-1 truncate">
-            👤 {record.label}
+            📂 {sub.label}
           </span>
-          {record.children.length > 0 && (
+          {sub.isLoaded && sub.children.length > 0 && (
             <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
-              {record.children.length}
+              {sub.children.length}
             </span>
           )}
         </div>
 
-        {/* Files (visible when record expanded) */}
-        {isExpanded && record.isLoaded && (
+        {isExpanded && sub.isLoaded && (
+          <div className="ml-4 mt-1">
+            {sub.children.length > 0 ? (
+              sub.children.map((item) =>
+                item.type === 'record'
+                  ? renderRecord(item)
+                  : renderFile(item)
+              )
+            ) : (
+              <div className="px-2 py-1 text-xs text-gray-400 italic">No files</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderRecord = (record) => {
+    const isExpanded = expandedNodes.has(record.id);
+
+    return (
+      <div key={record.id} className="mb-1">
+        <div className="flex items-center gap-1 px-2 py-1 hover:bg-green-50 rounded cursor-pointer">
+          <button
+            onClick={() => onToggleRecord(record.id)}
+            className="p-0 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
+          >
+            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+          <span className="text-sm text-gray-600 flex-1 truncate">
+            👤 {record.label}
+          </span>
+          <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
+            {record.children.length}
+          </span>
+        </div>
+
+        {isExpanded && (
           <div className="ml-4 mt-1">
             {record.children.length > 0 ? (
               record.children.map((file) => renderFile(file))
             ) : (
-              <div className="px-2 py-1 text-xs text-gray-400 italic">
-                No files
-              </div>
+              <div className="px-2 py-1 text-xs text-gray-400 italic">No files</div>
             )}
           </div>
         )}
@@ -150,7 +178,7 @@ export default function FileTree({
 
   return (
     <div className="space-y-1">
-      {tree.map((batch) => renderBatch(batch))}
+      {tree.map((folder) => renderFolder(folder))}
     </div>
   );
 }

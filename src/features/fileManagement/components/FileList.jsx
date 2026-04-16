@@ -37,8 +37,8 @@ export default function FileList({
     ? new Date(file.lastModified).toLocaleString('id-ID')
     : '-';
 
-  const parentInfo = file.parentRecord && file.parentBatch
-    ? `${file.parentBatch} → ${file.parentRecord}`
+  const parentInfo = file.parentFolder && file.parentSubfolder
+    ? `${file.parentFolder} → ${file.parentSubfolder}${file.parentRecord ? ` → ${file.parentRecord}` : ''}`
     : 'Unknown location';
 
   return (

@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Download, Trash2, Loader, Upload as UploadIcon, Eye } from "lucide-react";
-import { getFilesForRecord, getDownloadUrl, removeFile, uploadMultipleFiles } from "@/services/storageService";
+import { getDownloadUrl, removeFile, getFilesByPath, uploadMultipleFilesToPath } from "@/services/storageService";
 import { formatFileSize, getFileIcon } from "@/utils/fileValidation"; 
 import { DocumentPreviewModal } from "@/components/common/DocumentPreviewModal"; 
 
@@ -24,7 +24,7 @@ import { DocumentPreviewModal } from "@/components/common/DocumentPreviewModal";
  *   readOnly     {boolean} - If true, disables upload and delete functions
  *   onFilesLoaded {(files) => void} - Callback when files are loaded
  */
-export function FilePreviewModal({ open, onClose, recordId, batchId, readOnly = false, onFilesLoaded }) {
+export function FilePreviewModal({ open, onClose, recordId, readOnly = false, onFilesLoaded }) {
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -36,16 +36,16 @@ export function FilePreviewModal({ open, onClose, recordId, batchId, readOnly = 
     const [previewFileName, setPreviewFileName] = useState("");
 
     useEffect(() => {
-        if (open && recordId && batchId) {
+        if (open && recordId) {
             loadFiles();
         }
-    }, [open, recordId, batchId]);
+    }, [open, recordId]);
 
     const loadFiles = async () => {
         setLoading(true);
         setError("");
         try {
-            const fileList = await getFilesForRecord(recordId, batchId);
+            const fileList = await getFilesByPath('claim', 'attachment', recordId);
             setFiles(fileList);
             onFilesLoaded?.(fileList);
         } catch (err) {
@@ -120,7 +120,7 @@ export function FilePreviewModal({ open, onClose, recordId, batchId, readOnly = 
         setUploading(true);
         setError("");
         try {
-            const result = await uploadMultipleFiles(selectedFiles, { recordId, batchId });
+            const result = await uploadMultipleFilesToPath(selectedFiles, { folder: 'claim', subfolder: 'attachment', recordId });
             if (!result.success) {
                 setError(`Failed to upload some files:\\n${result.errors.join("\\n")}`);
             }

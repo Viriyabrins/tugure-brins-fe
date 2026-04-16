@@ -9,6 +9,7 @@ import {
     toNullableString,
     normalizeDebtorRowDatesForValidation,
 } from "../utils/debtorParser";
+import { uploadFileToPath } from "@/services/storageService";
 
 export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadInitialData }) {
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -225,6 +226,15 @@ export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadIn
             const createdDebtors = result?.debtors || [];
             createdDebtorIds.push(...createdDebtors.map((d) => d.id));
             const uploaded = createdDebtors.length;
+
+            // Store raw Excel file in MinIO (non-blocking)
+            if (uploadFile) {
+                uploadFileToPath(uploadFile, {
+                    folder: 'batch',
+                    subfolder: 'excel',
+                    identifier: batchId,
+                }).catch((err) => console.error('[Batch Excel] Failed to store Excel in MinIO:', err));
+            }
 
             if (uploaded === 0) {
                 setUploadError("No debtors were created. Please check your data.");

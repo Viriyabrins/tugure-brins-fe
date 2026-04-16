@@ -88,7 +88,7 @@ export default function ClaimReview() {
         { header: "Claim Amount", cell: (row) => formatRupiahAdaptive(Number(row.nilai_klaim) || 0) },
         { header: "Share Tugure", cell: (row) => formatRupiahAdaptive(Number(row.share_tugure_amount) || 0) },
         { header: "Status", cell: (row) => <StatusBadge status={row.status} /> },
-        { header: "Files Count", cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} batchId={row.batch_id} /> },
+        { header: "Files Count", cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} /> },
         {
             header: "Actions",
             cell: (row) => (
@@ -364,7 +364,6 @@ export default function ClaimReview() {
                         setSelectedClaimForFiles(null);
                     }}
                     recordId={selectedClaimForFiles.nomor_peserta || selectedClaimForFiles.claim_no}
-                    batchId={selectedClaimForFiles.batch_id}
                     readOnly={true}
                 />
             )}

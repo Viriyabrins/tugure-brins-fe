@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -24,6 +25,7 @@ export default function BorderoManagement() {
     const [showDetailDialog, setShowDetailDialog] = useState(false);
     const [showActionDialog, setShowActionDialog] = useState(false);
     const [processing, setProcessing] = useState(false);
+    const [exporting, setExporting] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
 
     const data = useBorderoData(filters);
@@ -51,19 +53,72 @@ export default function BorderoManagement() {
         setProcessing(false);
     };
 
-    const handleExport = () => {
-        const tabMap = {
-            debtors: { data: debtors, headers: ["Debtor", "Batch", "Plafond", "Net Premi", "Status"], row: (d) => [d.nama_peserta, d.batch_id, d.plafon, d.net_premi, d.status] },
-            borderos: { data: borderos, headers: ["Bordero ID", "Period", "Total Debtors", "Total Exposure", "Total Premium", "Status"], row: (b) => [b.bordero_id, b.period, b.total_debtors, b.total_exposure, b.total_premium, b.status] },
-            claims: { data: claims, headers: ["Claim No", "Debtor", "DOL", "Claim Amount", "Status"], row: (c) => [c.claim_no, c.nama_tertanggung, c.dol, c.nilai_klaim, c.claim_status] },
-            subrogation: { data: filteredSubrogations, headers: ["Subrogation ID", "Claim ID", "Recovery Amount", "Recovery Date", "Status"], row: (s) => [s.subrogation_id, s.claim_id, s.recovery_amount, s.recovery_date, s.status] },
-        };
-        const { data: rows, headers, row } = tabMap[activeTab] || tabMap.debtors;
-        const csv = [headers.join(","), ...rows.map((r) => row(r).join(","))].join("\n");
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-        a.download = `bordero-${activeTab}-${new Date().toISOString().split("T")[0]}.csv`;
-        a.click();
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const { debtors: allDebtors, borderos: allBorderos, claims: allClaims, subrogations: allSubrogations } = await borderoService.exportAll(filters);
+
+            // Apply same client-side subrogation filter used in display
+            const allFilteredSubs = allSubrogations.filter((s) => {
+                if (filters.subrogationStatus !== "all" && s.status !== filters.subrogationStatus) return false;
+                if (filters.startDate && s.created_date < filters.startDate) return false;
+                if (filters.endDate && s.created_date > filters.endDate) return false;
+                return true;
+            });
+
+            const debtorRows = allDebtors.map((d) => ({
+                "Debtor": d.nama_peserta,
+                "Nomor Peserta": d.nomor_peserta,
+                "Branch": d.branch_desc,
+                "Region": d.region_desc,
+                "Batch": d.batch_id,
+                "Plafond": parseFloat(d.plafon) || 0,
+                "Net Premi": parseFloat(d.net_premi) || 0,
+                "Status": d.status,
+            }));
+
+            const borderoRows = allBorderos.map((b) => ({
+                "Bordero ID": b.bordero_id,
+                "Period": b.period,
+                "Contract": b.contract_id,
+                "Total Debtors": b.total_debtors,
+                "Plafond": parseFloat(b.total_plafon) || 0,
+                "Nominal Premi": parseFloat(b.total_nominal_premi) || 0,
+                "Premium Amount": parseFloat(b.total_premium_amount) || 0,
+                "Komisi": parseFloat(b.total_ric_amount) || 0,
+                "Net Premi": parseFloat(b.total_net_premi) || 0,
+                "Broker Commission": parseFloat(b.total_bf_amount) || 0,
+            }));
+
+            const claimRows = allClaims.map((c) => ({
+                "Claim No": c.claim_no,
+                "Debtor": c.nama_tertanggung,
+                "Policy No": c.policy_no,
+                "DOL": c.dol,
+                "Claim Amount": parseFloat(c.nilai_klaim) || 0,
+                "Status": c.status,
+            }));
+
+            const subrogationRows = allFilteredSubs.map((s) => ({
+                "Subrogation ID": s.subrogation_id,
+                "Claim ID": s.claim_id,
+                "Debtor ID": s.debtor_id,
+                "Recovery Amount": parseFloat(s.recovery_amount) || 0,
+                "Recovery Date": s.recovery_date,
+                "Status": s.status,
+            }));
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(debtorRows), "Debtors");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(borderoRows), "Borderos");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(claimRows), "Claims");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(subrogationRows), "Subrogation");
+
+            XLSX.writeFile(wb, `bordero-export-${new Date().toISOString().split("T")[0]}.xlsx`);
+        } catch (e) {
+            console.error("Export failed", e);
+        }
+        setExporting(false);
     };
 
     const kpiProps = [
@@ -122,7 +177,7 @@ export default function BorderoManagement() {
                 actions={
                     <div className="flex gap-2">
                         <Button variant="outline" onClick={reloadAll}><RefreshCw className="w-4 h-4 mr-2" />Refresh</Button>
-                        <Button variant="outline" onClick={handleExport}><Download className="w-4 h-4 mr-2" />Export Excel</Button>
+                        <Button variant="outline" onClick={handleExport} disabled={exporting}>{exporting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Exporting...</> : <><Download className="w-4 h-4 mr-2" />Export Excel</>}</Button>
                     </div>
                 }
             />
@@ -167,7 +222,7 @@ export default function BorderoManagement() {
                             { header: "Policy No", accessorKey: "policy_no" },
                             { header: "DOL", accessorKey: "dol" },
                             { header: "Claim Amount", cell: (r) => `IDR ${(r.nilai_klaim || 0).toLocaleString()}` },
-                            { header: "Status", cell: (r) => <StatusBadge status={r.claim_status} /> },
+                            { header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
                             { header: "Actions", cell: () => <Button variant="outline" size="sm"><Eye className="w-4 h-4" /></Button> },
                         ]}
                         data={claims} isLoading={loading} pagination={claimPagination} onPageChange={data.setClaimPage} emptyMessage="No claims found"

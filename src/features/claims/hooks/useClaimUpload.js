@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import { maskKtp, getExcelDate } from "@/shared/utils/dataTransform";
 import { backend } from "@/api/backendClient";
 import { parseClaimFile } from "../services/claimParser";
 import { claimService } from "../services/claimService";
-import { uploadFileToStorage } from "@/services/storageService";
+import { uploadFileToPath } from "@/services/storageService";
 import {
     validateClaimRow,
     validateFileInternalDuplicates,
@@ -26,12 +26,14 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
     const [validationRemarks, setValidationRemarks] = useState([]);
     const [dialogError, setDialogError] = useState("");
     const [previewValidationError, setPreviewValidationError] = useState("");
+    const rawFileRef = useRef(null);
 
     const reset = () => {
         setParsedClaims([]);
         setValidationRemarks([]);
         setDialogError("");
         setPreviewValidationError("");
+        rawFileRef.current = null;
     };
 
     /**
@@ -105,6 +107,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
      */
     const handleFileUpload = async (file, selectedBatch) => {
         if (!file || !selectedBatch) return;
+        rawFileRef.current = file;
         setProcessing(true);
         setDialogError("");
         setValidationRemarks([]);
@@ -282,6 +285,16 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
             const now = new Date();
             const prefix = `CLM-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
             let maxSeq = await claimService.getNextClaimSequence(prefix);
+
+            // Store raw Excel file in MinIO (non-blocking)
+            if (rawFileRef.current) {
+                const claimNo = `${prefix}${String(maxSeq + 1).padStart(6, "0")}`;
+                uploadFileToPath(rawFileRef.current, {
+                    folder: 'claim',
+                    subfolder: 'excel',
+                    identifier: claimNo,
+                }).catch((err) => console.error('[Claim Excel] Failed to store Excel in MinIO:', err));
+            }
 
             let uploaded = 0;
             const errors = [];

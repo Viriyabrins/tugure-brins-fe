@@ -195,7 +195,7 @@ export default function ClaimSubmit() {
         },
         {
             header: "Files Count",
-            cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} batchId={row.batch_id} />,
+            cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} />,
         },
         {
             header: "Attachments",
@@ -549,7 +549,6 @@ export default function ClaimSubmit() {
                         setSelectedClaimForFiles(null);
                     }}
                     recordId={selectedClaimForFiles.nomor_peserta || selectedClaimForFiles.claim_no}
-                    batchId={selectedClaimForFiles.batch_id}
                 />
             )}
 

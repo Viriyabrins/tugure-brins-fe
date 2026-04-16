@@ -61,14 +61,14 @@ function AdminModal({ onClose }) {
     const adminOptions = [
         {
             label: "Login as Admin — Brins",
-            url: "https://202.155.91.210:9003/admin/brins/console/#/brins/realms",
+            url: import.meta.env.VITE_KEYCLOAK_ADMIN_URL_BRINS,
             description:
                 "Access the Keycloak Admin Console for the Brins realm",
             color: "#f5a623",
         },
         {
             label: "Login as Admin — Tugure",
-            url: "https://202.155.91.210:9003/admin/tugure/console/#/tugure/realms",
+            url: import.meta.env.VITE_KEYCLOAK_ADMIN_URL_TUGURE,
             description:
                 "Access the Keycloak Admin Console for the Tugure realm",
             color: "#a78bfa",

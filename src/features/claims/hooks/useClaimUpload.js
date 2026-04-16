@@ -8,7 +8,7 @@ import { uploadFileToPath } from "@/services/storageService";
 import {
     validateClaimRow,
     validateFileInternalDuplicates,
-    validateBatchDuplicates,
+    validateExistingDuplicates,
     buildValidationSummary,
 } from "../utils/claimValidation";
 
@@ -20,7 +20,7 @@ import {
  * Usage:
  *   const { ... } = useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess });
  */
-export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess }) {
+export function useClaimUpload({ debtors, user, isBrinsUser, onSuccess }) {
     const [processing, setProcessing] = useState(false);
     const [parsedClaims, setParsedClaims] = useState([]);
     const [validationRemarks, setValidationRemarks] = useState([]);
@@ -105,8 +105,8 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
      * Step 1: Parse the file, run validation, and populate preview state.
      * Call this when the user clicks "Preview Data →".
      */
-    const handleFileUpload = async (file, selectedBatch) => {
-        if (!file || !selectedBatch) return;
+    const handleFileUpload = async (file) => {
+        if (!file) return;
         rawFileRef.current = file;
         setProcessing(true);
         setDialogError("");
@@ -114,31 +114,16 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
         setParsedClaims([]);
 
         try {
-            const batch = batches.find(
-                (b) => b.batch_id === selectedBatch || b.id === selectedBatch,
-            );
-            if (!batch) {
-                setDialogError("Batch not found");
-                setProcessing(false);
-                return false;
-            }
-
-            const batchDebtors = debtors.filter(
-                (d) => d.batch_id === batch.batch_id,
-            );
             const rows = await parseClaimFile(file);
 
             // Backend data-type validation before building preview.
-            // Date fields are pre-normalised to ISO strings so that valid dates
-            // in any format (Date objects, Excel serials, various string formats)
-            // are accepted; blank fields stay null.
             try {
                 const rowsForValidation = rows.map((row) => ({
                     ...row,
                     tanggal_realisasi_kredit: getExcelDate(row.tanggal_realisasi_kredit),
                     dol: getExcelDate(row.dol),
                 }));
-                await backend.validateClaimsPayload(rowsForValidation, batch.batch_id);
+                await backend.validateClaimsPayload(rowsForValidation);
             } catch (validationError) {
                 setDialogError(validationError?.message || "Validasi tipe data gagal. Periksa isi file dan coba lagi.");
                 setProcessing(false);
@@ -153,7 +138,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                 // required because they reference an existing claim_no instead.
                 const { debtor, issues } = isBrinsUser
                     ? { debtor: undefined, issues: [] }
-                    : validateClaimRow(row, batchDebtors);
+                    : validateClaimRow(row, debtors);
 
                 if (issues.length > 0) {
                     validationErrors.push({
@@ -196,11 +181,8 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
             // For BRINS recovery uploads, skip claim-level duplicate check
             // (Subrogation duplicates are handled at DB level by claim_id uniqueness).
             if (!isBrinsUser) {
-                const batchErrors = await validateBatchDuplicates(
-                    parsed,
-                    batch.batch_id,
-                );
-                validationErrors.push(...batchErrors);
+                const existingErrors = await validateExistingDuplicates(parsed);
+                validationErrors.push(...existingErrors);
             }
 
             setParsedClaims(parsed);
@@ -228,11 +210,10 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
      * Step 2: Submit all valid parsed rows to the backend.
      * Call this when the user clicks "Upload N Claims".
      */
-    const handleBulkUpload = async (selectedBatch) => {
+    const handleBulkUpload = async () => {
         if (
             !Array.isArray(parsedClaims) ||
-            parsedClaims.length === 0 ||
-            !selectedBatch
+            parsedClaims.length === 0
         ) {
             setDialogError(
                 isBrinsUser
@@ -244,13 +225,6 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
 
         setProcessing(true);
         try {
-            const batch = batches.find((b) => b.batch_id === selectedBatch);
-            if (!batch) {
-                setDialogError("Batch not found");
-                setProcessing(false);
-                return;
-            }
-
             // Block if there are validation errors from preview step
             if (validationRemarks && validationRemarks.length > 0) {
                 setDialogError(
@@ -260,26 +234,31 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                 return;
             }
 
+            // Derive contract_id from parsed claims for nota check
+            const contractId = parsedClaims.find((c) => c.contract_id)?.contract_id;
+
             // Block if there are notas but none are PAID
-            const batchNotas = await claimService.checkNotaPayment(
-                batch.batch_id,
-            );
-            if (
-                !batchNotas.some((n) => n.status === "PAID") &&
-                batchNotas.length > 0
-            ) {
-                setDialogError(
-                    `❌ BLOCKED: ${isBrinsUser ? "Recovery" : "Claim"} submission not allowed. Nota must be PAID first.`,
+            if (contractId) {
+                const contractNotas = await claimService.checkNotaPayment(
+                    contractId,
                 );
-                await claimService
-                    .auditBlockedSubmission(
-                        batch.batch_id,
-                        user?.email,
-                        user?.role,
-                    )
-                    .catch(() => {});
-                setProcessing(false);
-                return;
+                if (
+                    !contractNotas.some((n) => n.status === "PAID") &&
+                    contractNotas.length > 0
+                ) {
+                    setDialogError(
+                        `❌ BLOCKED: ${isBrinsUser ? "Recovery" : "Claim"} submission not allowed. Nota must be PAID first.`,
+                    );
+                    await claimService
+                        .auditBlockedSubmission(
+                            contractId,
+                            user?.email,
+                            user?.role,
+                        )
+                        .catch(() => {});
+                    setProcessing(false);
+                    return;
+                }
             }
 
             const now = new Date();
@@ -307,7 +286,6 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                     await claimService.uploadClaim(
                         claim,
                         claimNo,
-                        batch,
                         user,
                         isBrinsUser,
                     );
@@ -323,7 +301,7 @@ export function useClaimUpload({ batches, debtors, user, isBrinsUser, onSuccess 
                 await claimService
                     .notifyBulkUpload(
                         uploaded,
-                        batch.batch_id,
+                        contractId,
                         user?.email,
                         isBrinsUser,
                     )

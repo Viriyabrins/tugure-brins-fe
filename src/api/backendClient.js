@@ -311,12 +311,12 @@ export const backend = {
     }
   },
 
-  async validateClaimsPayload(rows, batchId) {
+  async validateClaimsPayload(rows) {
     const url = `/api/apps/${encodeURIComponent(appId)}/claims/validate`;
     const res = await fetch(url, await authFetchOptions({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows, batch_id: batchId }),
+      body: JSON.stringify({ rows }),
     }, url));
     if (!res.ok) {
       await throwBackendError(res);

@@ -133,7 +133,6 @@ export default function ClaimSubmit() {
         handleDownloadTemplate,
         reset: resetUpload,
     } = useClaimUpload({
-        batches,
         debtors,
         user,
         isBrinsUser,
@@ -171,7 +170,7 @@ export default function ClaimSubmit() {
 
     const claimColumns = [
         { header: "Claim No", accessorKey: "claim_no" },
-        { header: "Batch ID", accessorKey: "batch_id" },
+        { header: "Policy No", accessorKey: "policy_no" },
         {
             header: "Debtor",
             accessorKey: "nama_tertanggung",
@@ -517,7 +516,6 @@ export default function ClaimSubmit() {
                     closeDialog("upload");
                     resetUpload();
                 }}
-                batches={batches}
                 isBrinsUser={isBrinsUser}
                 parsedClaims={parsedClaims}
                 validationRemarks={validationRemarks}

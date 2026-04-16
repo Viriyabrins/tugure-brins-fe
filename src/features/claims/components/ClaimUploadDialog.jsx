@@ -10,13 +10,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, X } from "lucide-react";
 import { validateFiles, formatFileSize, getFileIcon, buildValidationErrorMessage } from "@/utils/fileValidation";
@@ -68,25 +61,23 @@ function DialogStepper({ step, isBrinsUser }) {
 }
 
 /**
- * Two-step upload dialog: (1) pick batch, claim file, & attachments → (2) preview claims before submit.
+ * Two-step upload dialog: (1) pick claim file → (2) preview claims before submit.
  *
  * Props:
  *   open               {boolean}
  *   onClose            {() => void}
- *   batches            {Array}
  *   isBrinsUser        {boolean}
  *   parsedClaims       {Array}        — populated by useClaimUpload after step 1
  *   validationRemarks  {Array}        — validation error objects
  *   dialogError        {string}
  *   previewValidationError {string}
  *   processing         {boolean}
- *   onPreview          {(file, batchId, attachedFiles) => Promise<void>}   — triggers file parse
- *   onUpload           {(batchId, attachedFiles) => Promise<void>}          — triggers bulk submit
+ *   onPreview          {(file) => Promise<void>}   — triggers file parse
+ *   onUpload           {() => Promise<void>}       — triggers bulk submit
  */
 export function ClaimUploadDialog({
     open,
     onClose,
-    batches,
     isBrinsUser,
     parsedClaims,
     validationRemarks,
@@ -97,14 +88,12 @@ export function ClaimUploadDialog({
     onUpload,
 }) {
     const [step, setStep] = useState(1);
-    const [selectedBatch, setSelectedBatch] = useState("");
     const [uploadFile, setUploadFile] = useState(null);
     const [fileValidationError, setFileValidationError] = useState("");
     const [showValidationDetails, setShowValidationDetails] = useState(false);
 
     const handleClose = () => {
         setStep(1);
-        setSelectedBatch("");
         setUploadFile(null);
         setFileValidationError("");
         setShowValidationDetails(false);
@@ -112,8 +101,8 @@ export function ClaimUploadDialog({
     };
 
     const handlePreview = async () => {
-        if (!uploadFile || !selectedBatch) return;
-        await onPreview(uploadFile, selectedBatch);
+        if (!uploadFile) return;
+        await onPreview(uploadFile);
         setStep(2);
     };
 
@@ -152,30 +141,6 @@ export function ClaimUploadDialog({
                     {step === 1 && (
                         <>
                             <div>
-                                <Label>Select Batch *</Label>
-                                <Select
-                                    value={selectedBatch}
-                                    onValueChange={setSelectedBatch}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select batch" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {Array.isArray(batches) &&
-                                            batches.map((b) => (
-                                                <SelectItem
-                                                    key={b.id}
-                                                    value={b.id}
-                                                >
-                                                    {b.batch_id} (
-                                                    {b.batch_month || ""}/
-                                                    {b.batch_year || ""})
-                                                </SelectItem>
-                                            ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
                                 <Label>Upload Claim File *</Label>
                                 <Input
                                     type="file"
@@ -184,7 +149,6 @@ export function ClaimUploadDialog({
                                         const f = e.target.files?.[0];
                                         if (f) setUploadFile(f);
                                     }}
-                                    disabled={!selectedBatch}
                                 />
                                 <p className="text-xs text-gray-500 mt-1">
                                     Excel atau CSV format
@@ -202,14 +166,6 @@ export function ClaimUploadDialog({
                                     </p>
                                     <p className="text-xl font-medium">
                                         {parsedClaims.length}
-                                    </p>
-                                </div>
-                                <div className="bg-gray-50 rounded-lg px-4 py-2">
-                                    <p className="text-xs text-gray-500">
-                                        Batch
-                                    </p>
-                                    <p className="text-sm font-medium mt-1">
-                                        {selectedBatch}
                                     </p>
                                 </div>
                                 <div className="bg-gray-50 rounded-lg px-4 py-2">
@@ -438,7 +394,7 @@ export function ClaimUploadDialog({
                         <Button
                             onClick={handlePreview}
                             disabled={
-                                processing || !uploadFile || !selectedBatch
+                                processing || !uploadFile
                             }
                         >
                             {processing ? "Processing..." : "Preview Data →"}
@@ -453,7 +409,7 @@ export function ClaimUploadDialog({
                             }`}
                         >
                             <Button
-                                onClick={() => onUpload(selectedBatch)}
+                                onClick={() => onUpload()}
                                 disabled={
                                     processing || validationRemarks.length > 0
                                 }

@@ -75,7 +75,7 @@ export default function ClaimReview() {
             width: "50px",
         },
         { header: "Claim No", accessorKey: "claim_no" },
-        { header: "Batch ID", accessorKey: "batch_id" },
+        { header: "Policy No", accessorKey: "policy_no" },
         {
             header: "Debtor", accessorKey: "nama_tertanggung",
             cell: (row) => (

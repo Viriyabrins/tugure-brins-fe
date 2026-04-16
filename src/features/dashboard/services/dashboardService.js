@@ -33,6 +33,10 @@ export const dashboardService = {
         const totalExposure = debtors.reduce((s, d) => s + (parseFloat(d.plafon) || 0), 0);
         const approvedDebtors = debtors.filter((d) => (d?.status || "").toUpperCase() === "APPROVED");
         const totalPremium = approvedDebtors.reduce((s, d) => s + toNum(d?.net_premi ?? d?.net_premium ?? d?.netPremi ?? 0), 0);
+        // Total gross premi aggregated from `premium_amount` or `premium` across all debtors
+        const totalGrossPremi = debtors.reduce((s, d) => s + toNum(d?.premium_amount ?? d?.premium ?? 0), 0);
+        // Total net premi aggregated from `net_premi` (or variants) across all debtors
+        const totalNetPremi = debtors.reduce((s, d) => s + toNum(d?.net_premi ?? d?.net_premium ?? d?.netPremi ?? 0), 0);
         const contractsApproved = contracts.filter((c) => c.contract_status === "APPROVED").length;
         const contractsSubmitted = contracts.filter((c) => ["Active", "Draft", "APPROVED_BRINS", "CHECKED_BRINS", "CHECKED_TUGURE"].includes(c.contract_status)).length;
         const claimsPaid = claims.filter((c) => c.status === "Paid").reduce((s, c) => s + (parseFloat(c.nilai_klaim) || 0), 0);
@@ -44,7 +48,7 @@ export const dashboardService = {
         const totalNotaPremium = notas.filter((n) => ["Issued", "Paid"].includes(n.status)).reduce((s, n) => s + (parseFloat(n.amount) || 0), 0);
         return {
             totalDebtors: debtors.length, approvedDebtors: approved, submittedDebtors: submitted, rejectedDebtors: rejected,
-            totalExposure, totalPremium, totalClaims: claims.length, claimsPaid, osRecovery,
+            totalExposure, totalPremium, totalGrossPremi, totalNetPremi, totalClaims: claims.length, claimsPaid, osRecovery,
             lossRatio: Number(lossRatio.toFixed(1)), totalPayments, issuedNotas, paidNotas, totalNotaPremium,
             totalContracts: contracts.length, approvedContracts: contractsApproved, submittedContracts: contractsSubmitted,
         };

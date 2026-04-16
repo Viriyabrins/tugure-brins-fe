@@ -410,22 +410,28 @@ export default function DebtorReview() {
                                         {actions.actionConfirmSummary.batchId}
                                     </p>
                                 </div>
+                                <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200 col-span-2">
+                                    <p className="text-xs text-gray-500 mb-1">Gross Premi</p>
+                                    <p className="text-2xl font-bold text-yellow-700">
+                                        {formatRupiahAdaptive(actions.actionConfirmSummary.grossPremi)}
+                                    </p>
+                                </div>
                                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
                                     <p className="text-xs text-gray-500 mb-1">Total Jumlah Debtor</p>
                                     <p className="text-2xl font-bold text-blue-700">
                                         {actions.actionConfirmSummary.count}
                                     </p>
                                 </div>
-                                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                                    <p className="text-xs text-gray-500 mb-1">Total Net Premi</p>
-                                    <p className="text-lg font-bold text-green-700">
-                                        {formatRupiahAdaptive(actions.actionConfirmSummary.totalNetPremi)}
-                                    </p>
-                                </div>
-                                <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200 col-span-2">
+                                <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
                                     <p className="text-xs text-gray-500 mb-1">Total Nilai Komisi</p>
                                     <p className="text-lg font-bold text-indigo-700">
                                         {formatRupiahAdaptive(actions.actionConfirmSummary.totalKomisi)}
+                                    </p>
+                                </div>
+                                <div className="bg-green-50 rounded-lg p-3 border border-green-200 col-span-2">
+                                    <p className="text-xs text-gray-500 mb-1">Total Net Premi</p>
+                                    <p className="text-lg font-bold text-green-700">
+                                        {formatRupiahAdaptive(actions.actionConfirmSummary.totalNetPremi)}
                                     </p>
                                 </div>
                             </div>

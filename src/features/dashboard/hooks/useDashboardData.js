@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { dashboardService } from "../services/dashboardService";
 import { toNum, DASHBOARD_COLORS } from "../utils/dashboardConstants";
 
-const EMPTY_STATS = { totalDebtors: 0, approvedDebtors: 0, submittedDebtors: 0, rejectedDebtors: 0, totalExposure: 0, totalPremium: 0, totalClaims: 0, claimsPaid: 0, osRecovery: 0, lossRatio: 0, totalPayments: 0, issuedNotas: 0, paidNotas: 0, totalNotaPremium: 0, totalContracts: 0, submittedContracts: 0, approvedContracts: 0 };
+const EMPTY_STATS = { totalDebtors: 0, approvedDebtors: 0, submittedDebtors: 0, rejectedDebtors: 0, totalExposure: 0, totalPremium: 0, totalGrossPremi: 0, totalNetPremi: 0, totalClaims: 0, claimsPaid: 0, osRecovery: 0, lossRatio: 0, totalPayments: 0, issuedNotas: 0, paidNotas: 0, totalNotaPremium: 0, totalContracts: 0, submittedContracts: 0, approvedContracts: 0 };
 
 export function useDashboardData() {
     const [period, setPeriod] = useState("2025-03");

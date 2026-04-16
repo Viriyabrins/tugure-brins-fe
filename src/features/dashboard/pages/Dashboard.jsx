@@ -54,9 +54,9 @@ export default function Dashboard() {
             {/* Primary KPIs */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <GradientStatCard title="Total Exposure" value={formatRupiahAdaptive(stats.totalExposure)} subtitle={`${stats.approvedDebtors} approved debtors`} icon={TrendingUp} gradient="from-blue-500 to-blue-600" />
-                <GradientStatCard title="Total Premium" value={formatRupiahAdaptive(stats.totalPremium)} subtitle="Net premium collected" icon={DollarSign} gradient="from-green-500 to-green-600" />
-                <GradientStatCard title="Claims Paid" value={formatRupiahAdaptive(stats.claimsPaid)} subtitle={`${claims.filter((c) => c.status === "Paid").length} claims settled`} icon={FileText} gradient="from-orange-500 to-orange-600" />
-                <GradientStatCard title="Loss Ratio" value={`${stats.lossRatio}%`} subtitle="Claims vs Premium" icon={BarChart3} gradient="from-purple-500 to-purple-600" />
+                <GradientStatCard title="Total Gross Premi" value={formatRupiahAdaptive(stats.totalGrossPremi)} subtitle="Sum of PREMIUM (all debtors)" icon={DollarSign} gradient="from-yellow-500 to-yellow-600" />
+                <GradientStatCard title="Total Net Premi" value={formatRupiahAdaptive(stats.totalNetPremi)} subtitle="Sum of NET_PREMI (all debtors)" icon={DollarSign} gradient="from-green-500 to-green-600" />
+                <GradientStatCard title="Total Premium" value={formatRupiahAdaptive(stats.totalPremium)} subtitle="Net premium (approved debtors)" icon={BarChart3} gradient="from-purple-500 to-purple-600" />
             </div>
 
             {/* Secondary KPIs */}

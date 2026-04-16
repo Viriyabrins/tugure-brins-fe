@@ -16,6 +16,7 @@ import {
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     CheckCircle2, RefreshCw, ArrowRight, Loader2, Eye, FileText, Clock,
     DollarSign, AlertTriangle, Scale, Plus, AlertCircle, Lock, Check, Download,
@@ -87,6 +88,17 @@ export default function NotaManagement() {
     const [pdfPreview, setPdfPreview] = useState(/** @type {{ nota: any, contract: any } | null} */(null));
     const [pdfDownloading, setPdfDownloading] = useState(false);
     const pdfContainerRef = useRef(/** @type {HTMLDivElement | null} */(null));
+    const [selectedNotas, setSelectedNotas] = useState(/** @type {string[]} */([]));
+
+    function toggleNotaSelection(notaNumber) {
+        setSelectedNotas((prev) =>
+            prev.includes(notaNumber) ? prev.filter((n) => n !== notaNumber) : [...prev, notaNumber]
+        );
+    }
+
+    function toggleAllNotaSelection(checked, unpaidNotas) {
+        setSelectedNotas(checked ? unpaidNotas.map((/** @type {any} */ n) => n.nota_number) : []);
+    }
 
     // Derived nota lists per tab
     const activeCategoryNotas = notas.filter((n) => {
@@ -117,7 +129,27 @@ export default function NotaManagement() {
     const typeLabel = activeTab === "claim" ? "claim" : activeTab === "subrogation" ? "subrogation" : "batch";
 
     // Nota tab columns
+    const unpaidFilteredNotas = filteredNotas.filter((n) => n.status === "UNPAID");
     const notaColumns = [
+        // Checkbox column — only for BRINS roles
+        ...(isBrinsRole(tokenRoles) ? [{
+            header: (
+                <Checkbox
+                    checked={unpaidFilteredNotas.length > 0 && unpaidFilteredNotas.every((n) => selectedNotas.includes(n.nota_number))}
+                    onCheckedChange={(checked) => toggleAllNotaSelection(checked, unpaidFilteredNotas)}
+                />
+            ),
+            cell: (row) => row.status === "UNPAID" ? (
+                <Checkbox
+                    checked={selectedNotas.includes(row.nota_number)}
+                    onCheckedChange={() => toggleNotaSelection(row.nota_number)}
+                    onClick={(e) => e.stopPropagation()}
+                />
+            ) : (
+                <Checkbox disabled checked={false} />
+            ),
+            width: "40px",
+        }] : []),
         {
             header: "Nota Number",
             cell: (row) => (
@@ -236,7 +268,7 @@ export default function NotaManagement() {
                 </div>
                 <FilterTab
                     filters={filters}
-                    onFilterChange={setFilters}
+                    onFilterChange={(f) => { setFilters(f); setSelectedNotas([]); }}
                     defaultFilters={{ contract: "all", status: "all" }}
                     filterConfig={[
                         {
@@ -249,6 +281,16 @@ export default function NotaManagement() {
                         },
                     ]}
                 />
+                {isBrinsRole(tokenRoles) && selectedNotas.length > 0 && (
+                    <div className="flex items-center gap-2">
+                        <Button className="bg-green-600 hover:bg-green-700" onClick={() => actions.setShowBulkPaidDialog(true)}>
+                            <Check className="w-4 h-4 mr-2" />Mark as Paid ({selectedNotas.length})
+                        </Button>
+                        <Button variant="ghost" onClick={() => setSelectedNotas([])}>
+                            Clear selection
+                        </Button>
+                    </div>
+                )}
                 <DataTable
                     columns={notaColumns}
                     data={filteredNotas}
@@ -256,7 +298,7 @@ export default function NotaManagement() {
                     emptyMessage={`No ${typeLabel} notas found`}
                     onRowClick={() => {}}
                     pagination={notaPagination}
-                    onPageChange={setNotaPage}
+                    onPageChange={(page) => { setNotaPage(page); setSelectedNotas([]); }}
                 />
             </>
         );
@@ -290,7 +332,7 @@ export default function NotaManagement() {
                 </Alert>
             )}
 
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setSelectedNotas([]); }}>
                 <TabsList className="grid w-full max-w-4xl grid-cols-3">
                     <TabsTrigger value="notas">Premi</TabsTrigger>
                     <TabsTrigger value="claim">Claim</TabsTrigger>
@@ -636,6 +678,35 @@ export default function NotaManagement() {
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => actions.setShowViewDialog(false)}>Close</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── Bulk Mark Paid Dialog ──────────────────────────────────────── */}
+            <Dialog open={actions.showBulkPaidDialog} onOpenChange={actions.setShowBulkPaidDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Mark Selected Notas as Paid</DialogTitle>
+                        <DialogDescription>{selectedNotas.length} nota(s) will be marked as PAID</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <Alert className="border-blue-200 bg-blue-50">
+                            <AlertCircle className="h-4 w-4 text-blue-600" />
+                            <AlertDescription className="text-blue-800">
+                                All selected notas will be updated atomically. If any update fails, all changes will be rolled back.
+                            </AlertDescription>
+                        </Alert>
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                            {selectedNotas.map((n) => (
+                                <div key={n} className="text-sm font-mono px-2 py-1 bg-gray-50 rounded">{n}</div>
+                            ))}
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => actions.setShowBulkPaidDialog(false)} disabled={actions.processing}>Cancel</Button>
+                        <Button onClick={() => actions.handleBulkMarkPaid(selectedNotas, setSelectedNotas)} disabled={actions.processing} className="bg-green-600 hover:bg-green-700">
+                            {actions.processing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : <><Check className="w-4 h-4 mr-2" />Confirm</>}
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

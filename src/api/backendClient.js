@@ -963,4 +963,20 @@ export const backend = {
       return parsed;
     } catch { return null; }
   },
+
+  async bulkMarkNotasPaid(notaNumbers, userEmail) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/notas/bulk-mark-paid`;
+    const res = await fetch(url, await authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notaNumbers, userEmail }),
+    }, url));
+    if (!res.ok) await throwBackendError(res);
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch { return null; }
+  },
 };

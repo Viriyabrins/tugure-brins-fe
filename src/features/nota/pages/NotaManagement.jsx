@@ -681,9 +681,6 @@ export default function NotaManagement() {
                 <DialogContent className="max-w-[720px]">
                     <DialogHeader>
                         <DialogTitle>PDF Preview — {pdfPreview?.nota?.nota_number}</DialogTitle>
-                        <DialogDescription>
-                            Review the nota layout. Edit NotaPDFTemplate.jsx to adjust, then re-open.
-                        </DialogDescription>
                     </DialogHeader>
                     {/* Scaled preview — actual capture uses the hidden off-screen container */}
                     <div style={{ overflowY: "auto", maxHeight: "70vh", background: "#f3f4f6", padding: "8px", borderRadius: "4px" }}>

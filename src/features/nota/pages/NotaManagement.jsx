@@ -215,11 +215,11 @@ export default function NotaManagement() {
             pdf.save(`${pdfPreview.nota.nota_number}.pdf`);
 
             root.unmount();
-            actions.setSuccessMessage("PDF (HTML template) downloaded successfully");
+            actions.setSuccessMessage("PDF downloaded successfully");
             setPdfPreview(null);
         } catch (e) {
-            console.error("Failed to generate HTML PDF:", e);
-            actions.setSuccessMessage("Failed to generate HTML PDF");
+            console.error("Failed to generate PDF:", e);
+            actions.setSuccessMessage("Failed to generate PDF");
         } finally {
             setPdfDownloading(false);
         }

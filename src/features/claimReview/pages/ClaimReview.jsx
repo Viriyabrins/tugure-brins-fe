@@ -32,7 +32,7 @@ export default function ClaimReview() {
         user, auditActor, tokenRoles,
         claims, totalClaims, subrogations, notas, contracts, debtors, batches,
         loading, filters, setFilters, claimPage, setClaimPage,
-        loadData, canCheck, canApprove,
+        loadData, isCheckerBrins, isApproverBrins, isCheckerTugure, isApproverTugure,
     } = data;
 
     const [selectedClaims, setSelectedClaims] = useState([]);
@@ -45,7 +45,9 @@ export default function ClaimReview() {
         debtors, notas, subrogations, loadData,
     });
 
-    const pendingClaims = claims.filter((c) => c.status === "SUBMITTED" || c.status === "CHECKED");
+    const pendingClaims = claims.filter((c) =>
+        ["SUBMITTED", "CHECKED_BRINS", "APPROVED_BRINS", "CHECKED_TUGURE"].includes(c.status)
+    );
 
     const claimPagination = {
         from: totalClaims === 0 ? 0 : (claimPage - 1) * CLAIM_PAGE_SIZE + 1,
@@ -94,12 +96,23 @@ export default function ClaimReview() {
                     <Button variant="outline" size="sm" onClick={() => { setSelectedClaimForFiles(row); setFilePreviewOpen(true); }}>
                         <Paperclip className="w-4 h-4" />
                     </Button>
-                    {canCheck && row.status === "SUBMITTED" && (
+                    {isCheckerBrins && row.status === "SUBMITTED" && (
                         <Button size="sm" variant="outline" onClick={() => { actions.setSelectedClaim(row); actions.setActionType("check"); actions.setShowActionDialog(true); }}>
                             <Check className="w-4 h-4 mr-1" />Check
                         </Button>
                     )}
-                    {canApprove && row.status === "CHECKED" && (
+                    {isApproverBrins && row.status === "CHECKED_BRINS" && (
+                        <Button size="sm" variant="outline" className="text-blue-600 border-blue-300"
+                            onClick={() => { actions.setSelectedClaim(row); actions.setActionType("approve_brins"); actions.setShowActionDialog(true); }}>
+                            <ShieldCheck className="w-4 h-4 mr-1" />Approve
+                        </Button>
+                    )}
+                    {isCheckerTugure && row.status === "APPROVED_BRINS" && (
+                        <Button size="sm" variant="outline" onClick={() => { actions.setSelectedClaim(row); actions.setActionType("check_tugure"); actions.setShowActionDialog(true); }}>
+                            <Check className="w-4 h-4 mr-1" />Check
+                        </Button>
+                    )}
+                    {isApproverTugure && row.status === "CHECKED_TUGURE" && (
                         <>
                             <Button size="sm" variant="outline" className="text-green-600 border-green-300"
                                 onClick={() => { actions.setSelectedClaim(row); actions.setActionType("approve"); actions.setShowActionDialog(true); }}>
@@ -153,7 +166,7 @@ export default function ClaimReview() {
                 filterConfig={[
                     { key: "contract", label: "Contract", options: [{ value: "all", label: "All Contracts" }, ...contracts.map((c) => ({ value: c.id, label: c.contract_number }))] },
                     { key: "batch", label: "Batch ID", options: [{ value: "all", label: "All Batches" }, ...batches.map((b) => ({ value: b.batch_id, label: b.batch_id }))] },
-                    { key: "claimStatus", label: "Claim Status", options: [{ value: "all", label: "All Status" }, { value: "SUBMITTED", label: "Submitted" }, { value: "CHECKED", label: "Checked" }, { value: "APPROVED", label: "Approved" }, { value: "REVISION", label: "Revision" }] },
+                    { key: "claimStatus", label: "Claim Status", options: [{ value: "all", label: "All Status" }, { value: "SUBMITTED", label: "Submitted" }, { value: "CHECKED_BRINS", label: "Checked (BRINS)" }, { value: "APPROVED_BRINS", label: "Approved (BRINS)" }, { value: "CHECKED_TUGURE", label: "Checked (TUGURE)" }, { value: "APPROVED", label: "Approved (Final)" }, { value: "REVISION", label: "Revision" }] },
                 ]}
             />
 
@@ -182,12 +195,22 @@ export default function ClaimReview() {
                                 header: "Actions",
                                 cell: (row) => (
                                     <div className="flex gap-2">
-                                        {canCheck && row.status === "SUBMITTED" && (
-                                            <Button size="sm" variant="outline" onClick={() => { actions.setSelectedSubrogation(row); actions.setSubrogationActionType("check"); actions.setShowSubrogationActionDialog(true); }}>
+                                        {isCheckerBrins && row.status === "SUBMITTED" && (
+                                            <Button size="sm" variant="outline" onClick={() => { actions.setSelectedSubrogation(row); actions.setSubrogationActionType("check_brins"); actions.setShowSubrogationActionDialog(true); }}>
                                                 <Check className="w-4 h-4 mr-1" />Check
                                             </Button>
                                         )}
-                                        {canApprove && row.status === "CHECKED" && (
+                                        {isApproverBrins && row.status === "CHECKED_BRINS" && (
+                                            <Button size="sm" variant="outline" className="text-blue-600 border-blue-300" onClick={() => { actions.setSelectedSubrogation(row); actions.setSubrogationActionType("approve_brins"); actions.setShowSubrogationActionDialog(true); }}>
+                                                <ShieldCheck className="w-4 h-4 mr-1" />Approve
+                                            </Button>
+                                        )}
+                                        {isCheckerTugure && row.status === "APPROVED_BRINS" && (
+                                            <Button size="sm" variant="outline" onClick={() => { actions.setSelectedSubrogation(row); actions.setSubrogationActionType("check_tugure"); actions.setShowSubrogationActionDialog(true); }}>
+                                                <Check className="w-4 h-4 mr-1" />Check
+                                            </Button>
+                                        )}
+                                        {isApproverTugure && row.status === "CHECKED_TUGURE" && (
                                             <>
                                                 <Button size="sm" variant="outline" className="text-green-600 border-green-300" onClick={() => { actions.setSelectedSubrogation(row); actions.setSubrogationActionType("approve"); actions.setShowSubrogationActionDialog(true); }}>
                                                     <ShieldCheck className="w-4 h-4 mr-1" />Approve
@@ -212,16 +235,19 @@ export default function ClaimReview() {
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>
-                            {actions.actionType.includes("check") && (actions.actionType.includes("bulk") ? "Bulk Check Claims" : "Check Claim")}
-                            {actions.actionType.includes("approve") && (actions.actionType.includes("bulk") ? "Bulk Approve Claims" : "Approve Claim and Issue Nota")}
-                            {actions.actionType.includes("revise") && (actions.actionType.includes("bulk") ? "Bulk Request Revision" : "Request Revision")}
+                            {actions.actionType === "check" && (actions.actionType.includes("bulk") ? "Bulk Check Claims (BRINS)" : "Check Claim — BRINS")}
+                            {actions.actionType === "bulk_check" && "Bulk Check Claims (BRINS)"}
+                            {actions.actionType === "approve_brins" && (actions.actionType.includes("bulk") ? "Bulk Approve Claims (BRINS)" : "Approve Claim — BRINS")}
+                            {actions.actionType === "check_tugure" && (actions.actionType.includes("bulk") ? "Bulk Check Claims (TUGURE)" : "Check Claim — TUGURE")}
+                            {actions.actionType === "approve" && (actions.actionType.includes("bulk") ? "Bulk Approve Claims (Final)" : "Approve Claim — Final (Issues Nota)")}
+                            {actions.actionType === "revise" && (actions.actionType.includes("bulk") ? "Bulk Request Revision" : "Request Revision")}
                         </DialogTitle>
                         <DialogDescription>
                             {actions.actionType.includes("bulk") ? `Processing ${selectedClaims.length} selected claims` : `${actions.selectedClaim?.claim_no} - ${actions.selectedClaim?.nama_tertanggung}`}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="py-4 space-y-4">
-                        {actions.actionType.includes("approve") && (
+                        {actions.actionType === "approve" && (
                             <Alert className="bg-purple-50 border-purple-200">
                                 <Plus className="h-4 w-4 text-purple-600" />
                                 <AlertDescription className="text-purple-700">
@@ -240,10 +266,12 @@ export default function ClaimReview() {
                                 </div>
                             </div>
                         )}
-                        <div>
-                            <Label>Remarks</Label>
-                            <Textarea value={actions.remarks} onChange={(e) => actions.setRemarks(e.target.value)} rows={3} placeholder="Enter remarks..." />
-                        </div>
+                        {!["check", "check_tugure"].includes(actions.actionType.replace("bulk_", "")) && (
+                            <div>
+                                <Label>Remarks</Label>
+                                <Textarea value={actions.remarks} onChange={(e) => actions.setRemarks(e.target.value)} rows={3} placeholder="Enter remarks..." />
+                            </div>
+                        )}
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => { actions.setShowActionDialog(false); actions.setRemarks(""); }}>Cancel</Button>
@@ -278,8 +306,10 @@ export default function ClaimReview() {
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>
-                            {actions.subrogationActionType === "check" && "Check Subrogation"}
-                            {actions.subrogationActionType === "approve" && "Approve Subrogation & Generate Nota"}
+                            {actions.subrogationActionType === "check_brins" && "Check Subrogation — BRINS"}
+                            {actions.subrogationActionType === "approve_brins" && "Approve Subrogation — BRINS"}
+                            {actions.subrogationActionType === "check_tugure" && "Check Subrogation — TUGURE"}
+                            {actions.subrogationActionType === "approve" && "Approve Subrogation — Final (Generates Nota)"}
                             {actions.subrogationActionType === "revise" && "Request Revision"}
                         </DialogTitle>
                         <DialogDescription>{actions.selectedSubrogation?.subrogation_id}</DialogDescription>
@@ -304,10 +334,12 @@ export default function ClaimReview() {
                                 </div>
                             </div>
                         )}
-                        <div>
-                            <Label>Remarks</Label>
-                            <Textarea value={actions.subrogationRemarks} onChange={(e) => actions.setSubrogationRemarks(e.target.value)} rows={3} placeholder="Enter remarks..." />
-                        </div>
+                        {!["check_brins", "check_tugure"].includes(actions.subrogationActionType) && (
+                            <div>
+                                <Label>Remarks</Label>
+                                <Textarea value={actions.subrogationRemarks} onChange={(e) => actions.setSubrogationRemarks(e.target.value)} rows={3} placeholder="Enter remarks..." />
+                            </div>
+                        )}
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => { actions.setShowSubrogationActionDialog(false); actions.setSubrogationRemarks(""); actions.setSubrogationActionType(""); }}>Cancel</Button>

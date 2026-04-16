@@ -53,8 +53,29 @@ export const claimReviewService = {
             actorEmail: auditActor?.user_email || user?.email,
             actorRole: auditActor?.user_role || user?.role,
         });
-        await _notify(`Claim CHECKED`, `Claim ${claim.claim_no} moved to CHECKED`, "INFO", "CLAIM", claimId, "tugure-approver-role");
+        await _notify(`Claim Checked by BRINS`, `Claim ${claim.claim_no} moved to CHECKED_BRINS`, "INFO", "CLAIM", claimId, "approver-brins-role");
         return { blocked: false };
+    },
+
+    async approveBrinsClaim(claim, remarks, user, auditActor) {
+        const claimId = claim.claim_no || claim.id;
+        await backend.processClaimWorkflowAction(claimId, {
+            action: "APPROVE_BRINS",
+            remarks,
+            actorEmail: auditActor?.user_email || user?.email,
+            actorRole: auditActor?.user_role || user?.role,
+        });
+        await _notify(`Claim Approved by BRINS`, `Claim ${claim.claim_no} moved to APPROVED_BRINS`, "INFO", "CLAIM", claimId, "checker-tugure-role");
+    },
+
+    async checkTugureClaim(claim, user, auditActor) {
+        const claimId = claim.claim_no || claim.id;
+        await backend.processClaimWorkflowAction(claimId, {
+            action: "CHECK_TUGURE",
+            actorEmail: auditActor?.user_email || user?.email,
+            actorRole: auditActor?.user_role || user?.role,
+        });
+        await _notify(`Claim Checked by TUGURE`, `Claim ${claim.claim_no} moved to CHECKED_TUGURE`, "INFO", "CLAIM", claimId, "approver-tugure-role");
     },
 
     async approveClaim(claim, remarks, user, auditActor) {
@@ -83,7 +104,17 @@ export const claimReviewService = {
 
     async checkSubrogation(subrogation, user, auditActor) {
         const subId = subrogation.subrogation_id || subrogation.id;
-        await backend.processSubrogationWorkflowAction(subId, { action: "check" });
+        await backend.processSubrogationWorkflowAction(subId, { action: "check_brins" });
+    },
+
+    async approveBrinsSubrogation(subrogation, user, auditActor) {
+        const subId = subrogation.subrogation_id || subrogation.id;
+        await backend.processSubrogationWorkflowAction(subId, { action: "approve_brins" });
+    },
+
+    async checkTugureSubrogation(subrogation, user, auditActor) {
+        const subId = subrogation.subrogation_id || subrogation.id;
+        await backend.processSubrogationWorkflowAction(subId, { action: "check_tugure" });
     },
 
     async approveSubrogation(subrogation, claims, remarks, user, auditActor) {

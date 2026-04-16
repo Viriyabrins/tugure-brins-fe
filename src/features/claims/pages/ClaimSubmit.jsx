@@ -2,6 +2,11 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
 import {
     FileText,
     Upload,
@@ -13,6 +18,10 @@ import {
     DollarSign,
     TrendingUp,
     Paperclip,
+    Check,
+    ShieldCheck,
+    Pen,
+    Loader2,
 } from "lucide-react";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import PageHeader from "@/components/common/PageHeader";
@@ -20,6 +29,7 @@ import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
+import { backend } from "@/api/backendClient";
 
 import { useUserTenant } from "@/shared/hooks/useUserTenant";
 import { useCurrentUser } from "@/shared/hooks/useCurrentUser";
@@ -37,10 +47,57 @@ export default function ClaimSubmit() {
     const { isBrinsUser, isTugureUser } = useUserTenant();
     const { user, userRoles, hasAnyRole } = useCurrentUser();
 
+    const isCheckerBrins = hasAnyRole("checker-brins-role");
+    const isApproverBrins = hasAnyRole("approver-brins-role");
+
     const canShowActionButtons = hasAnyRole(
         "maker-brins-role",
         "checker-brins-role",
+        "approver-brins-role",
     );
+
+    // ── Claim workflow action state ──────────────────────────────────────────
+    const [showActionDialog, setShowActionDialog] = useState(false);
+    const [selectedClaim, setSelectedClaim] = useState(null);
+    const [actionType, setActionType] = useState("");
+    const [remarks, setRemarks] = useState("");
+    const [actionProcessing, setActionProcessing] = useState(false);
+    const [actionError, setActionError] = useState("");
+
+    async function handleClaimAction() {
+        if (!selectedClaim || !actionType) return;
+        setActionProcessing(true);
+        setActionError("");
+        try {
+            const claimId = selectedClaim.claim_no || selectedClaim.id;
+            const ACTION_MAP = {
+                check: "CHECK_BRINS",
+                approve_brins: "APPROVE_BRINS",
+                revise: "REVISION",
+            };
+            await backend.processClaimWorkflowAction(claimId, {
+                action: ACTION_MAP[actionType],
+                remarks,
+                actorEmail: user?.email,
+                actorRole: user?.role,
+            });
+            const ACTION_LABEL = {
+                check: "checked (BRINS)",
+                approve_brins: "approved (BRINS)",
+                revise: "sent for revision",
+            };
+            setSuccessMessage(`Claim ${ACTION_LABEL[actionType]} successfully`);
+            setShowActionDialog(false);
+            setSelectedClaim(null);
+            setRemarks("");
+            setActionType("");
+            loadAll();
+        } catch (e) {
+            console.error("Claim action error:", e);
+            setActionError(e.message || "Failed to process claim");
+        }
+        setActionProcessing(false);
+    }
 
     const [filters, setFilters] = useState(DEFAULT_CLAIM_FILTER);
     const [activeTab, setActiveTab] = useState("claims");
@@ -150,6 +207,25 @@ export default function ClaimSubmit() {
                 >
                     <Paperclip className="w-4 h-4" />
                 </Button>
+            ),
+        },
+        {
+            header: "Actions",
+            cell: (row) => (
+                <div className="flex gap-2">
+                    {isCheckerBrins && row.status === "SUBMITTED" && (
+                        <Button size="sm" variant="outline"
+                            onClick={() => { setSelectedClaim(row); setActionType("check"); setShowActionDialog(true); }}>
+                            <Check className="w-4 h-4 mr-1" />Check
+                        </Button>
+                    )}
+                    {isApproverBrins && row.status === "CHECKED_BRINS" && (
+                        <Button size="sm" variant="outline" className="text-blue-600 border-blue-300"
+                            onClick={() => { setSelectedClaim(row); setActionType("approve_brins"); setShowActionDialog(true); }}>
+                            <ShieldCheck className="w-4 h-4 mr-1" />Approve
+                        </Button>
+                    )}
+                </div>
             ),
         },
     ];
@@ -308,8 +384,10 @@ export default function ClaimSubmit() {
                                     : "All Claim Status",
                             },
                             { value: "SUBMITTED", label: "Submitted" },
-                            { value: "CHECKED", label: "Checked" },
-                            { value: "APPROVED", label: "Approved" },
+                            { value: "CHECKED_BRINS", label: "Checked (BRINS)" },
+                            { value: "APPROVED_BRINS", label: "Approved (BRINS)" },
+                            { value: "CHECKED_TUGURE", label: "Checked (TUGURE)" },
+                            { value: "APPROVED", label: "Approved (Final)" },
                             { value: "REVISION", label: "Revision" },
                         ],
                     },
@@ -471,6 +549,50 @@ export default function ClaimSubmit() {
                     batchId={selectedClaimForFiles.batch_id}
                 />
             )}
+
+            {/* ── BRINS Workflow Action Dialog ─────────────────────────────── */}
+            <Dialog open={showActionDialog} onOpenChange={(open) => { setShowActionDialog(open); if (!open) { setRemarks(""); setActionError(""); } }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            {actionType === "check" && "Check Claim — BRINS"}
+                            {actionType === "approve_brins" && "Approve Claim — BRINS"}
+                            {actionType === "revise" && "Request Revision"}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {selectedClaim?.claim_no} — {selectedClaim?.nama_tertanggung}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div><span className="text-gray-500">Claim No:</span><span className="ml-2 font-medium">{selectedClaim?.claim_no}</span></div>
+                                <div><span className="text-gray-500">Debtor:</span><span className="ml-2 font-medium">{selectedClaim?.nama_tertanggung}</span></div>
+                                <div><span className="text-gray-500">Claim Amount:</span><span className="ml-2 font-bold">{formatRupiahAdaptive(Number(selectedClaim?.nilai_klaim) || 0)}</span></div>
+                                <div><span className="text-gray-500">Current Status:</span><span className="ml-2"><StatusBadge status={selectedClaim?.status} /></span></div>
+                            </div>
+                        </div>
+                        {actionType !== "check" && (
+                            <div>
+                                <Label>Remarks</Label>
+                                <Textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={3} placeholder="Enter remarks..." />
+                            </div>
+                        )}
+                        {actionError && (
+                            <Alert variant="destructive">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertDescription>{actionError}</AlertDescription>
+                            </Alert>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => { setShowActionDialog(false); setRemarks(""); setActionError(""); }}>Cancel</Button>
+                        <Button onClick={handleClaimAction} disabled={actionProcessing} className="bg-blue-600" type="button">
+                            {actionProcessing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}Confirm
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

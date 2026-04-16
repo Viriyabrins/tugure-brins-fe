@@ -1,6 +1,6 @@
 export const CLAIM_PAGE_SIZE = 10;
 
-export const CLAIM_STATUSES = ["SUBMITTED", "CHECKED", "APPROVED", "REVISION"];
+export const CLAIM_STATUSES = ["SUBMITTED", "CHECKED_BRINS", "APPROVED_BRINS", "CHECKED_TUGURE", "APPROVED", "REVISION"];
 
 export const DEFAULT_CLAIM_FILTER = {
     contract: "all",

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { claimReviewService } from "../services/claimReviewService";
-import { DEFAULT_CLAIM_FILTER, CLAIM_PAGE_SIZE, canCheckClaim, canApproveClaim, normalizeRole } from "../utils/claimReviewConstants";
+import { DEFAULT_CLAIM_FILTER, CLAIM_PAGE_SIZE, canCheckBrinsClaim, canApproveBrinsClaim, canCheckTugureClaim, canApproveTugureClaim, normalizeRole } from "../utils/claimReviewConstants";
 
 export function useClaimReviewData() {
     const [user, setUser] = useState(null);
@@ -87,7 +87,12 @@ export function useClaimReviewData() {
         claims, totalClaims, subrogations, notas, contracts, debtors, batches,
         loading, filters, setFilters, claimPage, setClaimPage,
         loadData, loadClaims,
-        canCheck: canCheckClaim(tokenRoles),
-        canApprove: canApproveClaim(tokenRoles),
+        isCheckerBrins: canCheckBrinsClaim(tokenRoles),
+        isApproverBrins: canApproveBrinsClaim(tokenRoles),
+        isCheckerTugure: canCheckTugureClaim(tokenRoles),
+        isApproverTugure: canApproveTugureClaim(tokenRoles),
+        // Legacy aliases
+        canCheck: canCheckTugureClaim(tokenRoles),
+        canApprove: canApproveTugureClaim(tokenRoles),
     };
 }

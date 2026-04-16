@@ -8,8 +8,18 @@ export const DEFAULT_CLAIM_FILTER = {
 
 export const normalizeRole = (role = "") => String(role).trim().toLowerCase();
 
-export const canCheckClaim = (roles = []) =>
+export const canCheckBrinsClaim = (roles = []) =>
+    (Array.isArray(roles) ? roles : []).map(normalizeRole).some((r) => r === "checker-brins-role");
+
+export const canApproveBrinsClaim = (roles = []) =>
+    (Array.isArray(roles) ? roles : []).map(normalizeRole).some((r) => r === "approver-brins-role");
+
+export const canCheckTugureClaim = (roles = []) =>
     (Array.isArray(roles) ? roles : []).map(normalizeRole).some((r) => r === "checker-tugure-role");
 
-export const canApproveClaim = (roles = []) =>
+export const canApproveTugureClaim = (roles = []) =>
     (Array.isArray(roles) ? roles : []).map(normalizeRole).some((r) => r === "approver-tugure-role");
+
+// Legacy aliases kept for backwards compat
+export const canCheckClaim = canCheckTugureClaim;
+export const canApproveClaim = canApproveTugureClaim;

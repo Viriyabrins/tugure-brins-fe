@@ -23,9 +23,9 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       proxy: {
         '/api': {
-          // VITE_API_PROXY must be a full URL (e.g. http://host:10011), never a path like /api.
-          // PROXY_TARGET is the fallback for server.js; use the same value here for consistency.
-          target: env.VITE_API_PROXY || env.PROXY_TARGET || 'http://localhost:4000',
+          // PROXY_TARGET (no VITE_ prefix) is server-side only and never exposed to the browser bundle.
+          // VITE_API_PROXY should be '/api' — safe to expose, used only for debug logging.
+          target: env.PROXY_TARGET,
           changeOrigin: true,
           secure: false,
           // Enable WebSocket-like streaming for SSE

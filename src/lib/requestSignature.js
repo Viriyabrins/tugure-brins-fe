@@ -12,7 +12,7 @@
  * Algoritma : HMAC-SHA256
  *   - Secure context (HTTPS / localhost) → Web Crypto API (SubtleCrypto)
  *   - Non-secure context (plain HTTP)    → CryptoJS fallback
- * Expiry    : 5 detik — divalidasi di backend
+ * Expiry    : 10 detik — divalidasi di backend
  *
  * Headers yang dikirim:
  *   X-Signature           — hex HMAC-SHA256 dari canonical payload

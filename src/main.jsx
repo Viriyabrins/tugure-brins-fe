@@ -9,7 +9,6 @@ import { initServerTimeSync } from './lib/requestSignature'
 console.log('Frontend env', {
   mode: import.meta.env.MODE,
   apiProxy: import.meta.env.VITE_API_PROXY,
-  database: import.meta.env.DATABASE_URL
 })
 
 const rootElement = document.getElementById('root')

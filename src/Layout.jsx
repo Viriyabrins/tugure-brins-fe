@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { 
   LayoutDashboard, FileText, Upload, FileCheck, BarChart3, 
   DollarSign, CreditCard, Scale, Bell, User, Settings, 
-  LogOut, Menu, X, ChevronRight, Shield, Activity, Lock, Folder
+  LogOut, Menu, X, ChevronRight, Shield, Activity, Lock, Folder, Wrench
 } from "lucide-react";
 import { useKeycloakAuth } from './lib/KeycloakContext';
 import { useViewerRole } from '@/hooks/usePermissions';
@@ -117,7 +117,8 @@ export default function Layout({ children, currentPageName }) {
       { name: 'Recap Summary', icon: BarChart3, path: 'RecapSummary', roles: [] },
       { name: 'Audit Log', icon: Activity, path: 'AuditLog', roles: [] },
       { name: 'System Configuration', icon: Settings, path: 'SystemConfiguration', roles: [] },
-      { name: 'Profile', icon: User, path: 'Profile', roles: [] }
+      { name: 'Profile', icon: User, path: 'Profile', roles: [] },
+      ...(import.meta.env.MODE !== 'production' ? [{ name: 'Developer Tools', icon: Wrench, path: 'DevTools', roles: [] }] : [])
     ]
   };
 

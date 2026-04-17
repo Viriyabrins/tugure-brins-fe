@@ -20,6 +20,7 @@ import Profile from './pages/Profile';
 import SubmitDebtor from './pages/SubmitDebtor';
 import SystemConfiguration from './pages/SystemConfiguration';
 import WorkflowGuide from './pages/WorkflowGuide';
+import DevTools from './pages/DevTools';
 import __Layout from './Layout.jsx';
 
 
@@ -46,6 +47,7 @@ export const PAGES = {
     "SubmitDebtor": SubmitDebtor,
     "SystemConfiguration": SystemConfiguration,
     "WorkflowGuide": WorkflowGuide,
+    ...(import.meta.env.MODE !== 'production' ? { "DevTools": DevTools } : {}),
 }
 
 export const pagesConfig = {

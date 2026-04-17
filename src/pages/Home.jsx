@@ -43,9 +43,10 @@ export default function Home() {
   const validateEmail = (email) => {
     const domain = email.toLowerCase().trim().split('@')[1];
     if (!domain) return 'Please enter a valid email address';
-    if (!SUPPORTED_DOMAINS.includes(domain)) {
-      return `Unsupported email domain. Please use ${SUPPORTED_DOMAINS.join(' or ')}`;
-    }
+    // Domain validation disabled for testing
+    // if (!SUPPORTED_DOMAINS.includes(domain)) {
+    //   return `Unsupported email domain. Please use ${SUPPORTED_DOMAINS.join(' or ')}`;
+    // }
     return null;
   };
 

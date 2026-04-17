@@ -35,12 +35,7 @@ const PublicRedirect = () => {
   }
 
   const HomePage = Pages.Home;
-
-  return (
-    <LayoutWrapper currentPageName="Home">
-      <HomePage />
-    </LayoutWrapper>
-  );
+  return <HomePage />;
 };
 
 const AppRoutes = () => {

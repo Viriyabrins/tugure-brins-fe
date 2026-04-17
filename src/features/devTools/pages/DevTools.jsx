@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,14 +15,32 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Trash2, AlertTriangle, Wrench, Database, HardDrive } from 'lucide-react';
-import { resetAllData } from '../services/devToolsService';
+import { Trash2, AlertTriangle, Wrench, Database, HardDrive, RefreshCw } from 'lucide-react';
+import { resetAllData, fetchDataCounts } from '../services/devToolsService';
 
 export default function DevTools() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [loading, setLoading] = useState(false);
   const [lastResult, setLastResult] = useState(null);
+  const [counts, setCounts] = useState(null);
+  const [countsLoading, setCountsLoading] = useState(true);
+
+  const loadCounts = async () => {
+    setCountsLoading(true);
+    try {
+      const data = await fetchDataCounts();
+      setCounts(data);
+    } catch (err) {
+      toast.error(err.message || 'Failed to load data counts');
+    } finally {
+      setCountsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCounts();
+  }, []);
 
   const handleReset = async () => {
     setShowConfirm(false);
@@ -31,6 +50,7 @@ export default function DevTools() {
       const result = await resetAllData();
       setLastResult(result.data);
       toast.success(result.message);
+      await loadCounts();
     } catch (err) {
       toast.error(err.message || 'Reset failed');
     } finally {
@@ -59,6 +79,78 @@ export default function DevTools() {
         </AlertDescription>
       </Alert>
 
+      {/* Current Data Counts */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="w-5 h-5" />
+                Current Data
+              </CardTitle>
+              <CardDescription>
+                Overview of all records currently in the database and S3 storage.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-3">
+              {counts && (
+                <div className="flex gap-2">
+                  <Badge variant="secondary" className="text-sm">
+                    {counts.totalDb} DB records
+                  </Badge>
+                  <Badge variant="secondary" className="text-sm">
+                    {counts.totalS3} S3 files
+                  </Badge>
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={loadCounts} disabled={countsLoading}>
+                <RefreshCw className={`w-4 h-4 mr-1 ${countsLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {countsLoading && !counts ? (
+            <p className="text-sm text-gray-500">Loading data counts...</p>
+          ) : counts ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase mb-3">Database Tables</p>
+                <div className="space-y-1">
+                  {Object.entries(counts.database).map(([table, count]) => (
+                    <div key={table} className="flex justify-between text-sm py-1 px-2 rounded hover:bg-gray-50">
+                      <span className="text-gray-600">{table}</span>
+                      <span className={`font-mono ${count > 0 ? 'text-blue-600 font-semibold' : 'text-gray-400'}`}>
+                        {count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase mb-3">S3 Storage</p>
+                <div className="space-y-1">
+                  {Object.entries(counts.s3).map(([prefix, count]) => (
+                    <div key={prefix} className="flex justify-between text-sm py-1 px-2 rounded hover:bg-gray-50">
+                      <span className="text-gray-600">{prefix}</span>
+                      <span className={`font-mono ${count > 0 ? 'text-blue-600 font-semibold' : 'text-gray-400'}`}>
+                        {count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-4">
+                  SystemConfig, EmailTemplate, SlaRule, and NotificationSetting are preserved during reset.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-red-500">Failed to load counts.</p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Reset Card */}
       <Card className="border-red-200">
         <CardHeader>
@@ -70,54 +162,25 @@ export default function DevTools() {
             Delete all data records from the database and remove uploaded files from S3 storage.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-lg border p-4 space-y-2">
-              <div className="flex items-center gap-2 font-medium text-gray-700">
-                <Database className="w-4 h-4" />
-                Database Tables Cleared
-              </div>
-              <ul className="text-sm text-gray-500 space-y-1 ml-6 list-disc">
-                <li>MasterContract, Batch, Debtor, Bordero</li>
-                <li>Claim, Subrogation, Nota, Record</li>
-                <li>Document, Invoice, Payment, PaymentIntent</li>
-                <li>DebitCreditNote, Reconciliation</li>
-                <li>ContractRevise, DebtorRevise, ReviseLog</li>
-                <li>AuditLog, Notification, Contract</li>
-              </ul>
-            </div>
-            <div className="rounded-lg border p-4 space-y-2">
-              <div className="flex items-center gap-2 font-medium text-gray-700">
-                <HardDrive className="w-4 h-4" />
-                S3 Files Deleted
-              </div>
-              <ul className="text-sm text-gray-500 space-y-1 ml-6 list-disc">
-                <li>master-contract/*</li>
-                <li>claim/*</li>
-                <li>batch/*</li>
-                <li>subrogation/*</li>
-              </ul>
-              <p className="text-xs text-gray-400 mt-2">
-                SystemConfig, EmailTemplate, SlaRule, and NotificationSetting are preserved.
-              </p>
-            </div>
-          </div>
-
+        <CardContent>
           <Button
             variant="destructive"
             onClick={() => setShowConfirm(true)}
-            disabled={loading}
+            disabled={loading || (counts && counts.totalDb === 0 && counts.totalS3 === 0)}
             className="w-full sm:w-auto"
           >
             {loading ? (
               <>
-                <span className="animate-spin mr-2">⏳</span>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                 Resetting...
               </>
             ) : (
               <>
                 <Trash2 className="w-4 h-4 mr-2" />
                 Reset All Data
+                {counts && (counts.totalDb > 0 || counts.totalS3 > 0) && (
+                  <span className="ml-2">({counts.totalDb + counts.totalS3} items)</span>
+                )}
               </>
             )}
           </Button>

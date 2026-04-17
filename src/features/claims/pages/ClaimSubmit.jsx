@@ -21,6 +21,7 @@ import {
     ShieldCheck,
     Pen,
     Loader2,
+    Eye,
 } from "lucide-react";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import PageHeader from "@/components/common/PageHeader";
@@ -57,6 +58,7 @@ export default function ClaimSubmit() {
 
     // ── Claim workflow action state ──────────────────────────────────────────
     const [showActionDialog, setShowActionDialog] = useState(false);
+    const [showDetailDialog, setShowDetailDialog] = useState(false);
     const [selectedClaim, setSelectedClaim] = useState(null);
     const [actionType, setActionType] = useState("");
     const [remarks, setRemarks] = useState("");
@@ -212,6 +214,10 @@ export default function ClaimSubmit() {
             header: "Actions",
             cell: (row) => (
                 <div className="flex gap-2">
+                    <Button size="sm" variant="outline"
+                        onClick={() => { setSelectedClaim(row); setShowDetailDialog(true); }}>
+                        <Eye className="w-4 h-4" />
+                    </Button>
                     {isCheckerBrins && row.status === "SUBMITTED" && (
                         <Button size="sm" variant="outline"
                             onClick={() => { setSelectedClaim(row); setActionType("check"); setShowActionDialog(true); }}>
@@ -524,6 +530,27 @@ export default function ClaimSubmit() {
                     recordId={selectedClaimForFiles.nomor_peserta || selectedClaimForFiles.claim_no}
                 />
             )}
+
+            {/* ── Detail Dialog ─────────────────────────────────────────── */}
+            <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+                <DialogContent className="max-w-4xl w-full" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+                    <DialogHeader>
+                        <DialogTitle>Claim Details</DialogTitle>
+                        <DialogDescription>{selectedClaim?.claim_no}</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {selectedClaim && Object.entries(selectedClaim).filter(([key]) => key !== "id").map(([key, val]) => (
+                            <div key={key} className="border rounded p-2">
+                                <div className="font-medium text-gray-600">{key}</div>
+                                <div className="break-words">{val === null || val === undefined || val === "" ? "-" : String(val)}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => setShowDetailDialog(false)}>Close</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* ── BRINS Workflow Action Dialog ─────────────────────────────── */}
             <Dialog open={showActionDialog} onOpenChange={(open) => { setShowActionDialog(open); if (!open) { setRemarks(""); setActionError(""); } }}>

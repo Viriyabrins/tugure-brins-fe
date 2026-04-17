@@ -286,18 +286,18 @@ export default function ClaimReview() {
 
             {/* ── View Dialog ─────────────────────────────────────────────────── */}
             <Dialog open={actions.showViewDialog} onOpenChange={actions.setShowViewDialog}>
-                <DialogContent>
+                <DialogContent className="max-w-4xl w-full" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflowY: "auto" }}>
                     <DialogHeader>
                         <DialogTitle>Claim Details</DialogTitle>
                         <DialogDescription>{actions.selectedClaim?.claim_no}</DialogDescription>
                     </DialogHeader>
-                    <div className="py-4">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-500">Claim No:</span><span className="ml-2 font-medium">{actions.selectedClaim?.claim_no}</span></div>
-                            <div><span className="text-gray-500">Debtor:</span><span className="ml-2 font-medium">{actions.selectedClaim?.nama_tertanggung}</span></div>
-                            <div><span className="text-gray-500">Amount:</span><span className="ml-2 font-medium">{formatRupiahAdaptive(Number(actions.selectedClaim?.nilai_klaim) || 0)}</span></div>
-                            <div><span className="text-gray-500">Status:</span><StatusBadge status={actions.selectedClaim?.status} /></div>
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {actions.selectedClaim && Object.entries(actions.selectedClaim).filter(([key]) => key !== "id").map(([key, val]) => (
+                            <div key={key} className="border rounded p-2">
+                                <div className="font-medium text-gray-600">{key}</div>
+                                <div className="break-words">{val === null || val === undefined || val === "" ? "-" : String(val)}</div>
+                            </div>
+                        ))}
                     </div>
                     <DialogFooter><Button onClick={() => actions.setShowViewDialog(false)}>Close</Button></DialogFooter>
                 </DialogContent>

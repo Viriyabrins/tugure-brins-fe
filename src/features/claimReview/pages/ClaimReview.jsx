@@ -168,7 +168,6 @@ export default function ClaimReview() {
             <FilterTab filters={filters} onFilterChange={setFilters} defaultFilters={DEFAULT_CLAIM_FILTER}
                 filterConfig={[
                     { key: "contract", label: "Contract", options: [{ value: "all", label: "All Contracts" }, ...contracts.map((c) => ({ value: c.id, label: c.contract_number }))] },
-                    { key: "batch", label: "Batch ID", options: [{ value: "all", label: "All Batches" }, ...batches.map((b) => ({ value: b.batch_id, label: b.batch_id }))] },
                     { key: "claimStatus", label: "Claim Status", options: [{ value: "all", label: "All Status" }, { value: "SUBMITTED", label: "Submitted" }, { value: "CHECKED_BRINS", label: "Checked (BRINS)" }, { value: "APPROVED_BRINS", label: "Approved (BRINS)" }, { value: "CHECKED_TUGURE", label: "Checked (TUGURE)" }, { value: "APPROVED", label: "Approved (Final)" }, { value: "REVISION", label: "Revision" }] },
                 ]}
             />

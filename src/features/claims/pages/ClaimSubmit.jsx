@@ -16,7 +16,6 @@ import {
     RefreshCw,
     Plus,
     DollarSign,
-    TrendingUp,
     Paperclip,
     Check,
     ShieldCheck,
@@ -39,7 +38,6 @@ import { useClaimUpload } from "../hooks/useClaimUpload";
 import { ClaimUploadDialog } from "../components/ClaimUploadDialog";
 import { SubrogationDialog } from "../components/SubrogationDialog";
 import { FilePreviewModal } from "../components/FilePreviewModal";
-import { ClaimTrendTab } from "../components/ClaimTrendTab";
 import { AttachmentCount } from "@/components/common/AttachmentCount";
 import { DEFAULT_CLAIM_FILTER, CLAIM_TEMPLATE_HEADERS, CLAIM_TEMPLATE_SAMPLE } from "../utils/claimConstants";
 import { useClaimSSE } from "@/hooks/useDebtorSSE";
@@ -112,7 +110,6 @@ export default function ClaimSubmit() {
         debtors,
         batches,
         contracts,
-        allClaimsForTrend,
         notas,
         loading,
         error,
@@ -362,18 +359,6 @@ export default function ClaimSubmit() {
                         ],
                     },
                     {
-                        key: "batch",
-                        placeholder: "Batch ID",
-                        label: "Batch ID",
-                        options: [
-                            { value: "all", label: "All Batches" },
-                            ...batches.map((b) => ({
-                                value: b.batch_id,
-                                label: b.batch_id,
-                            })),
-                        ],
-                    },
-                    {
                         key: "claimStatus",
                         label: isBrinsUser
                             ? "Recovery Status"
@@ -406,10 +391,6 @@ export default function ClaimSubmit() {
                     <TabsTrigger value="subrogation">
                         <DollarSign className="w-4 h-4 mr-2" />
                         Subrogation ({subrogations.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="trend">
-                        <TrendingUp className="w-4 h-4 mr-2" />
-                        Trend Analysis
                     </TabsTrigger>
                 </TabsList>
 
@@ -501,13 +482,7 @@ export default function ClaimSubmit() {
                     />
                 </TabsContent>
 
-                <TabsContent value="trend" className="mt-4">
-                    <ClaimTrendTab
-                        allClaimsForTrend={allClaimsForTrend}
-                        batches={batches}
-                        isBrinsUser={isBrinsUser}
-                    />
-                </TabsContent>
+
             </Tabs>
 
             <ClaimUploadDialog

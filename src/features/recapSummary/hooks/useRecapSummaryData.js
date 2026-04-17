@@ -70,6 +70,7 @@ export function useRecapSummaryData() {
         loading, filters, setFilters, tsiFilters, setTsiFilters,
         filteredRows, grandTotal, tsiYearOptions,
         yearFilteredDebtors, activeDebtors, nonActiveDebtors,
+        claims, batches,
         reload,
     };
 }

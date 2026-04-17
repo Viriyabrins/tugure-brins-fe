@@ -10,6 +10,8 @@ import FilterTab from "@/components/common/FilterTab";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import { MONTHS, DEFAULT_RECAP_FILTER, DEFAULT_TSI_FILTER, aggregateDebtorsByBatch } from "../utils/recapSummaryConstants";
 import { useRecapSummaryData } from "../hooks/useRecapSummaryData";
+import { ClaimTrendTab } from "@/features/claims/components/ClaimTrendTab";
+import { useUserTenant } from "@/shared/hooks/useUserTenant";
 
 function DebtorTsiSection({ title, gradient, debtors = [], loading }) {
     const totalCount = debtors.length;
@@ -80,7 +82,8 @@ function DebtorTsiSection({ title, gradient, debtors = [], loading }) {
 
 export default function RecapSummary() {
     const [activeTab, setActiveTab] = useState("debtor-batch");
-    const { loading, filters, setFilters, tsiFilters, setTsiFilters, filteredRows, grandTotal, tsiYearOptions, yearFilteredDebtors, activeDebtors, nonActiveDebtors } = useRecapSummaryData();
+    const { loading, filters, setFilters, tsiFilters, setTsiFilters, filteredRows, grandTotal, tsiYearOptions, yearFilteredDebtors, activeDebtors, nonActiveDebtors, claims, batches } = useRecapSummaryData();
+    const { isBrinsUser } = useUserTenant();
 
     const totalPremium = filteredRows.reduce((s, r) => s + r.premium_idr, 0);
     const totalClaimAmt = filteredRows.reduce((s, r) => s + r.claim_idr, 0);
@@ -101,6 +104,9 @@ export default function RecapSummary() {
                 <TabsList className="bg-gray-100 p-1 rounded-lg">
                     <TabsTrigger value="debtor-batch" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md px-6">Debtor Batch</TabsTrigger>
                     <TabsTrigger value="recap-tsi" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md px-6">Recap TSI</TabsTrigger>
+                    <TabsTrigger value="claim-trend" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md px-6">
+                        <TrendingUp className="w-4 h-4 mr-2" />Claim Trend
+                    </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="debtor-batch" className="space-y-4 mt-4">
@@ -170,6 +176,14 @@ export default function RecapSummary() {
                     <DebtorTsiSection title="All Debtors" gradient="from-indigo-500 to-blue-600" debtors={yearFilteredDebtors} loading={loading} />
                     <DebtorTsiSection title="Active Debtors" gradient="from-emerald-500 to-green-600" debtors={activeDebtors} loading={loading} />
                     <DebtorTsiSection title="Non-Active Debtors" gradient="from-orange-500 to-red-600" debtors={nonActiveDebtors} loading={loading} />
+                </TabsContent>
+
+                <TabsContent value="claim-trend" className="mt-4">
+                    <ClaimTrendTab
+                        allClaimsForTrend={claims}
+                        batches={batches}
+                        isBrinsUser={isBrinsUser}
+                    />
                 </TabsContent>
             </Tabs>
         </div>

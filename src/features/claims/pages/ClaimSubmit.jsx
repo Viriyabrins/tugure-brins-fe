@@ -16,12 +16,12 @@ import {
     RefreshCw,
     Plus,
     DollarSign,
-    TrendingUp,
     Paperclip,
     Check,
     ShieldCheck,
     Pen,
     Loader2,
+    Eye,
 } from "lucide-react";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import PageHeader from "@/components/common/PageHeader";
@@ -39,7 +39,6 @@ import { useClaimUpload } from "../hooks/useClaimUpload";
 import { ClaimUploadDialog } from "../components/ClaimUploadDialog";
 import { SubrogationDialog } from "../components/SubrogationDialog";
 import { FilePreviewModal } from "../components/FilePreviewModal";
-import { ClaimTrendTab } from "../components/ClaimTrendTab";
 import { AttachmentCount } from "@/components/common/AttachmentCount";
 import { DEFAULT_CLAIM_FILTER, CLAIM_TEMPLATE_HEADERS, CLAIM_TEMPLATE_SAMPLE } from "../utils/claimConstants";
 import { useClaimSSE } from "@/hooks/useDebtorSSE";
@@ -59,6 +58,7 @@ export default function ClaimSubmit() {
 
     // ── Claim workflow action state ──────────────────────────────────────────
     const [showActionDialog, setShowActionDialog] = useState(false);
+    const [showDetailDialog, setShowDetailDialog] = useState(false);
     const [selectedClaim, setSelectedClaim] = useState(null);
     const [actionType, setActionType] = useState("");
     const [remarks, setRemarks] = useState("");
@@ -112,7 +112,6 @@ export default function ClaimSubmit() {
         debtors,
         batches,
         contracts,
-        allClaimsForTrend,
         notas,
         loading,
         error,
@@ -215,6 +214,10 @@ export default function ClaimSubmit() {
             header: "Actions",
             cell: (row) => (
                 <div className="flex gap-2">
+                    <Button size="sm" variant="outline"
+                        onClick={() => { setSelectedClaim(row); setShowDetailDialog(true); }}>
+                        <Eye className="w-4 h-4" />
+                    </Button>
                     {isCheckerBrins && row.status === "SUBMITTED" && (
                         <Button size="sm" variant="outline"
                             onClick={() => { setSelectedClaim(row); setActionType("check"); setShowActionDialog(true); }}>
@@ -362,18 +365,6 @@ export default function ClaimSubmit() {
                         ],
                     },
                     {
-                        key: "batch",
-                        placeholder: "Batch ID",
-                        label: "Batch ID",
-                        options: [
-                            { value: "all", label: "All Batches" },
-                            ...batches.map((b) => ({
-                                value: b.batch_id,
-                                label: b.batch_id,
-                            })),
-                        ],
-                    },
-                    {
                         key: "claimStatus",
                         label: isBrinsUser
                             ? "Recovery Status"
@@ -406,10 +397,6 @@ export default function ClaimSubmit() {
                     <TabsTrigger value="subrogation">
                         <DollarSign className="w-4 h-4 mr-2" />
                         Subrogation ({subrogations.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="trend">
-                        <TrendingUp className="w-4 h-4 mr-2" />
-                        Trend Analysis
                     </TabsTrigger>
                 </TabsList>
 
@@ -501,13 +488,7 @@ export default function ClaimSubmit() {
                     />
                 </TabsContent>
 
-                <TabsContent value="trend" className="mt-4">
-                    <ClaimTrendTab
-                        allClaimsForTrend={allClaimsForTrend}
-                        batches={batches}
-                        isBrinsUser={isBrinsUser}
-                    />
-                </TabsContent>
+
             </Tabs>
 
             <ClaimUploadDialog
@@ -549,6 +530,27 @@ export default function ClaimSubmit() {
                     recordId={selectedClaimForFiles.nomor_peserta || selectedClaimForFiles.claim_no}
                 />
             )}
+
+            {/* ── Detail Dialog ─────────────────────────────────────────── */}
+            <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+                <DialogContent className="max-w-4xl w-full" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+                    <DialogHeader>
+                        <DialogTitle>Claim Details</DialogTitle>
+                        <DialogDescription>{selectedClaim?.claim_no}</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {selectedClaim && Object.entries(selectedClaim).filter(([key]) => key !== "id").map(([key, val]) => (
+                            <div key={key} className="border rounded p-2">
+                                <div className="font-medium text-gray-600">{key}</div>
+                                <div className="break-words">{val === null || val === undefined || val === "" ? "-" : String(val)}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => setShowDetailDialog(false)}>Close</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* ── BRINS Workflow Action Dialog ─────────────────────────────── */}
             <Dialog open={showActionDialog} onOpenChange={(open) => { setShowActionDialog(open); if (!open) { setRemarks(""); setActionError(""); } }}>

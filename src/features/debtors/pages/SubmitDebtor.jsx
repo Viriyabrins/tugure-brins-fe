@@ -931,49 +931,35 @@ export default function SubmitDebtor() {
 
             {/* ── Detail dialog ──────────────────────────────────────────────── */}
             <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="max-w-4xl w-full" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflowY: "auto" }}>
                     <DialogHeader>
                         <DialogTitle>Debtor Details</DialogTitle>
                         <DialogDescription>{selectedDebtor?.nama_peserta}</DialogDescription>
                     </DialogHeader>
-                    <div className="py-4 space-y-4">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-500">Nomor Peserta:</span><p className="font-medium">{selectedDebtor?.nomor_peserta}</p></div>
-                            <div><span className="text-gray-500">Batch ID:</span><p className="font-medium">{selectedDebtor?.batch_id}</p></div>
-                            <div><span className="text-gray-500">Plafon:</span><p className="font-medium">{formatRupiahAdaptive(selectedDebtor?.plafon)}</p></div>
-                            <div><span className="text-gray-500">Net Premi:</span><p className="font-medium">{formatRupiahAdaptive(selectedDebtor?.net_premi)}</p></div>
-                            <div><span className="text-gray-500">Status:</span><StatusBadge status={selectedDebtor?.status} /></div>
-                            {selectedDebtor?.validation_remarks && (
-                                <div className="col-span-2 p-3 bg-orange-50 border border-orange-200 rounded">
-                                    <p className="text-sm font-medium text-orange-700">Validation Remarks:</p>
-                                    <p className="text-sm text-orange-600">{selectedDebtor.validation_remarks}</p>
-                                </div>
-                            )}
-                            {selectedDebtor?.version_no && (
-                                <div><span className="text-gray-500">Version No:</span><p className="font-medium">{selectedDebtor.version_no}</p></div>
-                            )}
-                        </div>
-                        {(selectedDebtor?.version_no || 0) > 1 && revisionDiffs.length > 0 && (
-                            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <History className="w-5 h-5 text-blue-600" />
-                                    <h3 className="font-semibold text-blue-900">Revision Changes</h3>
-                                </div>
-                                <div className="space-y-2">
-                                    {revisionDiffs.slice(0, 15).map((diff, i) => (
-                                        <div key={i} className="flex items-start gap-3 text-sm">
-                                            <span className="font-mono text-xs bg-white px-2 py-1 rounded text-gray-700 flex-shrink-0 min-w-32">{diff.key}</span>
-                                            <div className="flex-1">
-                                                <p className="text-red-600 line-through text-xs">Old: {diff.old}</p>
-                                                <p className="text-green-600 text-xs">New: {diff.new}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {revisionDiffs.length > 15 && <p className="text-xs text-gray-500 mt-2">...and {revisionDiffs.length - 15} more changes</p>}
-                                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {selectedDebtor && Object.entries(selectedDebtor).filter(([key]) => key !== "id").map(([key, val]) => (
+                            <div key={key} className="border rounded p-2">
+                                <div className="font-medium text-gray-600">{key}</div>
+                                <div className="break-words">{val === null || val === undefined || val === "" ? "-" : String(val)}</div>
                             </div>
-                        )}
+                        ))}
                     </div>
+                    {(selectedDebtor?.version_no || 0) > 1 && revisionDiffs.length > 0 && (
+                        <div className="mt-4 w-full">
+                            <div className="font-semibold mb-2">Revision Differences</div>
+                            <div className="grid grid-cols-1 gap-2">
+                                {revisionDiffs.map((d) => (
+                                    <div key={d.key} className="p-2 border rounded flex justify-between">
+                                        <div className="w-1/3 font-medium text-sm">{d.key}</div>
+                                        <div className="w-2/3 text-sm">
+                                            <div className="text-yellow-600 font-normal">Old: {d.old}</div>
+                                            <div className="text-green-600 font-medium text-base">New: {d.new}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <DialogFooter>
                         <Button onClick={() => setShowDetailDialog(false)}>Close</Button>
                     </DialogFooter>

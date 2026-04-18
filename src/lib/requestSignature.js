@@ -7,8 +7,8 @@
  * Semua validasi (freshness, uuid uniqueness, HMAC verification) dilakukan
  * sepenuhnya di backend — frontend tidak melakukan pengecekan validitas signature.
  *
- * Payload string yang di-sign: `{uuid}|{timestamp_wib}|{METHOD}|{path}`
- * Timestamp : ISO 8601 WIB (UTC+7), e.g. 2026-04-15T14:00:00.000+07:00
+ * Payload string yang di-sign: `{uuid}|{timestamp}|{METHOD}|{path}`
+ * Timestamp : ISO 8601 UTC, e.g. 2026-04-15T07:00:00.000Z
  * Algoritma : HMAC-SHA256
  *   - Secure context (HTTPS / localhost) → Web Crypto API (SubtleCrypto)
  *   - Non-secure context (plain HTTP)    → CryptoJS fallback
@@ -16,7 +16,7 @@
  *
  * Headers yang dikirim:
  *   X-Signature           — hex HMAC-SHA256 dari canonical payload
- *   X-Signature-Timestamp — ISO 8601 WIB (UTC+7) timestamp
+ *   X-Signature-Timestamp — ISO 8601 UTC timestamp
  *   X-Signature-UUID      — UUID v4 unik per request
  *
  * Env vars:
@@ -29,16 +29,16 @@ import CryptoJS from 'crypto-js';
 
 const SIGNATURE_SECRET = import.meta.env.VITE_SIGNATURE_SECRET || import.meta.env.VITE_KEYCLOAK_SECRET_KEY || '';
 
-// ── Server-time offset sync ────────────────────────────────────────────────────
-// Stores the difference (ms) between server epoch and client epoch so that
-// every signature timestamp is anchored to authoritative server time even if
-// the client clock has drifted.
+// ── Server-clock offset sync ───────────────────────────────────────────────────
+// Menyimpan selisih (ms) antara epoch server dan epoch klien agar setiap
+// timestamp signature mengacu pada waktu server yang autoritatif, bukan jam
+// lokal browser yang bisa saja berbeda (clock drift).
 let _serverOffset = 0;
 
 /**
- * Fetch server time from GET /api/time and compute the clock offset.
- * offset = serverEpoch − clientEpoch (midpoint of round-trip).
- * Called on app init and on visibility resume.
+ * Ambil waktu server dari GET /api/time dan hitung selisih jam (clock offset).
+ * offset = epochServer − epochKlien (titik tengah round-trip untuk mengurangi bias latensi).
+ * Dipanggil sekali saat app pertama kali dibuka, dan setiap kali tab kembali aktif.
  */
 async function _fetchServerOffset() {
   try {
@@ -49,18 +49,18 @@ async function _fetchServerOffset() {
     const { serverTime } = await resp.json();
     const serverMs = Date.parse(serverTime);
     if (isNaN(serverMs)) return;
-    // Use round-trip midpoint to reduce one-way latency bias
+    // Gunakan titik tengah round-trip untuk mengurangi bias latensi satu arah
     const clientMid = Math.round((before + after) / 2);
     _serverOffset = serverMs - clientMid;
   } catch {
-    // Silently fall back to offset 0 (local clock)
+    // Jika gagal, biarkan offset = 0 (pakai jam lokal sebagai fallback)
   }
 }
 
 /**
- * Initialise server-time offset sync.
- * Must be called once at app startup. Also re-syncs when the tab becomes visible.
- * Returns a Promise that resolves when the first sync completes (or fails silently).
+ * Inisialisasi sinkronisasi jam server.
+ * Dipanggil sekali saat startup. Juga melakukan re-sync setiap kali tab menjadi visible.
+ * Mengembalikan Promise yang selesai saat sync pertama berhasil (atau gagal diam-diam).
  */
 export function initServerTimeSync() {
   const p = _fetchServerOffset();
@@ -130,23 +130,40 @@ export async function createRequestSignature({ method, endpoint }) {
     return null;
   }
   const uuid = uuidv4();
-  // Timestamp dalam format WIB (UTC+7) eksplisit, contoh: "2026-04-15T14:30:00.000+07:00".
-  // Gunakan waktu yang sudah di-sync dengan server (_serverOffset) untuk mengurangi
-  // risiko penolakan signature akibat drift jam klien.
-  const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
-  const syncedNow = Date.now() + _serverOffset;
-  const timestamp = new Date(syncedNow + WIB_OFFSET_MS).toISOString().slice(0, -1) + '+07:00';
-  const normalizedMethod = String(method).toUpperCase();
-  const normalizedPath = String(endpoint).split('?')[0];
-
-  // Canonical payload must match backend exactly: uuid|timestamp|METHOD|path
-  const payload = `${uuid}|${timestamp}|${normalizedMethod}|${normalizedPath}`;
-
+  // Ambil waktu server secara langsung untuk memastikan timestamp 100% berasal
+  // dari server (jangan percaya waktu lokal client). Jika panggilan gagal,
+  // kembalikan null sehingga signature tidak dihasilkan.
   try {
-    const signature = await hmacSha256Hex(SIGNATURE_SECRET, payload);
-    return { uuid, timestamp, method: normalizedMethod, endpoint: normalizedPath, signature };
+    const resp = await fetch('/api/time');
+    if (!resp.ok) {
+      console.error('[RequestSignature] Gagal mengambil waktu server:', resp.status);
+      return null;
+    }
+    const body = await resp.json();
+    const serverTime = body && body.serverTime;
+    const serverMs = Date.parse(serverTime);
+    if (!serverTime || isNaN(serverMs)) {
+      console.error('[RequestSignature] Response /api/time tidak valid:', serverTime);
+      return null;
+    }
+    // Gunakan waktu server persis seperti yang dikembalikan backend.
+    const timestamp = new Date(serverMs).toISOString();
+    // Lanjutkan pembuatan signature dengan timestamp dari server
+    const normalizedMethod = String(method).toUpperCase();
+    const normalizedPath = String(endpoint).split('?')[0];
+
+    // Canonical payload must match backend exactly: uuid|timestamp|METHOD|path
+    const payload = `${uuid}|${timestamp}|${normalizedMethod}|${normalizedPath}`;
+
+    try {
+      const signature = await hmacSha256Hex(SIGNATURE_SECRET, payload);
+      return { uuid, timestamp, method: normalizedMethod, endpoint: normalizedPath, signature };
+    } catch (err) {
+      console.error('[RequestSignature] Gagal membuat signature:', err);
+      return null;
+    }
   } catch (err) {
-    console.error('[RequestSignature] Gagal membuat signature:', err);
+    console.error('[RequestSignature] Error saat mengambil waktu server:', err);
     return null;
   }
 }
@@ -157,7 +174,7 @@ export async function createRequestSignature({ method, endpoint }) {
  *
  * Headers yang disisipkan:
  *   X-Signature           — hex HMAC-SHA256
- *   X-Signature-Timestamp — ISO 8601 WIB (UTC+7)
+ *   X-Signature-Timestamp — ISO 8601 UTC timestamp
  *   X-Signature-UUID      — UUID v4 unik per request
  *
  * @param {RequestInit} fetchOptions - Fetch options yang sudah ada
@@ -169,7 +186,7 @@ export async function withSignatureHeaders(fetchOptions, endpoint) {
   const sigResult = await createRequestSignature({ method, endpoint });
 
   if (!sigResult) {
-    return fetchOptions;
+    throw new Error('[RequestSignature] Gagal membuat signature; request dibatalkan.');
   }
 
   const existingHeaders = fetchOptions.headers || {};

@@ -155,17 +155,26 @@ export default function BorderoManagement() {
     ];
 
     const BORDERO_DEBTOR_COLS = [
-        { header: "Cover ID", cell: (r) => r.cover_id }, { header: "Program ID", cell: (r) => r.program_id },
-        { header: "No Rekening Pinjaman", cell: (r) => r.nomor_rekening_pinjaman }, { header: "No Peserta", cell: (r) => r.nomor_peserta },
-        { header: "Loan Type", cell: (r) => r.loan_type }, { header: "Jenis Pengajuan", cell: (r) => r.jenis_pengajuan_desc },
+        { header: "Nama Peserta", cell: (r) => r.nama_peserta }, 
+        { header: "No Peserta", cell: (r) => r.nomor_peserta },
+        { header: "No Rekening Pinjaman", cell: (r) => r.nomor_rekening_pinjaman }, 
+        { header: "Loan Type", cell: (r) => r.loan_type }, 
+        { header: "Jenis Pengajuan", cell: (r) => r.jenis_pengajuan_desc },
         { header: "Jenis Covering", cell: (r) => r.jenis_covering_desc },
         { header: "Tgl Mulai", cell: (r) => r.tanggal_mulai_covering ? new Date(r.tanggal_mulai_covering).toLocaleDateString() : "-" },
         { header: "Tgl Akhir", cell: (r) => r.tanggal_akhir_covering ? new Date(r.tanggal_akhir_covering).toLocaleDateString() : "-" },
-        { header: "Plafon", cell: (r) => formatRupiahAdaptive(r.plafon) }, { header: "Nominal Premi", cell: (r) => formatRupiahAdaptive(r.nominal_premi) },
-        { header: "Premium", cell: (r) => formatRupiahAdaptive(r.premium_amount) }, { header: "Komisi", cell: (r) => formatRupiahAdaptive(r.ric_amount) },
-        { header: "Net Premi", cell: (r) => formatRupiahAdaptive(r.net_premi) }, { header: "Broker Komisi", cell: (r) => formatRupiahAdaptive(r.bf_amount) },
-        { header: "Branch", cell: (r) => r.branch_desc }, { header: "Region", cell: (r) => r.region_desc },
-        { header: "Nama Peserta", cell: (r) => r.nama_peserta }, { header: "Status Aktif", cell: (r) => r.status_aktif },
+        { header: "Plafon", cell: (r) => formatRupiahAdaptive(r.plafon) }, 
+        { header: "Nominal Premi", cell: (r) => formatRupiahAdaptive(r.nominal_premi) },
+        { header: "Premium", cell: (r) => formatRupiahAdaptive(r.premium_amount) }, 
+        { header: "Komisi", cell: (r) => formatRupiahAdaptive(r.ric_amount) },
+        { header: "Net Premi", cell: (r) => formatRupiahAdaptive(r.net_premi) }, 
+        { header: "Broker Komisi", cell: (r) => formatRupiahAdaptive(r.bf_amount) },
+        { header: "Branch", cell: (r) => r.branch_desc }, 
+        { header: "Region", cell: (r) => r.region_desc },
+        { header: "Cover ID", cell: (r) => r.cover_id }, 
+        { header: "Program ID", cell: (r) => r.program_id },
+        { header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
+        { header: "Status Aktif", cell: (r) => r.status_aktif },
     ];
 
     return (

@@ -24,6 +24,10 @@ export const notaService = {
 
     // ─── Nota actions ──────────────────────────────────────────────────────────
 
+    async updateUserNotaNumber(notaNumber, userNotaNumber) {
+        return backend.update("Nota", notaNumber, { user_nota_number: userNotaNumber });
+    },
+
     async markNotaPaid(notaNumber, userEmail) {
         return backend.update("Nota", notaNumber, {
             status: "PAID",

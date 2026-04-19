@@ -88,9 +88,14 @@ export default function NotaManagement() {
     const [reconFilters, setReconFilters] = useState({ contract: "all", status: "all", hasException: "all" });
     const [pdfPreview, setPdfPreview] = useState(/** @type {{ nota: any, contract: any } | null} */(null));
     const [pdfDownloading, setPdfDownloading] = useState(false);
+    const [bulkPdfDownloading, setBulkPdfDownloading] = useState(false);
     const pdfContainerRef = useRef(/** @type {HTMLDivElement | null} */(null));
     const [selectedNotas, setSelectedNotas] = useState(/** @type {string[]} */([]));
     const [actionContract, setActionContract] = useState(null);
+    const [editingNotaNumber, setEditingNotaNumber] = useState("");
+    const [savingNotaNumber, setSavingNotaNumber] = useState(false);
+    const [inlineEditId, setInlineEditId] = useState(null);
+    const [inlineEditValue, setInlineEditValue] = useState("");
 
     function toggleNotaSelection(notaNumber) {
         setSelectedNotas((prev) =>
@@ -102,18 +107,30 @@ export default function NotaManagement() {
         setSelectedNotas(checked ? unpaidNotas.map((/** @type {any} */ n) => n.nota_number) : []);
     }
 
-    // Derived nota lists per tab
-    const activeCategoryNotas = notas.filter((n) => {
-        if (activeTab === "notas") return n.nota_type === "Batch" || n.nota_type === "INVOICE";
-        if (activeTab === "claim") return n.nota_type === "Claim";
-        if (activeTab === "subrogation") return n.nota_type === "Subrogation";
-        return true;
-    });
-    const filteredNotas = activeCategoryNotas.filter((n) => {
-        if (filters.contract !== "all" && n.contract_id !== filters.contract) return false;
-        if (filters.status !== "all" && n.status !== filters.status) return false;
-        return true;
-    });
+    // Tab → notaType mapping for server-side filtering
+    const TAB_NOTA_TYPE = { notas: "Batch", claim: "Claim", subrogation: "Subrogation" };
+
+    function handleTabChange(tab) {
+        setActiveTab(tab);
+        setSelectedNotas([]);
+        const newFilters = { ...filters, notaType: TAB_NOTA_TYPE[tab] || "Batch" };
+        setFilters(newFilters);
+        setNotaPage(1);
+        loadNotas(1, newFilters);
+    }
+
+    function handleFilterChange(f) {
+        setFilters(f);
+        setSelectedNotas([]);
+        setNotaPage(1);
+        loadNotas(1, { ...f, notaType: filters.notaType });
+    }
+
+    // Extract UI-only filters (contract & status) to pass to FilterTab, excluding notaType which is tab-controlled
+    const uiFilters = { contract: filters.contract, status: filters.status };
+
+    // Server returns only the active tab's notas, so use directly
+    const filteredNotas = notas;
     const filteredExceptions = exceptionItems.filter((r) => {
         if (dnCnFilters.contract !== "all" && r.contract_id !== dnCnFilters.contract) return false;
         if (dnCnFilters.status !== "all" && r.reconciliation_status !== dnCnFilters.status) return false;
@@ -156,7 +173,47 @@ export default function NotaManagement() {
             header: "Nota Number",
             cell: (row) => (
                 <div>
-                    <p className="font-medium font-mono">{row.nota_number}</p>
+                    {isBrinsRole(tokenRoles) && inlineEditId === row.nota_number ? (
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Input
+                                autoFocus
+                                value={inlineEditValue}
+                                onChange={(e) => setInlineEditValue(e.target.value)}
+                                onKeyDown={async (e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        setSavingNotaNumber(true);
+                                        try {
+                                            await notaService.updateUserNotaNumber(row.nota_number, inlineEditValue || null);
+                                            await loadNotas(notaPage, filters);
+                                        } catch (err) {
+                                            alert(err?.message || "Failed to save. The nota number may already be in use.");
+                                        } finally {
+                                            setSavingNotaNumber(false);
+                                            setInlineEditId(null);
+                                        }
+                                    } else if (e.key === "Escape") {
+                                        setInlineEditId(null);
+                                    }
+                                }}
+                                onBlur={() => setInlineEditId(null)}
+                                className="h-7 text-sm font-mono"
+                                placeholder="Enter nota number..."
+                            />
+                        </div>
+                    ) : isBrinsRole(tokenRoles) ? (
+                        <p
+                            className="font-medium font-mono cursor-pointer hover:text-blue-600 hover:underline"
+                            onClick={(e) => { e.stopPropagation(); setInlineEditId(row.nota_number); setInlineEditValue(row.user_nota_number || ""); }}
+                        >
+                            {row.user_nota_number || <span className="text-gray-400 italic">Click to edit</span>}
+                        </p>
+                    ) : (
+                        <p className="font-medium font-mono">
+                            {row.user_nota_number || <span className="text-gray-400 italic">Not assigned</span>}
+                        </p>
+                    )}
+                    <p className="text-xs text-gray-400 font-mono">{row.nota_number}</p>
                     <div className="flex items-center gap-2 mt-1">
                         <Badge variant="outline" className="text-xs">{row.nota_type}</Badge>
                     </div>
@@ -251,18 +308,67 @@ export default function NotaManagement() {
         }
     }
 
+    async function handleBulkPaidDownload() {
+        if (!pdfContainerRef.current || selectedNotas.length === 0) return;
+        setBulkPdfDownloading(true);
+        try {
+            const container = pdfContainerRef.current;
+            const root = createRoot(container);
+            const bulkNotas = notas.filter((n) => selectedNotas.includes(n.nota_number));
+
+            await new Promise((resolve) => {
+                root.render(<NotaPDFTemplate notas={bulkNotas} />);
+                requestAnimationFrame(() => requestAnimationFrame(resolve));
+            });
+
+            const imgs = [...container.querySelectorAll("img")];
+            if (imgs.length > 0) {
+                await Promise.all(
+                    imgs.map((img) =>
+                        img.complete
+                            ? Promise.resolve()
+                            : new Promise((r) => { img.onload = r; img.onerror = r; })
+                    )
+                );
+            }
+
+            const captureTarget = /** @type {HTMLElement} */ (container.firstChild);
+            const canvas = await html2canvas(captureTarget, {
+                scale: 1.5,
+                useCORS: true,
+                logging: false,
+                backgroundColor: "#ffffff",
+            });
+
+            const pdf = new jsPDF("p", "mm", "a4");
+            const imgData = canvas.toDataURL("image/jpeg", 0.88);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`treaty-note-bulk-${selectedNotas.length}-notas.pdf`);
+
+            root.unmount();
+            actions.setSuccessMessage("PDF downloaded successfully");
+        } catch (e) {
+            console.error("Failed to generate bulk PDF:", e);
+            actions.setSuccessMessage("Failed to generate PDF");
+        } finally {
+            setBulkPdfDownloading(false);
+        }
+    }
+
     function renderNotaTabContent() {
         return (
             <>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <GradientStatCard title="Total Notas" value={activeCategoryNotas.length} subtitle={`${activeCategoryNotas.length} ${typeLabel} notas`} icon={FileText} gradient="from-blue-500 to-blue-600" />
-                    <GradientStatCard title="Pending" value={activeCategoryNotas.filter((n) => n.status === "UNPAID").length} subtitle="Awaiting payment" icon={Clock} gradient="from-orange-500 to-orange-600" />
-                    <GradientStatCard title="Total Amount" value={formatRupiahAdaptive(activeCategoryNotas.reduce((s, n) => s + getNotaAmount(n, debtors), 0))} subtitle={`All ${typeLabel} notas`} icon={DollarSign} gradient="from-green-500 to-green-600" />
-                    <GradientStatCard title="Closed" value={activeCategoryNotas.filter((n) => n.status === "Nota Closed").length} subtitle={formatRupiahAdaptive(activeCategoryNotas.filter((n) => n.status === "Nota Closed").reduce((s, n) => s + getNotaAmount(n, debtors), 0))} icon={CheckCircle2} gradient="from-purple-500 to-purple-600" />
+                    <GradientStatCard title="Total Notas" value={totalNotas} subtitle={`${totalNotas} ${typeLabel} notas`} icon={FileText} gradient="from-blue-500 to-blue-600" />
+                    <GradientStatCard title="Pending" value={notas.filter((n) => n.status === "UNPAID").length} subtitle="Awaiting payment" icon={Clock} gradient="from-orange-500 to-orange-600" />
+                    <GradientStatCard title="Total Amount" value={formatRupiahAdaptive(notas.reduce((s, n) => s + getNotaAmount(n, debtors), 0))} subtitle={`All ${typeLabel} notas`} icon={DollarSign} gradient="from-green-500 to-green-600" />
+                    <GradientStatCard title="Unpaid / Paid" value={`${formatRupiahAdaptive(notas.filter((n) => n.status === "UNPAID").reduce((s, n) => s + getNotaAmount(n, debtors), 0))} / ${formatRupiahAdaptive(notas.filter((n) => n.status === "PAID").reduce((s, n) => s + getNotaAmount(n, debtors), 0))}`} subtitle="Unpaid vs Paid amount" icon={CheckCircle2} gradient="from-purple-500 to-purple-600" />
                 </div>
                 <FilterTab
-                    filters={filters}
-                    onFilterChange={(f) => { setFilters(f); setSelectedNotas([]); }}
+                    filters={uiFilters}
+                    onFilterChange={handleFilterChange}
                     defaultFilters={{ contract: "all", status: "all" }}
                     filterConfig={[
                         {
@@ -326,7 +432,7 @@ export default function NotaManagement() {
                 </Alert>
             )}
 
-            <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setSelectedNotas([]); }}>
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
                 <TabsList className="grid w-full max-w-4xl grid-cols-3">
                     <TabsTrigger value="notas">Premi</TabsTrigger>
                     <TabsTrigger value="claim">Claim</TabsTrigger>
@@ -636,7 +742,7 @@ export default function NotaManagement() {
             </Dialog>
 
             {/* ── View Dialog ────────────────────────────────────────────────── */}
-            <Dialog open={actions.showViewDialog} onOpenChange={actions.setShowViewDialog}>
+            <Dialog open={actions.showViewDialog} onOpenChange={(open) => { actions.setShowViewDialog(open); if (open && actions.selectedNota) setEditingNotaNumber(actions.selectedNota.user_nota_number || ""); }}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>{actions.selectedNota ? "Nota Detail" : "Debit/Credit Note Detail"}</DialogTitle>
@@ -644,13 +750,53 @@ export default function NotaManagement() {
                     </DialogHeader>
                     <div className="py-4">
                         {actions.selectedNota && (
-                            <div className="p-4 bg-gray-50 rounded-lg">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div><span className="text-gray-500">Type:</span><Badge className="ml-2">{actions.selectedNota.nota_type}</Badge></div>
-                                    <div><span className="text-gray-500">Amount:</span><span className="ml-2 font-medium">{formatRupiahAdaptive(actions.selectedNota.amount)}</span></div>
-                                    <div><span className="text-gray-500">Status:</span><span className="ml-2"><StatusBadge status={actions.selectedNota.status} /></span></div>
-                                    <div className="col-span-2"><span className="text-gray-500">Reference:</span><span className="ml-2 font-medium">{actions.selectedNota.reference_id}</span></div>
+                            <div className="space-y-4">
+                                <div className="p-4 bg-gray-50 rounded-lg">
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div><span className="text-gray-500">Type:</span><Badge className="ml-2">{actions.selectedNota.nota_type}</Badge></div>
+                                        <div><span className="text-gray-500">Amount:</span><span className="ml-2 font-medium">{formatRupiahAdaptive(actions.selectedNota.amount)}</span></div>
+                                        <div><span className="text-gray-500">Status:</span><span className="ml-2"><StatusBadge status={actions.selectedNota.status} /></span></div>
+                                        <div className="col-span-2"><span className="text-gray-500">Reference:</span><span className="ml-2 font-medium">{actions.selectedNota.reference_id}</span></div>
+                                    </div>
                                 </div>
+                                {isBrinsRole(tokenRoles) ? (
+                                    <div className="space-y-2">
+                                        <Label htmlFor="user_nota_number">User Nota Number</Label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                id="user_nota_number"
+                                                value={editingNotaNumber}
+                                                onChange={(e) => setEditingNotaNumber(e.target.value)}
+                                                placeholder="Enter nota number..."
+                                            />
+                                            <Button
+                                                size="sm"
+                                                disabled={savingNotaNumber || editingNotaNumber === (actions.selectedNota.user_nota_number || "")}
+                                                onClick={async () => {
+                                                    setSavingNotaNumber(true);
+                                                    try {
+                                                        await notaService.updateUserNotaNumber(actions.selectedNota.nota_number, editingNotaNumber || null);
+                                                        await loadNotas(notaPage, filters);
+                                                        actions.setSelectedNota({ ...actions.selectedNota, user_nota_number: editingNotaNumber || null });
+                                                    } catch (e) {
+                                                        console.error("Failed to update user nota number:", e);
+                                                        alert(e?.message || "Failed to save. The nota number may already be in use.");
+                                                    } finally {
+                                                        setSavingNotaNumber(false);
+                                                    }
+                                                }}
+                                            >
+                                                {savingNotaNumber ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                            </Button>
+                                        </div>
+                                        <p className="text-xs text-gray-500">Assign a custom nota number. Must be unique across all notas.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        <Label>User Nota Number</Label>
+                                        <p className="font-mono text-sm">{actions.selectedNota.user_nota_number || <span className="text-gray-400 italic">Not assigned</span>}</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                         {actions.selectedDnCn && (
@@ -672,7 +818,7 @@ export default function NotaManagement() {
 
             {/* ── Bulk Mark Paid Dialog ──────────────────────────────────────── */}
             <Dialog open={actions.showBulkPaidDialog} onOpenChange={actions.setShowBulkPaidDialog}>
-                <DialogContent>
+                <DialogContent className="max-w-[720px]" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflowY: "auto" }}>
                     <DialogHeader>
                         <DialogTitle>Mark Selected Notas as Paid</DialogTitle>
                         <DialogDescription>{selectedNotas.length} nota(s) will be marked as PAID</DialogDescription>
@@ -684,14 +830,21 @@ export default function NotaManagement() {
                                 All selected notas will be updated atomically. If any update fails, all changes will be rolled back.
                             </AlertDescription>
                         </Alert>
-                        <div className="max-h-48 overflow-y-auto space-y-1">
-                            {selectedNotas.map((n) => (
-                                <div key={n} className="text-sm font-mono px-2 py-1 bg-gray-50 rounded">{n}</div>
-                            ))}
+                        <div style={{ overflowY: "auto", maxHeight: "55vh", background: "#f3f4f6", padding: "8px", borderRadius: "4px" }}>
+                            <div style={{ width: `${Math.round(794 * 0.82)}px`, overflow: "hidden", margin: "0 auto" }}>
+                                <div style={{ transform: "scale(0.82)", transformOrigin: "top left" }}>
+                                    <NotaPDFTemplate notas={notas.filter((n) => selectedNotas.includes(n.nota_number))} />
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => actions.setShowBulkPaidDialog(false)} disabled={actions.processing}>Cancel</Button>
+                        <Button variant="outline" onClick={handleBulkPaidDownload} disabled={bulkPdfDownloading || actions.processing}>
+                            {bulkPdfDownloading
+                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating...</>
+                                : <><Download className="w-4 h-4 mr-2" />Download PDF</>}
+                        </Button>
                         <Button onClick={() => actions.handleBulkMarkPaid(selectedNotas, setSelectedNotas)} disabled={actions.processing} className="bg-green-600 hover:bg-green-700">
                             {actions.processing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : <><Check className="w-4 h-4 mr-2" />Confirm</>}
                         </Button>

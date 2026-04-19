@@ -92,6 +92,10 @@ export default function NotaManagement() {
     const pdfContainerRef = useRef(/** @type {HTMLDivElement | null} */(null));
     const [selectedNotas, setSelectedNotas] = useState(/** @type {string[]} */([]));
     const [actionContract, setActionContract] = useState(null);
+    const [editingNotaNumber, setEditingNotaNumber] = useState("");
+    const [savingNotaNumber, setSavingNotaNumber] = useState(false);
+    const [inlineEditId, setInlineEditId] = useState(null);
+    const [inlineEditValue, setInlineEditValue] = useState("");
 
     function toggleNotaSelection(notaNumber) {
         setSelectedNotas((prev) =>
@@ -169,7 +173,43 @@ export default function NotaManagement() {
             header: "Nota Number",
             cell: (row) => (
                 <div>
-                    <p className="font-medium font-mono">{row.nota_number}</p>
+                    {inlineEditId === row.nota_number ? (
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Input
+                                autoFocus
+                                value={inlineEditValue}
+                                onChange={(e) => setInlineEditValue(e.target.value)}
+                                onKeyDown={async (e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        setSavingNotaNumber(true);
+                                        try {
+                                            await notaService.updateUserNotaNumber(row.nota_number, inlineEditValue || null);
+                                            await loadNotas(notaPage, filters);
+                                        } catch (err) {
+                                            alert(err?.message || "Failed to save. The nota number may already be in use.");
+                                        } finally {
+                                            setSavingNotaNumber(false);
+                                            setInlineEditId(null);
+                                        }
+                                    } else if (e.key === "Escape") {
+                                        setInlineEditId(null);
+                                    }
+                                }}
+                                onBlur={() => setInlineEditId(null)}
+                                className="h-7 text-sm font-mono"
+                                placeholder="Enter nota number..."
+                            />
+                        </div>
+                    ) : (
+                        <p
+                            className="font-medium font-mono cursor-pointer hover:text-blue-600 hover:underline"
+                            onClick={(e) => { e.stopPropagation(); setInlineEditId(row.nota_number); setInlineEditValue(row.user_nota_number || ""); }}
+                        >
+                            {row.user_nota_number || <span className="text-gray-400 italic">Click to edit</span>}
+                        </p>
+                    )}
+                    <p className="text-xs text-gray-400 font-mono">{row.nota_number}</p>
                     <div className="flex items-center gap-2 mt-1">
                         <Badge variant="outline" className="text-xs">{row.nota_type}</Badge>
                     </div>
@@ -320,7 +360,7 @@ export default function NotaManagement() {
                     <GradientStatCard title="Total Notas" value={totalNotas} subtitle={`${totalNotas} ${typeLabel} notas`} icon={FileText} gradient="from-blue-500 to-blue-600" />
                     <GradientStatCard title="Pending" value={notas.filter((n) => n.status === "UNPAID").length} subtitle="Awaiting payment" icon={Clock} gradient="from-orange-500 to-orange-600" />
                     <GradientStatCard title="Total Amount" value={formatRupiahAdaptive(notas.reduce((s, n) => s + getNotaAmount(n, debtors), 0))} subtitle={`All ${typeLabel} notas`} icon={DollarSign} gradient="from-green-500 to-green-600" />
-                    <GradientStatCard title="Closed" value={notas.filter((n) => n.status === "Nota Closed").length} subtitle={formatRupiahAdaptive(notas.filter((n) => n.status === "Nota Closed").reduce((s, n) => s + getNotaAmount(n, debtors), 0))} icon={CheckCircle2} gradient="from-purple-500 to-purple-600" />
+                    <GradientStatCard title="Unpaid / Paid" value={`${formatRupiahAdaptive(notas.filter((n) => n.status === "UNPAID").reduce((s, n) => s + getNotaAmount(n, debtors), 0))} / ${formatRupiahAdaptive(notas.filter((n) => n.status === "PAID").reduce((s, n) => s + getNotaAmount(n, debtors), 0))}`} subtitle="Unpaid vs Paid amount" icon={CheckCircle2} gradient="from-purple-500 to-purple-600" />
                 </div>
                 <FilterTab
                     filters={uiFilters}
@@ -698,7 +738,7 @@ export default function NotaManagement() {
             </Dialog>
 
             {/* ── View Dialog ────────────────────────────────────────────────── */}
-            <Dialog open={actions.showViewDialog} onOpenChange={actions.setShowViewDialog}>
+            <Dialog open={actions.showViewDialog} onOpenChange={(open) => { actions.setShowViewDialog(open); if (open && actions.selectedNota) setEditingNotaNumber(actions.selectedNota.user_nota_number || ""); }}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>{actions.selectedNota ? "Nota Detail" : "Debit/Credit Note Detail"}</DialogTitle>
@@ -706,12 +746,45 @@ export default function NotaManagement() {
                     </DialogHeader>
                     <div className="py-4">
                         {actions.selectedNota && (
-                            <div className="p-4 bg-gray-50 rounded-lg">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div><span className="text-gray-500">Type:</span><Badge className="ml-2">{actions.selectedNota.nota_type}</Badge></div>
-                                    <div><span className="text-gray-500">Amount:</span><span className="ml-2 font-medium">{formatRupiahAdaptive(actions.selectedNota.amount)}</span></div>
-                                    <div><span className="text-gray-500">Status:</span><span className="ml-2"><StatusBadge status={actions.selectedNota.status} /></span></div>
-                                    <div className="col-span-2"><span className="text-gray-500">Reference:</span><span className="ml-2 font-medium">{actions.selectedNota.reference_id}</span></div>
+                            <div className="space-y-4">
+                                <div className="p-4 bg-gray-50 rounded-lg">
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div><span className="text-gray-500">Type:</span><Badge className="ml-2">{actions.selectedNota.nota_type}</Badge></div>
+                                        <div><span className="text-gray-500">Amount:</span><span className="ml-2 font-medium">{formatRupiahAdaptive(actions.selectedNota.amount)}</span></div>
+                                        <div><span className="text-gray-500">Status:</span><span className="ml-2"><StatusBadge status={actions.selectedNota.status} /></span></div>
+                                        <div className="col-span-2"><span className="text-gray-500">Reference:</span><span className="ml-2 font-medium">{actions.selectedNota.reference_id}</span></div>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="user_nota_number">User Nota Number</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            id="user_nota_number"
+                                            value={editingNotaNumber}
+                                            onChange={(e) => setEditingNotaNumber(e.target.value)}
+                                            placeholder="Enter nota number..."
+                                        />
+                                        <Button
+                                            size="sm"
+                                            disabled={savingNotaNumber || editingNotaNumber === (actions.selectedNota.user_nota_number || "")}
+                                            onClick={async () => {
+                                                setSavingNotaNumber(true);
+                                                try {
+                                                    await notaService.updateUserNotaNumber(actions.selectedNota.nota_number, editingNotaNumber || null);
+                                                    await loadNotas(notaPage, filters);
+                                                    actions.setSelectedNota({ ...actions.selectedNota, user_nota_number: editingNotaNumber || null });
+                                                } catch (e) {
+                                                    console.error("Failed to update user nota number:", e);
+                                                    alert(e?.message || "Failed to save. The nota number may already be in use.");
+                                                } finally {
+                                                    setSavingNotaNumber(false);
+                                                }
+                                            }}
+                                        >
+                                            {savingNotaNumber ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs text-gray-500">Assign a custom nota number. Must be unique across all notas.</p>
                                 </div>
                             </div>
                         )}

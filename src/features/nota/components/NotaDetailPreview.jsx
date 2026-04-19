@@ -39,7 +39,11 @@ export default function NotaDetailPreview({ nota, contract }) {
             {/* General Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div className="border rounded p-2">
-                    <div className="font-medium text-gray-500 text-xs">Nota Number</div>
+                    <div className="font-medium text-gray-500 text-xs">User Nota Number</div>
+                    <div className="font-mono font-semibold break-words">{nota.user_nota_number || <span className="text-gray-400 italic">Not assigned</span>}</div>
+                </div>
+                <div className="border rounded p-2">
+                    <div className="font-medium text-gray-500 text-xs">System Nota Number</div>
                     <div className="font-mono font-semibold break-words">{nota.nota_number}</div>
                 </div>
                 <div className="border rounded p-2">

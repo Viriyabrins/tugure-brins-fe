@@ -103,7 +103,7 @@ export default function NotaPDFTemplate({ nota, notas, contract }) {
                 </div>
             </div>
             <div style={{ textAlign: "center", fontSize: "10pt", marginBottom: "4px" }}>
-                XXX/XX/XX/XX/XXXXXX
+                {items.length === 1 && items[0].user_nota_number ? items[0].user_nota_number : "XXX/XX/XX/XX/XXXXXX"}
             </div>
             <div style={{ textAlign: "center", fontSize: "9.5pt", marginBottom: "22px", minHeight: "16px" }}>
                 {periodLine}

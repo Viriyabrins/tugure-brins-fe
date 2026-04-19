@@ -173,7 +173,7 @@ export default function NotaManagement() {
             header: "Nota Number",
             cell: (row) => (
                 <div>
-                    {inlineEditId === row.nota_number ? (
+                    {isBrinsRole(tokenRoles) && inlineEditId === row.nota_number ? (
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                             <Input
                                 autoFocus
@@ -201,12 +201,16 @@ export default function NotaManagement() {
                                 placeholder="Enter nota number..."
                             />
                         </div>
-                    ) : (
+                    ) : isBrinsRole(tokenRoles) ? (
                         <p
                             className="font-medium font-mono cursor-pointer hover:text-blue-600 hover:underline"
                             onClick={(e) => { e.stopPropagation(); setInlineEditId(row.nota_number); setInlineEditValue(row.user_nota_number || ""); }}
                         >
                             {row.user_nota_number || <span className="text-gray-400 italic">Click to edit</span>}
+                        </p>
+                    ) : (
+                        <p className="font-medium font-mono">
+                            {row.user_nota_number || <span className="text-gray-400 italic">Not assigned</span>}
                         </p>
                     )}
                     <p className="text-xs text-gray-400 font-mono">{row.nota_number}</p>
@@ -755,37 +759,44 @@ export default function NotaManagement() {
                                         <div className="col-span-2"><span className="text-gray-500">Reference:</span><span className="ml-2 font-medium">{actions.selectedNota.reference_id}</span></div>
                                     </div>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="user_nota_number">User Nota Number</Label>
-                                    <div className="flex gap-2">
-                                        <Input
-                                            id="user_nota_number"
-                                            value={editingNotaNumber}
-                                            onChange={(e) => setEditingNotaNumber(e.target.value)}
-                                            placeholder="Enter nota number..."
-                                        />
-                                        <Button
-                                            size="sm"
-                                            disabled={savingNotaNumber || editingNotaNumber === (actions.selectedNota.user_nota_number || "")}
-                                            onClick={async () => {
-                                                setSavingNotaNumber(true);
-                                                try {
-                                                    await notaService.updateUserNotaNumber(actions.selectedNota.nota_number, editingNotaNumber || null);
-                                                    await loadNotas(notaPage, filters);
-                                                    actions.setSelectedNota({ ...actions.selectedNota, user_nota_number: editingNotaNumber || null });
-                                                } catch (e) {
-                                                    console.error("Failed to update user nota number:", e);
-                                                    alert(e?.message || "Failed to save. The nota number may already be in use.");
-                                                } finally {
-                                                    setSavingNotaNumber(false);
-                                                }
-                                            }}
-                                        >
-                                            {savingNotaNumber ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                        </Button>
+                                {isBrinsRole(tokenRoles) ? (
+                                    <div className="space-y-2">
+                                        <Label htmlFor="user_nota_number">User Nota Number</Label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                id="user_nota_number"
+                                                value={editingNotaNumber}
+                                                onChange={(e) => setEditingNotaNumber(e.target.value)}
+                                                placeholder="Enter nota number..."
+                                            />
+                                            <Button
+                                                size="sm"
+                                                disabled={savingNotaNumber || editingNotaNumber === (actions.selectedNota.user_nota_number || "")}
+                                                onClick={async () => {
+                                                    setSavingNotaNumber(true);
+                                                    try {
+                                                        await notaService.updateUserNotaNumber(actions.selectedNota.nota_number, editingNotaNumber || null);
+                                                        await loadNotas(notaPage, filters);
+                                                        actions.setSelectedNota({ ...actions.selectedNota, user_nota_number: editingNotaNumber || null });
+                                                    } catch (e) {
+                                                        console.error("Failed to update user nota number:", e);
+                                                        alert(e?.message || "Failed to save. The nota number may already be in use.");
+                                                    } finally {
+                                                        setSavingNotaNumber(false);
+                                                    }
+                                                }}
+                                            >
+                                                {savingNotaNumber ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                            </Button>
+                                        </div>
+                                        <p className="text-xs text-gray-500">Assign a custom nota number. Must be unique across all notas.</p>
                                     </div>
-                                    <p className="text-xs text-gray-500">Assign a custom nota number. Must be unique across all notas.</p>
-                                </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        <Label>User Nota Number</Label>
+                                        <p className="font-mono text-sm">{actions.selectedNota.user_nota_number || <span className="text-gray-400 italic">Not assigned</span>}</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                         {actions.selectedDnCn && (

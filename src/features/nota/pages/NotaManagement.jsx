@@ -103,18 +103,30 @@ export default function NotaManagement() {
         setSelectedNotas(checked ? unpaidNotas.map((/** @type {any} */ n) => n.nota_number) : []);
     }
 
-    // Derived nota lists per tab
-    const activeCategoryNotas = notas.filter((n) => {
-        if (activeTab === "notas") return n.nota_type === "Batch" || n.nota_type === "INVOICE";
-        if (activeTab === "claim") return n.nota_type === "Claim";
-        if (activeTab === "subrogation") return n.nota_type === "Subrogation";
-        return true;
-    });
-    const filteredNotas = activeCategoryNotas.filter((n) => {
-        if (filters.contract !== "all" && n.contract_id !== filters.contract) return false;
-        if (filters.status !== "all" && n.status !== filters.status) return false;
-        return true;
-    });
+    // Tab → notaType mapping for server-side filtering
+    const TAB_NOTA_TYPE = { notas: "Batch", claim: "Claim", subrogation: "Subrogation" };
+
+    function handleTabChange(tab) {
+        setActiveTab(tab);
+        setSelectedNotas([]);
+        const newFilters = { ...filters, notaType: TAB_NOTA_TYPE[tab] || "Batch" };
+        setFilters(newFilters);
+        setNotaPage(1);
+        loadNotas(1, newFilters);
+    }
+
+    function handleFilterChange(f) {
+        setFilters(f);
+        setSelectedNotas([]);
+        setNotaPage(1);
+        loadNotas(1, { ...f, notaType: filters.notaType });
+    }
+
+    // Extract UI-only filters (contract & status) to pass to FilterTab, excluding notaType which is tab-controlled
+    const uiFilters = { contract: filters.contract, status: filters.status };
+
+    // Server returns only the active tab's notas, so use directly
+    const filteredNotas = notas;
     const filteredExceptions = exceptionItems.filter((r) => {
         if (dnCnFilters.contract !== "all" && r.contract_id !== dnCnFilters.contract) return false;
         if (dnCnFilters.status !== "all" && r.reconciliation_status !== dnCnFilters.status) return false;
@@ -305,14 +317,14 @@ export default function NotaManagement() {
         return (
             <>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <GradientStatCard title="Total Notas" value={activeCategoryNotas.length} subtitle={`${activeCategoryNotas.length} ${typeLabel} notas`} icon={FileText} gradient="from-blue-500 to-blue-600" />
-                    <GradientStatCard title="Pending" value={activeCategoryNotas.filter((n) => n.status === "UNPAID").length} subtitle="Awaiting payment" icon={Clock} gradient="from-orange-500 to-orange-600" />
-                    <GradientStatCard title="Total Amount" value={formatRupiahAdaptive(activeCategoryNotas.reduce((s, n) => s + getNotaAmount(n, debtors), 0))} subtitle={`All ${typeLabel} notas`} icon={DollarSign} gradient="from-green-500 to-green-600" />
-                    <GradientStatCard title="Closed" value={activeCategoryNotas.filter((n) => n.status === "Nota Closed").length} subtitle={formatRupiahAdaptive(activeCategoryNotas.filter((n) => n.status === "Nota Closed").reduce((s, n) => s + getNotaAmount(n, debtors), 0))} icon={CheckCircle2} gradient="from-purple-500 to-purple-600" />
+                    <GradientStatCard title="Total Notas" value={totalNotas} subtitle={`${totalNotas} ${typeLabel} notas`} icon={FileText} gradient="from-blue-500 to-blue-600" />
+                    <GradientStatCard title="Pending" value={notas.filter((n) => n.status === "UNPAID").length} subtitle="Awaiting payment" icon={Clock} gradient="from-orange-500 to-orange-600" />
+                    <GradientStatCard title="Total Amount" value={formatRupiahAdaptive(notas.reduce((s, n) => s + getNotaAmount(n, debtors), 0))} subtitle={`All ${typeLabel} notas`} icon={DollarSign} gradient="from-green-500 to-green-600" />
+                    <GradientStatCard title="Closed" value={notas.filter((n) => n.status === "Nota Closed").length} subtitle={formatRupiahAdaptive(notas.filter((n) => n.status === "Nota Closed").reduce((s, n) => s + getNotaAmount(n, debtors), 0))} icon={CheckCircle2} gradient="from-purple-500 to-purple-600" />
                 </div>
                 <FilterTab
-                    filters={filters}
-                    onFilterChange={(f) => { setFilters(f); setSelectedNotas([]); }}
+                    filters={uiFilters}
+                    onFilterChange={handleFilterChange}
                     defaultFilters={{ contract: "all", status: "all" }}
                     filterConfig={[
                         {
@@ -376,7 +388,7 @@ export default function NotaManagement() {
                 </Alert>
             )}
 
-            <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setSelectedNotas([]); }}>
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
                 <TabsList className="grid w-full max-w-4xl grid-cols-3">
                     <TabsTrigger value="notas">Premi</TabsTrigger>
                     <TabsTrigger value="claim">Claim</TabsTrigger>

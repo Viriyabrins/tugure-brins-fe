@@ -4,7 +4,11 @@
   "properties": {
     "nota_number": {
       "type": "string",
-      "description": "Nota number"
+      "description": "Nota number (system-generated, primary key)"
+    },
+    "user_nota_number": {
+      "type": "string",
+      "description": "User-assigned nota number (editable)"
     },
     "nota_type": {
       "type": "string",

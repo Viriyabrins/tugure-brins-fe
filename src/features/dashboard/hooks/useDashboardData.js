@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { dashboardService } from "../services/dashboardService";
 import { toNum, DASHBOARD_COLORS } from "../utils/dashboardConstants";
 
@@ -9,14 +9,12 @@ export function useDashboardData() {
     const [loading, setLoading] = useState(true);
     const [filters, setFilters] = useState({ batch: "all" });
     const [rawData, setRawData] = useState({ debtors: [], claims: [], borderos: [], notas: [], batches: [], subrogations: [], payments: [], contracts: [] });
-    const [stats, setStats] = useState(EMPTY_STATS);
 
     const reload = async () => {
         setLoading(true);
         try {
             const data = await dashboardService.loadAll();
             setRawData(data);
-            setStats(dashboardService.computeStats(data));
         } catch (e) {
             console.error("Failed to load dashboard data:", e);
             setRawData({ debtors: [], claims: [], borderos: [], notas: [], batches: [], subrogations: [], payments: [], contracts: [] });
@@ -27,15 +25,38 @@ export function useDashboardData() {
     useEffect(() => { reload(); }, [period]);
 
     // Chart data derived from rawData
-    const { debtors, claims, borderos, notas, batches, subrogations, contracts } = rawData;
+    const { debtors, claims, borderos, notas, batches, subrogations, contracts, payments } = rawData;
+
+    // Batch IDs whose period matches the selected period filter
+    const periodBatchIds = useMemo(() => {
+        if (!period) return null;
+        const matching = batches
+            .filter((b) => (b.period && b.period === period) || (b.batch_id && b.batch_id.includes(period)))
+            .map((b) => b.batch_id);
+        return matching.length > 0 ? new Set(matching) : null;
+    }, [batches, period]);
+
+    // Debtors after applying period + batch filters
+    const filteredDebtors = useMemo(() => {
+        let result = debtors;
+        if (periodBatchIds) result = result.filter((d) => periodBatchIds.has(d.batch_id));
+        if (filters.batch !== "all") result = result.filter((d) => d.batch_id === filters.batch);
+        return result;
+    }, [debtors, periodBatchIds, filters.batch]);
+
+    // Stats recomputed whenever filtered debtors or other raw data changes
+    const stats = useMemo(
+        () => dashboardService.computeStats({ ...rawData, debtors: filteredDebtors }),
+        [rawData, filteredDebtors]
+    );
 
     const debtorStatusData = [
-        { name: "Submitted", value: debtors.filter((d) => d.status === "SUBMITTED").length, color: "#3b82f6" },
-        { name: "Approved", value: debtors.filter((d) => d.status === "APPROVED").length, color: "#10b981" },
-        { name: "Checked Tugure", value: debtors.filter((d) => d.status === "CHECKED_TUGURE").length, color: "#0F766E" },
-        { name: "Checked Brins", value: debtors.filter((d) => d.status === "CHECKED_BRINS").length, color: "#0E7490" },
-        { name: "Approved Brins", value: debtors.filter((d) => d.status === "APPROVED_BRINS").length, color: "#4338CA" },
-        { name: "Revision", value: debtors.filter((d) => d.status === "REVISION").length, color: "#C2410C" },
+        { name: "Submitted", value: filteredDebtors.filter((d) => d.status === "SUBMITTED").length, color: "#3b82f6" },
+        { name: "Approved", value: filteredDebtors.filter((d) => d.status === "APPROVED").length, color: "#10b981" },
+        { name: "Checked Tugure", value: filteredDebtors.filter((d) => d.status === "CHECKED_TUGURE").length, color: "#0F766E" },
+        { name: "Checked Brins", value: filteredDebtors.filter((d) => d.status === "CHECKED_BRINS").length, color: "#0E7490" },
+        { name: "Approved Brins", value: filteredDebtors.filter((d) => d.status === "APPROVED_BRINS").length, color: "#4338CA" },
+        { name: "Revision", value: filteredDebtors.filter((d) => d.status === "REVISION").length, color: "#C2410C" },
     ].filter((d) => d.value > 0);
 
     const contractStatusData = [
@@ -47,7 +68,7 @@ export function useDashboardData() {
         { name: "Revision", value: contracts.filter((c) => c.contract_status === "REVISION").length, color: "#C2410C" },
     ].filter((c) => c.value > 0);
 
-    const premiumBuckets = debtors.reduce((acc, d) => {
+    const premiumBuckets = filteredDebtors.reduce((acc, d) => {
         const s = (d?.status || "").toUpperCase();
         const amt = toNum(d?.net_premi ?? d?.net_premium ?? d?.netPremi ?? 0);
         if (s === "APPROVED") acc.approved += amt;
@@ -103,7 +124,11 @@ export function useDashboardData() {
         return { month, premium, komisi, claims: claimsAmt, recovery, lossRatio: premium > 0 ? Number(((claimsAmt / premium) * 100).toFixed(1)) : 0 };
     });
 
-    const batchIds = [...new Set(debtors.map((d) => d.batch_id).filter(Boolean))];
+    // Batch IDs available for the batch dropdown — scoped to the selected period
+    const batchIds = useMemo(() => {
+        const source = periodBatchIds ? debtors.filter((d) => periodBatchIds.has(d.batch_id)) : debtors;
+        return [...new Set(source.map((d) => d.batch_id).filter(Boolean))];
+    }, [debtors, periodBatchIds]);
 
     return { period, setPeriod, filters, setFilters, loading, stats, rawData, reload, debtorStatusData, contractStatusData, premiumByStatusData, claimStatusData, subrogationChartData, monthlyTrendData, batchIds };
 }

@@ -52,11 +52,13 @@ export default function Dashboard() {
             </div>
 
             {/* Primary KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <GradientStatCard title="Total Exposure" value={formatRupiahAdaptive(stats.totalExposure)} subtitle={`${stats.approvedDebtors} approved debtors`} icon={TrendingUp} gradient="from-blue-500 to-blue-600" />
                 <GradientStatCard title="Total Gross Premi" value={formatRupiahAdaptive(stats.totalGrossPremi)} subtitle="Sum of PREMIUM (all debtors)" icon={DollarSign} gradient="from-yellow-500 to-yellow-600" />
                 <GradientStatCard title="Total Net Premi" value={formatRupiahAdaptive(stats.totalNetPremi)} subtitle="Sum of NET_PREMI (all debtors)" icon={DollarSign} gradient="from-green-500 to-green-600" />
                 <GradientStatCard title="Total Premium" value={formatRupiahAdaptive(stats.totalPremium)} subtitle="Net premium (approved debtors)" icon={BarChart3} gradient="from-purple-500 to-purple-600" />
+                <GradientStatCard title="Premi Share Tugure" value={formatRupiahAdaptive(stats.totalNetPremi)} subtitle="Sum of NET_PREMI (all debtors)" icon={DollarSign} gradient="from-teal-500 to-teal-600" />
+                <GradientStatCard title="Komisi Reas" value={formatRupiahAdaptive(stats.totalKomisiReas)} subtitle="Sum of RIC_AMOUNT (all debtors)" icon={TrendingUp} gradient="from-pink-500 to-pink-600" />
             </div>
 
             {/* Secondary KPIs */}

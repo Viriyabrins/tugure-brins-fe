@@ -226,27 +226,33 @@ export default function SubmitDebtor() {
     const uploadErrorView = formatUploadErrorView(upload.uploadError);
 
     // ─── Table columns ─────────────────────────────────────────────────────
+    const actionableStatuses = isCheckerBrins ? ["SUBMITTED"] : isApproverBrins ? ["CHECKED_BRINS"] : [];
+    const actionableDebtors = pageData.filter((d) => actionableStatuses.includes(d.status));
     const columns = [
         {
             header: isViewer ? null : (
                 <Checkbox
-                    checked={selectedDebtors.length === pageData.length && pageData.length > 0}
+                    checked={actionableDebtors.length > 0 && actionableDebtors.every((d) => selectedDebtors.includes(d.id))}
                     onCheckedChange={(checked) =>
-                        setSelectedDebtors(checked ? pageData.map((d) => d.id) : [])
+                        setSelectedDebtors(checked ? actionableDebtors.map((d) => d.id) : [])
                     }
                 />
             ),
             cell: (row) => isViewer ? null : (
-                <Checkbox
-                    checked={selectedDebtors.includes(row.id)}
-                    onCheckedChange={(checked) =>
-                        setSelectedDebtors(
-                            checked
-                                ? [...selectedDebtors, row.id]
-                                : selectedDebtors.filter((id) => id !== row.id),
-                        )
-                    }
-                />
+                actionableStatuses.includes(row.status) ? (
+                    <Checkbox
+                        checked={selectedDebtors.includes(row.id)}
+                        onCheckedChange={(checked) =>
+                            setSelectedDebtors(
+                                checked
+                                    ? [...selectedDebtors, row.id]
+                                    : selectedDebtors.filter((id) => id !== row.id),
+                            )
+                        }
+                    />
+                ) : (
+                    <Checkbox disabled checked={false} />
+                )
             ),
             width: "50px",
         },

@@ -22,7 +22,7 @@ export function getNotaAmount(nota, debtors = []) {
     }
 }
 
-export const DEFAULT_NOTA_FILTER = { contract: "all", notaType: "all", status: "all" };
+export const DEFAULT_NOTA_FILTER = { contract: "all", notaType: "Batch", status: "all" };
 export const DEFAULT_RECON_FILTER = { contract: "all", status: "all", hasException: "all" };
 export const DEFAULT_DNCN_FILTER = { contract: "all", noteType: "all", status: "all" };
 

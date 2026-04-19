@@ -51,21 +51,27 @@ export default function DebtorReview() {
     const from = totalDebtors === 0 ? 0 : (page - 1) * DR_PAGE_SIZE + 1;
     const to = Math.min(totalDebtors, page * DR_PAGE_SIZE);
 
+    const actionableStatuses = isCheckerTugure ? ["APPROVED_BRINS"] : isApproverTugure ? ["CHECKED_TUGURE"] : [];
+    const actionableDebtors = pageData.filter((d) => actionableStatuses.includes(d.status));
     const columns = [
         {
             header: isViewer ? null : (
                 <Checkbox
-                    checked={selectedDebtors.length === pageData.length && pageData.length > 0}
-                    onCheckedChange={(checked) => setSelectedDebtors(checked ? pageData.map((d) => d.id) : [])}
+                    checked={actionableDebtors.length > 0 && actionableDebtors.every((d) => selectedDebtors.includes(d.id))}
+                    onCheckedChange={(checked) => setSelectedDebtors(checked ? actionableDebtors.map((d) => d.id) : [])}
                 />
             ),
             cell: (row) => isViewer ? null : (
-                <Checkbox
-                    checked={selectedDebtors.includes(row.id)}
-                    onCheckedChange={(checked) =>
-                        setSelectedDebtors(checked ? [...selectedDebtors, row.id] : selectedDebtors.filter((id) => id !== row.id))
-                    }
-                />
+                actionableStatuses.includes(row.status) ? (
+                    <Checkbox
+                        checked={selectedDebtors.includes(row.id)}
+                        onCheckedChange={(checked) =>
+                            setSelectedDebtors(checked ? [...selectedDebtors, row.id] : selectedDebtors.filter((id) => id !== row.id))
+                        }
+                    />
+                ) : (
+                    <Checkbox disabled checked={false} />
+                )
             ),
             width: "40px",
         },

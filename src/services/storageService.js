@@ -191,9 +191,8 @@ export async function getDownloadUrl(fileKey) {
  */
 export async function removeFile(fileKey) {
   try {
-    // Encode the key for URL
-    const encodedKey = encodeURIComponent(fileKey);
-    const url = `${API_BASE}/files/${encodedKey}`;
+    const params = new URLSearchParams({ key: fileKey });
+    const url = `${API_BASE}/files?${params.toString()}`;
     const response = await fetch(url, await authFetchOptions({ method: 'DELETE' }, url));
 
     if (!response.ok) {

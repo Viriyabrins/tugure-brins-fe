@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { getFilesByPath } from "@/services/storageService";
 
-export function AttachmentCount({ recordId }) {
+export function AttachmentCount({ recordId, refreshTrigger }) {
     const [count, setCount] = useState(null);
 
     useEffect(() => {
@@ -24,7 +24,7 @@ export function AttachmentCount({ recordId }) {
         return () => {
              isMounted = false;
         };
-    }, [recordId]);
+    }, [recordId, refreshTrigger]);
 
     if (count === null) {
         return <Loader2 className="w-4 h-4 animate-spin text-gray-400" />;

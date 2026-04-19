@@ -105,6 +105,7 @@ export default function ClaimSubmit() {
     const [successMessage, setSuccessMessage] = useState("");
     const [filePreviewOpen, setFilePreviewOpen] = useState(false);
     const [selectedClaimForFiles, setSelectedClaimForFiles] = useState(null);
+    const [fileRefreshTrigger, setFileRefreshTrigger] = useState(0);
 
     const {
         claims,
@@ -193,7 +194,7 @@ export default function ClaimSubmit() {
         },
         {
             header: "Files Count",
-            cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} />,
+            cell: (row) => <AttachmentCount recordId={row.nomor_peserta || row.claim_no} refreshTrigger={fileRefreshTrigger} />,
         },
         {
             header: "Attachments",
@@ -528,6 +529,7 @@ export default function ClaimSubmit() {
                         setSelectedClaimForFiles(null);
                     }}
                     recordId={selectedClaimForFiles.nomor_peserta || selectedClaimForFiles.claim_no}
+                    onFileChange={() => setFileRefreshTrigger((prev) => prev + 1)}
                 />
             )}
 

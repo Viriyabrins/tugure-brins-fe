@@ -3,6 +3,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import { createRoot } from "react-dom/client";
 import NotaPDFTemplate from "../components/NotaPDFTemplate";
+import NotaDetailPreview from "../components/NotaDetailPreview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,6 +90,7 @@ export default function NotaManagement() {
     const [pdfDownloading, setPdfDownloading] = useState(false);
     const pdfContainerRef = useRef(/** @type {HTMLDivElement | null} */(null));
     const [selectedNotas, setSelectedNotas] = useState(/** @type {string[]} */([]));
+    const [actionContract, setActionContract] = useState(null);
 
     function toggleNotaSelection(notaNumber) {
         setSelectedNotas((prev) =>
@@ -171,14 +173,6 @@ export default function NotaManagement() {
             cell: (row) => row.status === "PAID"
                 ? <Badge variant="default" className="bg-green-600">PAID</Badge>
                 : <Badge variant="outline" className="text-orange-600 border-orange-300">UNPAID</Badge>,
-        },
-        {
-            header: "Payment Action",
-            cell: (row) => isBrinsRole(tokenRoles) && row.status === "UNPAID" ? (
-                <Button size="sm" variant="outline" onClick={() => { actions.setSelectedNotaForStatus(row); actions.setShowNotaStatusDialog(true); }}>
-                    Mark Paid
-                </Button>
-            ) : <span className="text-xs text-gray-500">View Only</span>,
         },
         {
             header: "Actions",
@@ -610,7 +604,7 @@ export default function NotaManagement() {
 
             {/* ── Nota Action Dialog ─────────────────────────────────────────── */}
             <Dialog open={actions.showActionDialog} onOpenChange={actions.setShowActionDialog}>
-                <DialogContent>
+                <DialogContent className="max-w-2xl w-full" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflowY: "auto" }}>
                     <DialogHeader>
                         <DialogTitle>{actions.actionType}</DialogTitle>
                         <DialogDescription>
@@ -626,13 +620,7 @@ export default function NotaManagement() {
                                 </AlertDescription>
                             </Alert>
                         )}
-                        <div className="p-4 bg-gray-50 rounded-lg">
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div><span className="text-gray-500">Type:</span><Badge>{actions.selectedNota?.nota_type}</Badge></div>
-                                <div><span className="text-gray-500">Amount:</span><span className="ml-2 font-medium">Rp {(actions.selectedNota?.amount || 0).toLocaleString("id-ID")}</span></div>
-                                <div className="col-span-2"><span className="text-gray-500">Reference:</span><span className="ml-2 font-medium">{actions.selectedNota?.reference_id}</span></div>
-                            </div>
-                        </div>
+                        <NotaDetailPreview nota={actions.selectedNota} contract={actionContract} />
                         <div>
                             <Label>Remarks</Label>
                             <Textarea value={actions.remarks} onChange={(e) => actions.setRemarks(e.target.value)} placeholder="Enter remarks..." rows={3} />
@@ -713,26 +701,13 @@ export default function NotaManagement() {
 
             {/* ── Nota Status Change Dialog ──────────────────────────────────── */}
             <Dialog open={actions.showNotaStatusDialog} onOpenChange={actions.setShowNotaStatusDialog}>
-                <DialogContent>
+                <DialogContent className="max-w-2xl w-full" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflowY: "auto" }}>
                     <DialogHeader>
                         <DialogTitle>Confirm Payment</DialogTitle>
                         <DialogDescription>Mark Nota {actions.selectedNotaForStatus?.nota_number} as Paid</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label className="text-xs text-gray-600">Nota Number</Label>
-                                <p className="font-mono text-sm">{actions.selectedNotaForStatus?.nota_number}</p>
-                            </div>
-                            <div>
-                                <Label className="text-xs text-gray-600">Current Status</Label>
-                                <p className="font-semibold text-orange-600">{actions.selectedNotaForStatus?.status}</p>
-                            </div>
-                            <div className="col-span-2">
-                                <Label className="text-xs text-gray-600">Amount</Label>
-                                <p className="text-lg font-bold">{formatRupiahAdaptive(actions.selectedNotaForStatus?.amount)}</p>
-                            </div>
-                        </div>
+                        <NotaDetailPreview nota={actions.selectedNotaForStatus} contract={actionContract} />
                         <Alert className="border-blue-200 bg-blue-50">
                             <AlertCircle className="h-4 w-4 text-blue-600" />
                             <AlertDescription className="text-blue-800">Status will be changed from UNPAID to PAID</AlertDescription>

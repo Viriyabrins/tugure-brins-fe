@@ -76,16 +76,19 @@ export default function MasterContractManagement() {
         draft: statsContracts.filter((c) => (c.contract_status || "") === "Draft").length,
     };
 
+    const actionableStatuses = isCheckerBrins ? ["SUBMITTED", "Draft"] : isApproverBrins ? ["CHECKED_BRINS"] : isCheckerTugure ? ["APPROVED_BRINS"] : isApproverTugure ? ["CHECKED_TUGURE"] : [];
+    const actionableContracts = contracts.filter((c) => actionableStatuses.includes(c.status_approval || ""));
     const columns = [
         {
             header: isViewer ? null : (
                 <Checkbox
-                    checked={contracts.length > 0 && selectedContractIds.length === contracts.length}
-                    onCheckedChange={(checked) => setSelectedContractIds(checked ? contracts.map((c) => c.contract_id || c.id) : [])}
+                    checked={actionableContracts.length > 0 && actionableContracts.every((c) => selectedContractIds.includes(c.contract_id || c.id))}
+                    onCheckedChange={(checked) => setSelectedContractIds(checked ? actionableContracts.map((c) => c.contract_id || c.id) : [])}
                 />
             ),
             cell: (row) => isViewer ? null : (() => {
                 const cId = row.contract_id || row.id;
+                if (!actionableStatuses.includes(row.status_approval || "")) return <Checkbox disabled checked={false} />;
                 return <Checkbox checked={selectedContractIds.includes(cId)} onCheckedChange={(checked) => setSelectedContractIds(checked ? [...selectedContractIds, cId] : selectedContractIds.filter((id) => id !== cId))} />;
             })(),
             width: "50px",

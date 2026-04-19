@@ -22,9 +22,10 @@ import { DocumentPreviewModal } from "@/components/common/DocumentPreviewModal";
  *   recordId     {string} - Record ID (nomor_peserta, etc.) to load files for
  *   batchId      {string} - Batch ID (used in MinIO path)
  *   readOnly     {boolean} - If true, disables upload and delete functions
+ *   onFileChange {() => void} - Callback triggered when a file is uploaded or deleted
  *   onFilesLoaded {(files) => void} - Callback when files are loaded
  */
-export function FilePreviewModal({ open, onClose, recordId, readOnly = false, onFilesLoaded }) {
+export function FilePreviewModal({ open, onClose, recordId, readOnly = false, onFileChange, onFilesLoaded }) {
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -105,6 +106,8 @@ export function FilePreviewModal({ open, onClose, recordId, readOnly = false, on
         try {
             await removeFile(file.key);
             setFiles((prev) => prev.filter((f) => f.key !== file.key));
+            // Notify parent that files have changed
+            if (onFileChange) onFileChange();
         } catch (err) {
             console.error("Failed to delete file:", err);
             setError(`Failed to delete ${file.fileName}: ${err.message}`);
@@ -126,6 +129,8 @@ export function FilePreviewModal({ open, onClose, recordId, readOnly = false, on
             }
             // Reload files whether successful or partial failure to show what was uploaded
             await loadFiles();
+            // Notify parent that files have changed
+            if (onFileChange) onFileChange();
         } catch (err) {
             console.error("Upload failed", err);
             setError(`Failed to upload files: ${err.message}`);

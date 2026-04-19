@@ -134,13 +134,12 @@ export function useClaimUpload({ debtors, user, isBrinsUser, onSuccess }) {
             const validationErrors = [];
 
             for (const row of rows) {
-                // BRINS users upload recovery data — debtor matching is not
-                // required because they reference an existing claim_no instead.
-                const { debtor, issues } = isBrinsUser
-                    ? { debtor: undefined, issues: [] }
-                    : validateClaimRow(row, debtors);
+                // Always attempt debtor matching to populate contract_id,
+                // batch_id, and debtor_id.  For BRINS users the match is
+                // best-effort — failures are not treated as validation errors.
+                const { debtor, issues } = validateClaimRow(row, debtors);
 
-                if (issues.length > 0) {
+                if (!isBrinsUser && issues.length > 0) {
                     validationErrors.push({
                         row: row.excelRow,
                         participant: row.nomor_peserta || row.claim_no || "Unknown",

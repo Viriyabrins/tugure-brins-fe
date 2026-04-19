@@ -34,9 +34,19 @@ function fmtDate(d) {
 /**
  * HTML template for Nota PDF generation via html2canvas + jsPDF.
  * Rendered off-screen in a hidden container, then captured as an image.
- * Matches the layout of the programmatic jsPDF version in NotaManagement.jsx.
+ *
+ * Props:
+ *  - nota     — single nota object (backward compat)
+ *  - notas    — array of nota objects (bulk preview)
+ *  - contract — contract object for period display
+ *
+ * When `notas` has >1 entries, each gets its own data row and a totals row
+ * is appended at the bottom.
  */
-export default function NotaPDFTemplate({ nota, contract }) {
+export default function NotaPDFTemplate({ nota, notas, contract }) {
+    const items = notas && notas.length > 0 ? notas : nota ? [nota] : [];
+    if (items.length === 0) return null;
+
     const now = new Date();
     const dateStr = `JAKARTA, ${now.getDate()} ${MONTHS_ID[now.getMonth()]} ${now.getFullYear()}`;
 
@@ -46,11 +56,19 @@ export default function NotaPDFTemplate({ nota, contract }) {
         ? `For The Period Of ${periodStart} - ${periodEnd}`
         : "";
 
-    const kindText = nota?.reference_id || nota?.contract_id || "AUTO FACULTATIVE CREDIT COMMERCIAL";
-
-    const netDueDisplayValue = nota?.nota_type === "Claim"
-        ? -Math.abs(parseNumberSafe(nota?.net_due))
-        : parseNumberSafe(nota?.net_due);
+    const showTotals = items.length > 1;
+    const totals = showTotals ? {
+        premium: items.reduce((s, n) => s + parseNumberSafe(n.premium), 0),
+        commission: items.reduce((s, n) => s + parseNumberSafe(n.commission), 0),
+        claim: items.reduce((s, n) => s + parseNumberSafe(n.claim), 0),
+        total: items.reduce((s, n) => s + parseNumberSafe(n.total), 0),
+        net_due: items.reduce((s, n) => {
+            const v = n.nota_type === "Claim"
+                ? -Math.abs(parseNumberSafe(n.net_due))
+                : parseNumberSafe(n.net_due);
+            return s + v;
+        }, 0),
+    } : null;
 
     // ── Shared column grid for table header + data row ──────────────────────
     const tableGrid = "1fr 88px 95px 82px 82px 82px";
@@ -135,22 +153,53 @@ export default function NotaPDFTemplate({ nota, contract }) {
                 {/* Currency row */}
                 <div style={{ fontSize: "8pt", marginBottom: "4px" }}>Currency : IDR</div>
 
-                {/* Data row */}
-                <div style={{
-                    display: "grid",
-                    gridTemplateColumns: tableGrid,
-                    padding: "4px 0",
-                    fontSize: "8pt",
-                    minHeight: "24px",
-                    alignItems: "start",
-                }}>
-                    <span style={{ wordBreak: "break-word", paddingRight: "8px" }}>{kindText}</span>
-                    <span style={{ textAlign: "right" }}>{fmt(nota?.premium)}</span>
-                    <span style={{ textAlign: "right" }}>{fmt(-Math.abs(parseNumberSafe(nota?.commission)))}</span>
-                    <span style={{ textAlign: "right" }}>{fmt(nota?.claim)}</span>
-                    <span style={{ textAlign: "right" }}>{fmt(nota?.total)}</span>
-                    <span style={{ textAlign: "right" }}>{fmt(netDueDisplayValue)}</span>
-                </div>
+                {/* Data rows */}
+                {items.map((n, idx) => {
+                    const kindText = n.reference_id || n.contract_id || "AUTO FACULTATIVE CREDIT COMMERCIAL";
+                    const netDue = n.nota_type === "Claim"
+                        ? -Math.abs(parseNumberSafe(n.net_due))
+                        : parseNumberSafe(n.net_due);
+                    return (
+                        <div key={n.nota_number || idx} style={{
+                            display: "grid",
+                            gridTemplateColumns: tableGrid,
+                            padding: "4px 0",
+                            fontSize: "8pt",
+                            minHeight: "24px",
+                            alignItems: "start",
+                        }}>
+                            <span style={{ wordBreak: "break-word", paddingRight: "8px" }}>{kindText}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(n.premium)}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(-Math.abs(parseNumberSafe(n.commission)))}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(n.claim)}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(n.total)}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(netDue)}</span>
+                        </div>
+                    );
+                })}
+
+                {/* Totals row (only when multiple) */}
+                {showTotals && totals && (
+                    <>
+                        <div style={{ borderTop: "0.8px solid #000000", marginTop: "4px", marginBottom: "4px" }} />
+                        <div style={{
+                            display: "grid",
+                            gridTemplateColumns: tableGrid,
+                            padding: "4px 0",
+                            fontSize: "8pt",
+                            fontWeight: "bold",
+                            minHeight: "24px",
+                            alignItems: "start",
+                        }}>
+                            <span>Total</span>
+                            <span style={{ textAlign: "right" }}>{fmt(totals.premium)}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(-Math.abs(totals.commission))}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(totals.claim)}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(totals.total)}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(totals.net_due)}</span>
+                        </div>
+                    </>
+                )}
 
                 {/* Double bottom border */}
                 <div style={{ borderTop: "0.8px solid #000000", marginTop: "4px" }} />

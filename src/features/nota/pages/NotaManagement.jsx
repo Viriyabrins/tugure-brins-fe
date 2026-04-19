@@ -88,6 +88,7 @@ export default function NotaManagement() {
     const [reconFilters, setReconFilters] = useState({ contract: "all", status: "all", hasException: "all" });
     const [pdfPreview, setPdfPreview] = useState(/** @type {{ nota: any, contract: any } | null} */(null));
     const [pdfDownloading, setPdfDownloading] = useState(false);
+    const [bulkPdfDownloading, setBulkPdfDownloading] = useState(false);
     const pdfContainerRef = useRef(/** @type {HTMLDivElement | null} */(null));
     const [selectedNotas, setSelectedNotas] = useState(/** @type {string[]} */([]));
     const [actionContract, setActionContract] = useState(null);
@@ -248,6 +249,55 @@ export default function NotaManagement() {
             actions.setSuccessMessage("Failed to generate PDF");
         } finally {
             setPdfDownloading(false);
+        }
+    }
+
+    async function handleBulkPaidDownload() {
+        if (!pdfContainerRef.current || selectedNotas.length === 0) return;
+        setBulkPdfDownloading(true);
+        try {
+            const container = pdfContainerRef.current;
+            const root = createRoot(container);
+            const bulkNotas = notas.filter((n) => selectedNotas.includes(n.nota_number));
+
+            await new Promise((resolve) => {
+                root.render(<NotaPDFTemplate notas={bulkNotas} />);
+                requestAnimationFrame(() => requestAnimationFrame(resolve));
+            });
+
+            const imgs = [...container.querySelectorAll("img")];
+            if (imgs.length > 0) {
+                await Promise.all(
+                    imgs.map((img) =>
+                        img.complete
+                            ? Promise.resolve()
+                            : new Promise((r) => { img.onload = r; img.onerror = r; })
+                    )
+                );
+            }
+
+            const captureTarget = /** @type {HTMLElement} */ (container.firstChild);
+            const canvas = await html2canvas(captureTarget, {
+                scale: 1.5,
+                useCORS: true,
+                logging: false,
+                backgroundColor: "#ffffff",
+            });
+
+            const pdf = new jsPDF("p", "mm", "a4");
+            const imgData = canvas.toDataURL("image/jpeg", 0.88);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`treaty-note-bulk-${selectedNotas.length}-notas.pdf`);
+
+            root.unmount();
+            actions.setSuccessMessage("PDF downloaded successfully");
+        } catch (e) {
+            console.error("Failed to generate bulk PDF:", e);
+            actions.setSuccessMessage("Failed to generate PDF");
+        } finally {
+            setBulkPdfDownloading(false);
         }
     }
 
@@ -672,7 +722,7 @@ export default function NotaManagement() {
 
             {/* ── Bulk Mark Paid Dialog ──────────────────────────────────────── */}
             <Dialog open={actions.showBulkPaidDialog} onOpenChange={actions.setShowBulkPaidDialog}>
-                <DialogContent>
+                <DialogContent className="max-w-[720px]" style={{ maxHeight: "90vh", display: "flex", flexDirection: "column", overflowY: "auto" }}>
                     <DialogHeader>
                         <DialogTitle>Mark Selected Notas as Paid</DialogTitle>
                         <DialogDescription>{selectedNotas.length} nota(s) will be marked as PAID</DialogDescription>
@@ -684,14 +734,21 @@ export default function NotaManagement() {
                                 All selected notas will be updated atomically. If any update fails, all changes will be rolled back.
                             </AlertDescription>
                         </Alert>
-                        <div className="max-h-48 overflow-y-auto space-y-1">
-                            {selectedNotas.map((n) => (
-                                <div key={n} className="text-sm font-mono px-2 py-1 bg-gray-50 rounded">{n}</div>
-                            ))}
+                        <div style={{ overflowY: "auto", maxHeight: "55vh", background: "#f3f4f6", padding: "8px", borderRadius: "4px" }}>
+                            <div style={{ width: `${Math.round(794 * 0.82)}px`, overflow: "hidden", margin: "0 auto" }}>
+                                <div style={{ transform: "scale(0.82)", transformOrigin: "top left" }}>
+                                    <NotaPDFTemplate notas={notas.filter((n) => selectedNotas.includes(n.nota_number))} />
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => actions.setShowBulkPaidDialog(false)} disabled={actions.processing}>Cancel</Button>
+                        <Button variant="outline" onClick={handleBulkPaidDownload} disabled={bulkPdfDownloading || actions.processing}>
+                            {bulkPdfDownloading
+                                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating...</>
+                                : <><Download className="w-4 h-4 mr-2" />Download PDF</>}
+                        </Button>
                         <Button onClick={() => actions.handleBulkMarkPaid(selectedNotas, setSelectedNotas)} disabled={actions.processing} className="bg-green-600 hover:bg-green-700">
                             {actions.processing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</> : <><Check className="w-4 h-4 mr-2" />Confirm</>}
                         </Button>

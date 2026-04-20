@@ -28,6 +28,7 @@ import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
+import SourceFilePopover from "@/components/common/SourceFilePopover";
 import FilterTab from "@/components/common/FilterTab";
 import { backend } from "@/api/backendClient";
 
@@ -171,6 +172,10 @@ export default function ClaimSubmit() {
     const claimColumns = [
         { header: "Claim No", accessorKey: "claim_no" },
         { header: "Policy No", accessorKey: "policy_no" },
+        {
+            header: "Source File",
+            cell: (row) => <SourceFilePopover filename={row.source_filename} folder="claim" subfolder="excel" recordId={row.claim_no} />,
+        },
         {
             header: "Debtor",
             accessorKey: "nama_tertanggung",

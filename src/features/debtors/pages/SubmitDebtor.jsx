@@ -18,6 +18,7 @@ import {
     RefreshCw, FileText, Users, AlertTriangle, Check, ShieldCheck, Eye,
     ChevronLeft, ChevronRight, History,
 } from "lucide-react";
+import SourceFilePopover from "@/components/common/SourceFilePopover";
 import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -259,6 +260,10 @@ export default function SubmitDebtor() {
         {
             header: "Batch ID", accessorKey: "batch_id",
             cell: (row) => <span className="font-mono text-xs">{row.batch_id}</span>,
+        },
+        {
+            header: "Source File",
+            cell: (row) => <SourceFilePopover filename={row.batch_source_filename} uploadDate={row.batch_uploaded_date} folder="batch" subfolder="excel" recordId={row.batch_id} />,
         },
         {
             header: "Nomor Peserta", accessorKey: "nomor_peserta",

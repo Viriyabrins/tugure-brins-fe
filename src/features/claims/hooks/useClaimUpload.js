@@ -300,6 +300,7 @@ export function useClaimUpload({ debtors, user, isBrinsUser, onSuccess }) {
 
             let uploaded = 0;
             const errors = [];
+            const sourceFilename = rawFileRef.current?.name || null;
 
             for (const claim of parsedClaims) {
                 if (claim.validation_remarks) continue;
@@ -312,7 +313,7 @@ export function useClaimUpload({ debtors, user, isBrinsUser, onSuccess }) {
                         claimNo = `${prefix}${String(maxSeq).padStart(6, "0")}`;
                     }
                     await claimService.uploadClaim(
-                        claim,
+                        { ...claim, source_filename: sourceFilename },
                         claimNo,
                         user,
                         isBrinsUser,

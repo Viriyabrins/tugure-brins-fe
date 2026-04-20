@@ -56,6 +56,7 @@ export const claimService = {
                 nomor_peserta: claim.nomor_peserta,
                 status: "SUBMITTED",
                 version_no: 1,
+                source_filename: claim.source_filename || null,
             });
 
             await claimService._audit(
@@ -94,6 +95,7 @@ export const claimService = {
                 nomor_peserta: claim.nomor_peserta,
                 status: "SUBMITTED",
                 version_no: 1,
+                source_filename: claim.source_filename || null,
             });
 
             await claimService._audit(

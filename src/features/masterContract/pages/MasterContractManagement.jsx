@@ -21,6 +21,7 @@ import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
+import SourceFilePopover from "@/components/common/SourceFilePopover";
 import { DEFAULT_MC_FILTER, MC_PAGE_SIZE, extractBaseContractNo, PREVIEW_COLUMNS } from "../utils/masterContractConstants";
 import { useMasterContractData } from "../hooks/useMasterContractData";
 import { useMasterContractActions } from "../hooks/useMasterContractActions";
@@ -94,6 +95,7 @@ export default function MasterContractManagement() {
             width: "50px",
         },
         { header: "Contract No", cell: (row) => extractBaseContractNo(row.contract_no || row.contract_no_from || row.contract_id || "") || "-" },
+        { header: "Source File", cell: (row) => <SourceFilePopover filename={row.source_filename} uploadDate={row.uploaded_date} folder="master-contract" subfolder="excel" recordId={extractBaseContractNo(row.contract_no || row.contract_no_from || row.contract_id || "")} /> },
         { header: "Underwriter Name", accessorKey: "underwriter_name" },
         { header: "Contract Status", cell: (row) => <span className="text-sm font-medium">{row.contract_status || "-"}</span> },
         { header: "Status Approval", cell: (row) => <ApprovalBadge status={row.status_approval} /> },

@@ -214,7 +214,7 @@ export function useDebtorUpload({ user, auditActor, debtors, loadDebtors, loadIn
             const totalPremium = uploadPreviewData.reduce((s, r) => s + (r.nominal_premi || 0), 0);
 
             if (batchMode === "new") {
-                await debtorService.createBatch(batchId, contractId, uploadPreviewData.length, totalExposure, totalPremium);
+                await debtorService.createBatch(batchId, contractId, uploadPreviewData.length, totalExposure, totalPremium, uploadFile?.name);
                 batchCreatedByUs = true;
                 const now = new Date();
                 const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;

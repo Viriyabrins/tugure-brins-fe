@@ -72,7 +72,7 @@ export const debtorService = {
 
     // ─── Upload ───────────────────────────────────────────────────────────────
 
-    async createBatch(batchId, contractId, rowCount, totalExposure, totalPremium) {
+    async createBatch(batchId, contractId, rowCount, totalExposure, totalPremium, sourceFilename) {
         return backend.create("Batch", {
             batch_id: batchId,
             batch_month: new Date().getMonth() + 1,
@@ -82,6 +82,7 @@ export const debtorService = {
             total_exposure: totalExposure,
             total_premium: totalPremium,
             status: "Uploaded",
+            source_filename: sourceFilename || null,
         });
     },
 

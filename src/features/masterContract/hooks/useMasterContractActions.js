@@ -170,7 +170,7 @@ export function useMasterContractActions({ user, auditActor, contracts, statsCon
                 const mismatch = (uploadPreviewData || []).find((r) => extractBaseContractNo(toNullableString(r.contract_no) || "").trim().toUpperCase() !== expectedBase.trim().toUpperCase());
                 if (mismatch) { setPreviewValidationError(`Contract No pada file tidak sesuai dengan kontrak yang dipilih untuk direvisi.`); setUploadTabActive(2); setProcessing(false); return; }
             }
-            const result = await masterContractService.uploadContracts({ uploadMode, selectedContractForRevision: uploadMode === "revise" ? selectedContractForRevision : null, contracts: uploadPreviewData });
+            const result = await masterContractService.uploadContracts({ uploadMode, selectedContractForRevision: uploadMode === "revise" ? selectedContractForRevision : null, contracts: uploadPreviewData, source_filename: uploadFile?.name || null });
             const uploaded = Number(result?.createdCount || 0);
 
             // Store raw Excel file in MinIO (non-blocking)
@@ -179,6 +179,7 @@ export function useMasterContractActions({ user, auditActor, contracts, statsCon
                 uploadFileToPath(uploadFile, {
                     folder: 'master-contract',
                     subfolder: 'excel',
+                    recordId: contractNo,
                     identifier: contractNo,
                 }).catch((err) => console.error('[MC Excel] Failed to store Excel in MinIO:', err));
             }

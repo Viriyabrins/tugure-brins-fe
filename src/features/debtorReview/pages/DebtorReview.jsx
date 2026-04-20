@@ -16,6 +16,7 @@ import StatusBadge from "@/components/ui/StatusBadge";
 import GradientStatCard from "@/components/dashboard/GradientStatCard";
 import FilterTab from "@/components/common/FilterTab";
 import SuccessAlert from "@/components/common/SuccessAlert";
+import SourceFilePopover from "@/components/common/SourceFilePopover";
 import { formatRupiahAdaptive } from "@/utils/currency";
 import { DEFAULT_DR_FILTER, DR_PAGE_SIZE } from "../utils/debtorReviewConstants";
 import { useDebtorReviewData } from "../hooks/useDebtorReviewData";
@@ -85,6 +86,7 @@ export default function DebtorReview() {
             ),
         },
         { header: "Batch", accessorKey: "batch_id", cell: (row) => <span className="font-mono text-sm">{row.batch_id}</span> },
+        { header: "Source File", cell: (row) => <SourceFilePopover filename={row.batch_source_filename} uploadDate={row.batch_uploaded_date} folder="batch" subfolder="excel" recordId={row.batch_id} /> },
         { header: "Plafond", accessorKey: "plafon", cell: (row) => formatRupiahAdaptive(row.plafon) },
         { header: "Net Premi", accessorKey: "net_premi", cell: (row) => formatRupiahAdaptive(row.net_premi) },
         { header: "Status", accessorKey: "status", cell: (row) => <StatusBadge status={row.status} /> },

@@ -9,8 +9,16 @@ import {
     validateClaimRow,
     validateFileInternalDuplicates,
     validateExistingDuplicates,
+    validateClaimNos,
     buildValidationSummary,
 } from "../utils/claimValidation";
+
+/**
+ * Toggle claim_no source:
+ *   true  → use the claim_no from the uploaded file (file must contain claim_no column)
+ *   false → auto-generate claim_no as CLM-YYYY-MM-XXXXXX
+ */
+const USE_FILE_CLAIM_NO = true;
 
 /**
  * Encapsulates the entire two-step upload workflow:
@@ -184,6 +192,15 @@ export function useClaimUpload({ debtors, user, isBrinsUser, onSuccess }) {
                 validationErrors.push(...existingErrors);
             }
 
+            // When using file-based claim_no, validate presence, uniqueness,
+            // and that none already exist in the database.
+            if (USE_FILE_CLAIM_NO) {
+                console.log("[useClaimUpload] Running claim_no validation...");
+                const claimNoErrors = await validateClaimNos(parsed);
+                console.log("[useClaimUpload] claim_no validation returned", claimNoErrors.length, "errors");
+                validationErrors.push(...claimNoErrors);
+            }
+
             setParsedClaims(parsed);
             setValidationRemarks(validationErrors);
 
@@ -260,17 +277,24 @@ export function useClaimUpload({ debtors, user, isBrinsUser, onSuccess }) {
                 }
             }
 
-            const now = new Date();
-            const prefix = `CLM-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
-            let maxSeq = await claimService.getNextClaimSequence(prefix);
+            // --- claim_no resolution: file-based vs auto-generated ---
+            let maxSeq = 0;
+            let prefix = "";
+            if (!USE_FILE_CLAIM_NO) {
+                const now = new Date();
+                prefix = `CLM-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
+                maxSeq = await claimService.getNextClaimSequence(prefix);
+            }
 
             // Store raw Excel file in MinIO (non-blocking)
             if (rawFileRef.current) {
-                const claimNo = `${prefix}${String(maxSeq + 1).padStart(6, "0")}`;
+                const fileIdentifier = USE_FILE_CLAIM_NO
+                    ? parsedClaims.find((c) => !c.validation_remarks)?.claim_no || "unknown"
+                    : `${prefix}${String(maxSeq + 1).padStart(6, "0")}`;
                 uploadFileToPath(rawFileRef.current, {
                     folder: 'claim',
                     subfolder: 'excel',
-                    identifier: claimNo,
+                    identifier: fileIdentifier,
                 }).catch((err) => console.error('[Claim Excel] Failed to store Excel in MinIO:', err));
             }
 
@@ -280,8 +304,13 @@ export function useClaimUpload({ debtors, user, isBrinsUser, onSuccess }) {
             for (const claim of parsedClaims) {
                 if (claim.validation_remarks) continue;
                 try {
-                    maxSeq++;
-                    const claimNo = `${prefix}${String(maxSeq).padStart(6, "0")}`;
+                    let claimNo;
+                    if (USE_FILE_CLAIM_NO) {
+                        claimNo = String(claim.claim_no || "").trim();
+                    } else {
+                        maxSeq++;
+                        claimNo = `${prefix}${String(maxSeq).padStart(6, "0")}`;
+                    }
                     await claimService.uploadClaim(
                         claim,
                         claimNo,

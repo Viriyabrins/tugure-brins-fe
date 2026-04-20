@@ -179,6 +179,7 @@ export function useMasterContractActions({ user, auditActor, contracts, statsCon
                 uploadFileToPath(uploadFile, {
                     folder: 'master-contract',
                     subfolder: 'excel',
+                    recordId: contractNo,
                     identifier: contractNo,
                 }).catch((err) => console.error('[MC Excel] Failed to store Excel in MinIO:', err));
             }

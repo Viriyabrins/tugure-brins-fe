@@ -27,12 +27,23 @@ export default function SourceFilePopover({ filename, uploadDate, folder, subfol
     setDownloading(true);
     setError(null);
     try {
-      const files = await getFilesByPath(folder, subfolder, recordId);
+      let files = await getFilesByPath(folder, subfolder, recordId);
+      
+      // Fallback for files uploaded before recordId structure was enforced
+      if (!files || files.length === 0) {
+        const allFiles = await getFilesByPath(folder, subfolder);
+        files = allFiles.filter(f => f.fileName.includes(filename) || (recordId && f.key.includes(recordId)));
+      }
+
       if (!files || files.length === 0) {
         setError("File not found in storage");
         return;
       }
-      const fileKey = files[0].key;
+      
+      // Prefer exact file name match if available, to handle multiple versions
+      const exactMatch = files.find(f => f.fileName.includes(filename));
+      const fileKey = exactMatch ? exactMatch.key : files[0].key;
+      
       const url = await getDownloadUrl(fileKey);
       if (url) {
         window.open(url, "_blank");

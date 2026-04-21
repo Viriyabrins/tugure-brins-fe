@@ -52,17 +52,25 @@ export default function DebtorReview() {
     const from = totalDebtors === 0 ? 0 : (page - 1) * DR_PAGE_SIZE + 1;
     const to = Math.min(totalDebtors, page * DR_PAGE_SIZE);
 
-    const actionableStatuses = isCheckerTugure ? ["APPROVED_BRINS"] : isApproverTugure ? ["CHECKED_TUGURE"] : [];
+    const actionableStatuses = [
+        ...(isCheckerTugure ? ["APPROVED_BRINS"] : []),
+        ...(isApproverTugure ? ["CHECKED_TUGURE"] : []),
+    ];
     const actionableDebtors = pageData.filter((d) => actionableStatuses.includes(d.status));
+
+    const selectedDebtorsList = pageData.filter((d) => selectedDebtors.includes(d.id));
+    const showCheckTugure = isCheckerTugure && (selectedDebtors.length === 0 || selectedDebtorsList.some((d) => ["APPROVED_BRINS"].includes(d.status)));
+    const showApproveTugure = isApproverTugure && (selectedDebtors.length === 0 || selectedDebtorsList.some((d) => ["CHECKED_TUGURE"].includes(d.status)));
+
     const columns = [
         {
-            header: isViewer ? null : (
+            header: (
                 <Checkbox
                     checked={actionableDebtors.length > 0 && actionableDebtors.every((d) => selectedDebtors.includes(d.id))}
                     onCheckedChange={(checked) => setSelectedDebtors(checked ? actionableDebtors.map((d) => d.id) : [])}
                 />
             ),
-            cell: (row) => isViewer ? null : (
+            cell: (row) => (
                 actionableStatuses.includes(row.status) ? (
                     <Checkbox
                         checked={selectedDebtors.includes(row.id)}
@@ -148,12 +156,12 @@ export default function DebtorReview() {
 
             {canManageDebtorActions && selectedDebtors.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                    {isCheckerTugure && (
+                    {showCheckTugure && (
                         <Button onClick={() => actions.handleActionButtonClick("bulk_check")} disabled={actions.processing || actions.showBatchPickerDialog || actions.showScopeDialog}>
                             <Check className="w-4 h-4 mr-2" />Check ({selectedDebtors.length})
                         </Button>
                     )}
-                    {isApproverTugure && (
+                    {showApproveTugure && (
                         <>
                             <Button variant="outline" onClick={() => actions.handleActionButtonClick("bulk_approve")} disabled={actions.processing || actions.showBatchPickerDialog || actions.showScopeDialog}>
                                 <ShieldCheck className="w-4 h-4 mr-2" />Approve ({selectedDebtors.length})

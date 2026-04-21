@@ -227,11 +227,19 @@ export default function SubmitDebtor() {
     const uploadErrorView = formatUploadErrorView(upload.uploadError);
 
     // ─── Table columns ─────────────────────────────────────────────────────
-    const actionableStatuses = isCheckerBrins ? ["SUBMITTED"] : isApproverBrins ? ["CHECKED_BRINS"] : [];
+    const actionableStatuses = [
+        ...(isCheckerBrins ? ["SUBMITTED"] : []),
+        ...(isApproverBrins ? ["CHECKED_BRINS"] : []),
+    ];
     const actionableDebtors = pageData.filter((d) => actionableStatuses.includes(d.status));
+
+    const selectedDebtorsList = pageData.filter((d) => selectedDebtors.includes(d.id));
+    const showCheckBrins = isCheckerBrins && (selectedDebtors.length === 0 || selectedDebtorsList.some((d) => ["SUBMITTED"].includes(d.status)));
+    const showApproveBrins = isApproverBrins && (selectedDebtors.length === 0 || selectedDebtorsList.some((d) => ["CHECKED_BRINS"].includes(d.status)));
+
     const columns = [
         {
-            header: isViewer ? null : (
+            header: (
                 <Checkbox
                     checked={actionableDebtors.length > 0 && actionableDebtors.every((d) => selectedDebtors.includes(d.id))}
                     onCheckedChange={(checked) =>
@@ -239,7 +247,7 @@ export default function SubmitDebtor() {
                     }
                 />
             ),
-            cell: (row) => isViewer ? null : (
+            cell: (row) => (
                 actionableStatuses.includes(row.status) ? (
                     <Checkbox
                         checked={selectedDebtors.includes(row.id)}
@@ -392,7 +400,7 @@ export default function SubmitDebtor() {
 
             {/* Bulk action buttons */}
             <div className="flex flex-wrap gap-2">
-                {isCheckerBrins && selectedDebtors.length > 0 && (
+                {showCheckBrins && selectedDebtors.length > 0 && (
                     <Button variant="outline"
                         onClick={() => actions.handleActionButtonClick("check")}
                         disabled={actions.uploading || actions.showBatchPickerDialog || actions.showScopeDialog}
@@ -403,7 +411,7 @@ export default function SubmitDebtor() {
                         Check ({selectedDebtors.length})
                     </Button>
                 )}
-                {isApproverBrins && selectedDebtors.length > 0 && (
+                {showApproveBrins && selectedDebtors.length > 0 && (
                     <Button variant="outline"
                         onClick={() => actions.handleActionButtonClick("approve")}
                         disabled={actions.uploading || actions.showBatchPickerDialog || actions.showScopeDialog}

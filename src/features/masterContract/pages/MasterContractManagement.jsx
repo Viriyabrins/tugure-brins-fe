@@ -77,21 +77,33 @@ export default function MasterContractManagement() {
         draft: statsContracts.filter((c) => (c.contract_status || "") === "Draft").length,
     };
 
-    const actionableStatuses = isCheckerBrins ? ["SUBMITTED", "Draft"] : isApproverBrins ? ["CHECKED_BRINS"] : isCheckerTugure ? ["APPROVED_BRINS"] : isApproverTugure ? ["CHECKED_TUGURE"] : [];
+    const actionableStatuses = [
+        ...(isCheckerBrins ? ["SUBMITTED", "Draft"] : []),
+        ...(isApproverBrins ? ["CHECKED_BRINS"] : []),
+        ...(isCheckerTugure ? ["APPROVED_BRINS"] : []),
+        ...(isApproverTugure ? ["CHECKED_TUGURE"] : []),
+    ];
     const actionableContracts = contracts.filter((c) => actionableStatuses.includes(c.status_approval || ""));
+
+    const selectedContractsList = contracts.filter((c) => selectedContractIds.includes(c.contract_id || c.id));
+    const showCheckBrins = isCheckerBrins && (selectedContractIds.length === 0 || selectedContractsList.some((c) => ["SUBMITTED", "Draft"].includes(c.status_approval)));
+    const showApproveBrins = isApproverBrins && (selectedContractIds.length === 0 || selectedContractsList.some((c) => ["CHECKED_BRINS"].includes(c.status_approval)));
+    const showCheckTugure = isCheckerTugure && (selectedContractIds.length === 0 || selectedContractsList.some((c) => ["APPROVED_BRINS"].includes(c.status_approval)));
+    const showApproveTugure = isApproverTugure && (selectedContractIds.length === 0 || selectedContractsList.some((c) => ["CHECKED_TUGURE"].includes(c.status_approval)));
+
     const columns = [
         {
-            header: isViewer ? null : (
+            header: (
                 <Checkbox
                     checked={actionableContracts.length > 0 && actionableContracts.every((c) => selectedContractIds.includes(c.contract_id || c.id))}
                     onCheckedChange={(checked) => setSelectedContractIds(checked ? actionableContracts.map((c) => c.contract_id || c.id) : [])}
                 />
             ),
-            cell: (row) => isViewer ? null : (() => {
+            cell: (row) => {
                 const cId = row.contract_id || row.id;
                 if (!actionableStatuses.includes(row.status_approval || "")) return <Checkbox disabled checked={false} />;
                 return <Checkbox checked={selectedContractIds.includes(cId)} onCheckedChange={(checked) => setSelectedContractIds(checked ? [...selectedContractIds, cId] : selectedContractIds.filter((id) => id !== cId))} />;
-            })(),
+            },
             width: "50px",
         },
         { header: "Contract No", cell: (row) => extractBaseContractNo(row.contract_no || row.contract_no_from || row.contract_id || "") || "-" },
@@ -157,10 +169,10 @@ export default function MasterContractManagement() {
             />
 
             <div className="flex flex-wrap gap-2">
-                {isCheckerBrins && <Button variant="outline" onClick={() => actions.handleCheckerBrinsCheck(selectedContractIds, clearSelection)} disabled={actions.processing || !selectedContractIds.length}><Check className="w-4 h-4 mr-2" />Check{selectedContractIds.length > 0 ? ` (${selectedContractIds.length})` : ""}</Button>}
-                {isApproverBrins && <Button variant="outline" onClick={() => actions.handleApproverBrinsApprove(selectedContractIds, clearSelection)} disabled={actions.processing || !selectedContractIds.length}><ShieldCheck className="w-4 h-4 mr-2" />Approve{selectedContractIds.length > 0 ? ` (${selectedContractIds.length})` : ""}</Button>}
-                {isCheckerTugure && <Button variant="outline" onClick={() => actions.handleCheckerTugureCheck(selectedContractIds, clearSelection)} disabled={actions.processing || !selectedContractIds.length}><Check className="w-4 h-4 mr-2" />Check{selectedContractIds.length > 0 ? ` (${selectedContractIds.length})` : ""}</Button>}
-                {isApproverTugure && (
+                {showCheckBrins && <Button variant="outline" onClick={() => actions.handleCheckerBrinsCheck(selectedContractIds, clearSelection)} disabled={actions.processing || !selectedContractIds.length}><Check className="w-4 h-4 mr-2" />Check{selectedContractIds.length > 0 ? ` (${selectedContractIds.length})` : ""}</Button>}
+                {showApproveBrins && <Button variant="outline" onClick={() => actions.handleApproverBrinsApprove(selectedContractIds, clearSelection)} disabled={actions.processing || !selectedContractIds.length}><ShieldCheck className="w-4 h-4 mr-2" />Approve{selectedContractIds.length > 0 ? ` (${selectedContractIds.length})` : ""}</Button>}
+                {showCheckTugure && <Button variant="outline" onClick={() => actions.handleCheckerTugureCheck(selectedContractIds, clearSelection)} disabled={actions.processing || !selectedContractIds.length}><Check className="w-4 h-4 mr-2" />Check{selectedContractIds.length > 0 ? ` (${selectedContractIds.length})` : ""}</Button>}
+                {showApproveTugure && (
                     <>
                         <Button variant="outline" onClick={() => { actions.setApprovalAction("APPROVED"); actions.setShowApprovalDialog(true); }} disabled={actions.processing || !selectedContractIds.length}><ShieldCheck className="w-4 h-4 mr-2" />Approve{selectedContractIds.length > 0 ? ` (${selectedContractIds.length})` : ""}</Button>
                         <Button variant="outline" onClick={() => { actions.setApprovalAction("REVISION"); actions.setShowApprovalDialog(true); }} disabled={actions.processing || !selectedContractIds.length}><Pen className="w-4 h-4 mr-2" />Revision{selectedContractIds.length > 0 ? ` (${selectedContractIds.length})` : ""}</Button>

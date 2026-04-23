@@ -13,7 +13,7 @@ import tugureLogo from '@/assets/tugure-logo.png';
 import { isAuthenticated, ingestDirectLoginTokens } from '@/lib/keycloak';
 import { withSignatureHeaders } from '@/lib/requestSignature';
 
-const SUPPORTED_DOMAINS = ['brins.co.id', 'tugu-re.com'];
+const SUPPORTED_DOMAINS = ['brins.co.id', 'tugu-re.com', 'ibsrisk.com'];
 
 export default function Home() {
   const navigate = useNavigate();

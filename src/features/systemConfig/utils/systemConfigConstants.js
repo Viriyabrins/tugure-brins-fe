@@ -2,6 +2,33 @@ export const SC_PAGE_SIZE = 10;
 
 export const DEFAULT_TEMPLATE_FILTER = { object_type: "all" };
 
+export const EMAIL_TEMPLATE_ADMIN_ROLES = ["admin-brins-role", "admin-tugure-role"];
+
+export const WORKFLOW_TEMPLATE_OBJECT_TYPES = ["MasterContract", "Debtor", "Claim", "Subrogation"];
+
+export const WORKFLOW_ACTION_OPTIONS = [
+    { value: "UPLOAD", label: "Upload" },
+    { value: "CHECK_BRINS", label: "Check BRINS" },
+    { value: "APPROVE_BRINS", label: "Approve BRINS" },
+    { value: "CHECK_TUGURE", label: "Check TUGURE" },
+    { value: "APPROVE_FINAL", label: "Approve Final" },
+    { value: "REVISION", label: "Revision" },
+];
+
+export const WORKFLOW_AUDIENCE_OPTIONS = [
+    { value: "ACTOR_SELF", label: "Actor Self" },
+    { value: "UPLOADER", label: "Uploader" },
+    { value: "BRINS_CHECKERS", label: "BRINS Checkers" },
+    { value: "BRINS_APPROVERS", label: "BRINS Approvers" },
+    { value: "TUGURE_CHECKERS", label: "TUGURE Checkers" },
+    { value: "TUGURE_APPROVERS", label: "TUGURE Approvers" },
+    { value: "PRIOR_ACTORS", label: "Prior Actors" },
+];
+
+export const EMAIL_TEMPLATE_RECIPIENT_OPTIONS = ["BRINS", "TUGURE", "ADMIN", "ALL"];
+
+export const WORKFLOW_TEMPLATE_VARIABLES = "{batch_id}, {actor_email}, {uploader_email}, {checker_email}, {checker_brins_email}, {approver_brins_email}, {checker_tugure_email}, {remarks}, {remarks_block}, {module_label}, {module_label_lower}, {record_count}, {record_count_text}, {actor_display}, {actor_display_lower}, {uploader_display}";
+
 export const DEFAULT_SLA_FILTER = { ruleName: "", triggerCondition: "all", status: "all" };
 
 export const DEFAULT_NOTIFICATION_SETTING = {
@@ -28,4 +55,4 @@ export const NOTIFICATION_TYPE_CONFIG = [
     { key: "notify_document_verification", label: "Document Verification", description: "Document upload and verification updates", color: "teal" },
 ];
 
-export const KNOWN_ROLES = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role", "admin", "admin-brins-role"];
+export const KNOWN_ROLES = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role", "admin", "admin-brins-role", "admin-tugure-role"];

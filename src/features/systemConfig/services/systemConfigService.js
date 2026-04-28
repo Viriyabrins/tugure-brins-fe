@@ -28,7 +28,7 @@ export const systemConfigService = {
     },
 
     async loadTemplates(page, pageSize, filters) {
-        const result = await backend.listPaginated("EmailTemplate", { page, limit: pageSize, q: JSON.stringify(filters) });
+        const result = await backend.listPaginated("EmailTemplate", { page, limit: pageSize, q: JSON.stringify({ ...filters, template_scope: "WORKFLOW" }) });
         return { data: Array.isArray(result.data) ? result.data : [], total: Number(result.pagination?.total) || 0 };
     },
 
@@ -56,8 +56,9 @@ export const systemConfigService = {
     },
 
     async saveTemplate(template) {
-        if (template.id) return backend.update("EmailTemplate", template.id, template);
-        return backend.create("EmailTemplate", template);
+        const payload = { ...template, template_scope: "WORKFLOW", status_from: "", status_to: template.status_to || "" };
+        if (payload.id) return backend.update("EmailTemplate", payload.id, payload);
+        return backend.create("EmailTemplate", payload);
     },
 
     async deleteTemplate(templateId) {

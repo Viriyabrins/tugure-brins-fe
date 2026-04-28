@@ -18,14 +18,49 @@ import PageHeader from "@/components/common/PageHeader";
 import DataTable from "@/components/common/DataTable";
 import StatusBadge from "@/components/ui/StatusBadge";
 import FilterTab from "@/components/common/FilterTab";
-import { DEFAULT_TEMPLATE_FILTER, DEFAULT_SLA_FILTER, NOTIFICATION_TYPE_CONFIG } from "../utils/systemConfigConstants";
+import {
+    DEFAULT_TEMPLATE_FILTER,
+    DEFAULT_SLA_FILTER,
+    EMAIL_TEMPLATE_ADMIN_ROLES,
+    EMAIL_TEMPLATE_RECIPIENT_OPTIONS,
+    NOTIFICATION_TYPE_CONFIG,
+    WORKFLOW_ACTION_OPTIONS,
+    WORKFLOW_AUDIENCE_OPTIONS,
+    WORKFLOW_TEMPLATE_OBJECT_TYPES,
+    WORKFLOW_TEMPLATE_VARIABLES,
+} from "../utils/systemConfigConstants";
 import { systemConfigService } from "../services/systemConfigService";
 import { useSystemConfigData } from "../hooks/useSystemConfigData";
+
+const DEFAULT_WORKFLOW_TEMPLATE = {
+    template_scope: "WORKFLOW",
+    object_type: "Debtor",
+    recipient_role: "BRINS",
+    status_from: "",
+    status_to: "SUBMITTED",
+    workflow_action: "UPLOAD",
+    workflow_audience: "UPLOADER",
+    email_subject: "",
+    email_body: "",
+    is_active: true,
+};
+
+const WORKFLOW_STATUS_MAP = {
+    UPLOAD: "SUBMITTED",
+    CHECK_BRINS: "CHECKED_BRINS",
+    APPROVE_BRINS: "APPROVED_BRINS",
+    CHECK_TUGURE: "CHECKED_TUGURE",
+    APPROVE_FINAL: "APPROVED",
+    REVISION: "REVISION",
+};
+
+const WORKFLOW_ACTION_LABELS = Object.fromEntries(WORKFLOW_ACTION_OPTIONS.map((option) => [option.value, option.label]));
+const WORKFLOW_AUDIENCE_LABELS = Object.fromEntries(WORKFLOW_AUDIENCE_OPTIONS.map((option) => [option.value, option.label]));
 
 export default function SystemConfiguration() {
     const data = useSystemConfigData();
     const {
-        user, keycloakUserId, loading, systemConfigs,
+        user, userRoles, keycloakUserId, loading, systemConfigs,
         emailTemplates, notificationSettings, slaRules,
         currentSetting, setCurrentSetting,
         templatePage, setTemplatePage, settingsPage, setSettingsPage,
@@ -49,6 +84,8 @@ export default function SystemConfiguration() {
     const [selectedSettings, setSelectedSettings] = useState([]);
     const [processing, setProcessing] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
+    const normalizedRoles = (Array.isArray(userRoles) ? userRoles : []).map((role) => String(role || "").trim().toLowerCase());
+    const canManageTemplates = EMAIL_TEMPLATE_ADMIN_ROLES.some((role) => normalizedRoles.includes(role));
 
     const handleSaveUserSettings = async () => {
         if (!keycloakUserId) return;
@@ -65,10 +102,18 @@ export default function SystemConfiguration() {
     };
 
     const handleSaveTemplate = async () => {
-        if (!selectedTemplate) return;
+        if (!selectedTemplate || !canManageTemplates) return;
         setProcessing(true);
         try {
-            await systemConfigService.saveTemplate(selectedTemplate);
+            const payload = {
+                ...selectedTemplate,
+                template_scope: "WORKFLOW",
+                status_to: WORKFLOW_STATUS_MAP[selectedTemplate.workflow_action] || selectedTemplate.status_to || "",
+                status_from: "",
+                workflow_action: selectedTemplate.workflow_action || "UPLOAD",
+                workflow_audience: selectedTemplate.workflow_audience || "UPLOADER",
+            };
+            await systemConfigService.saveTemplate(payload);
             await loadTemplates(templatePage, templateFilters);
             setShowTemplateDialog(false); setSelectedTemplate(null);
             setSuccessMessage(selectedTemplate.id ? "Email template updated successfully" : "Email template created successfully");
@@ -77,12 +122,18 @@ export default function SystemConfiguration() {
     };
 
     const handleDeleteTemplate = async (row) => {
+        if (!canManageTemplates) return;
         if (!window.confirm("Delete this template?")) return;
         try {
             await systemConfigService.deleteTemplate(row.id);
             setSuccessMessage("Template deleted");
             loadTemplates(templatePage, templateFilters);
         } catch (e) { setSuccessMessage("Template already deleted or not found"); }
+    };
+
+    const openNewTemplateDialog = () => {
+        setSelectedTemplate({ ...DEFAULT_WORKFLOW_TEMPLATE });
+        setShowTemplateDialog(true);
     };
 
     const handleSaveConfig = async () => {
@@ -122,17 +173,29 @@ export default function SystemConfiguration() {
 
     const emailTemplateColumns = [
         { header: "Object Type", cell: (row) => <span>{row.object_type}</span> },
-        { header: "Status Transition", cell: (row) => <div className="flex items-center gap-2">{row.status_from && <span className="text-gray-500">{row.status_from} →</span>}<span className="font-medium">{row.status_to}</span></div> },
+        {
+            header: "Workflow",
+            cell: (row) => (
+                <div className="space-y-1">
+                    <p className="font-medium text-sm">{WORKFLOW_ACTION_LABELS[row.workflow_action] || row.workflow_action}</p>
+                    <p className="text-xs text-gray-500">{WORKFLOW_AUDIENCE_LABELS[row.workflow_audience] || row.workflow_audience}</p>
+                </div>
+            ),
+        },
         { header: "Recipient", cell: (row) => <Badge variant="outline">{row.recipient_role}</Badge> },
         { header: "Subject", cell: (row) => <span className="text-sm">{row.email_subject}</span> },
         { header: "Status", cell: (row) => <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${row.is_active ? "bg-green-500" : "bg-gray-300"}`} /><span className="text-sm">{row.is_active ? "Active" : "Inactive"}</span></div> },
         {
             header: "Actions",
             cell: (row) => (
-                <div className="flex gap-1">
-                    <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedTemplate({ ...row }); setShowTemplateDialog(true); }}><Edit className="w-4 h-4" /></Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={async (e) => { e.stopPropagation(); await handleDeleteTemplate(row); }}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                </div>
+                canManageTemplates ? (
+                    <div className="flex gap-1">
+                        <Button type="button" variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedTemplate({ ...row, template_scope: "WORKFLOW" }); setShowTemplateDialog(true); }}><Edit className="w-4 h-4" /></Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={async (e) => { e.stopPropagation(); await handleDeleteTemplate(row); }}><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                    </div>
+                ) : (
+                    <span className="text-xs text-gray-400">Admin only</span>
+                )
             ),
         },
     ];
@@ -204,10 +267,18 @@ export default function SystemConfiguration() {
                 {/* ── Email Templates ─────────────────────────────────── */}
                 <TabsContent value="email-templates" className="mt-4 space-y-6">
                     <FilterTab filters={templateFilters} onFilterChange={setTemplateFilters} defaultFilters={DEFAULT_TEMPLATE_FILTER}
-                        filterConfig={[{ key: "object_type", label: "Object Type", options: [{ value: "all", label: "All Object Types" }, { value: "MasterContract", label: "Master Contract" }, { value: "Batch", label: "Batch" }, { value: "Record", label: "Record" }, { value: "Nota", label: "Nota" }, { value: "Debtor", label: "Debtor" }, { value: "Claim", label: "Claim" }, { value: "Subrogation", label: "Subrogation" }, { value: "DebitCreditNote", label: "Debit/Credit Note" }, { value: "PaymentIntent", label: "Payment Intent" }] }]}
+                        filterConfig={[
+                            { key: "object_type", label: "Object Type", options: [{ value: "all", label: "All Object Types" }, { value: "MasterContract", label: "Master Contract" }, { value: "Debtor", label: "Debtor" }, { value: "Claim", label: "Claim" }, { value: "Subrogation", label: "Subrogation" }] },
+                        ]}
                     />
+                    {!canManageTemplates && (
+                        <Alert>
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription>Only users with <code>admin-brins-role</code> or <code>admin-tugure-role</code> can create, edit, or delete email templates.</AlertDescription>
+                        </Alert>
+                    )}
                     <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" onClick={() => { setSelectedTemplate({ object_type: "Batch", recipient_role: "BRINS", status_from: "", status_to: "", email_subject: "", email_body: "", is_active: true }); setShowTemplateDialog(true); }}>
+                        <Button variant="outline" disabled={!canManageTemplates} onClick={() => openNewTemplateDialog()}>
                             <Plus className="w-4 h-4 mr-2" />Add Template
                         </Button>
                     </div>
@@ -363,33 +434,55 @@ export default function SystemConfiguration() {
             {/* ── Email Template Dialog ────────────────────────────────── */}
             <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
                 <DialogContent className="max-w-2xl">
-                    <DialogHeader><DialogTitle>{selectedTemplate?.id ? "Edit Email Template" : "Add Email Template"}</DialogTitle></DialogHeader>
+                    <DialogHeader><DialogTitle>{selectedTemplate?.id ? "Edit Workflow Email Template" : "Add Workflow Email Template"}</DialogTitle></DialogHeader>
                     <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label>Object Type</Label>
-                                <select value={selectedTemplate?.object_type || "Batch"} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, object_type: e.target.value })} className="w-full border rounded px-3 py-2">
-                                    {["MasterContract", "Batch", "Record", "Nota", "Debtor", "Claim", "Subrogation", "DebitCreditNote", "PaymentIntent"].map((v) => <option key={v} value={v}>{v}</option>)}
+                                <select value={selectedTemplate?.object_type || "Debtor"} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, object_type: e.target.value })} className="w-full border rounded px-3 py-2">
+                                    {WORKFLOW_TEMPLATE_OBJECT_TYPES.map((v) => <option key={v} value={v}>{v}</option>)}
                                 </select>
                             </div>
                             <div>
                                 <Label>Recipient Role</Label>
                                 <select value={selectedTemplate?.recipient_role || "BRINS"} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, recipient_role: e.target.value })} className="w-full border rounded px-3 py-2">
-                                    {["BRINS", "TUGURE", "ADMIN", "ALL"].map((v) => <option key={v} value={v}>{v}</option>)}
+                                    {EMAIL_TEMPLATE_RECIPIENT_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
                                 </select>
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                            <div><Label>Status From (Optional)</Label><Input value={selectedTemplate?.status_from || ""} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, status_from: e.target.value })} placeholder="e.g., Uploaded" /></div>
-                            <div><Label>Status To</Label><Input value={selectedTemplate?.status_to || ""} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, status_to: e.target.value })} placeholder="e.g., Validated" /></div>
+                            <div>
+                                <Label>Workflow Action</Label>
+                                <select
+                                    value={selectedTemplate?.workflow_action || "UPLOAD"}
+                                    onChange={(e) => setSelectedTemplate({
+                                        ...selectedTemplate,
+                                        workflow_action: e.target.value,
+                                        status_to: WORKFLOW_STATUS_MAP[e.target.value] || "",
+                                    })}
+                                    className="w-full border rounded px-3 py-2"
+                                >
+                                    {WORKFLOW_ACTION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <Label>Workflow Audience</Label>
+                                <select value={selectedTemplate?.workflow_audience || "UPLOADER"} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, workflow_audience: e.target.value })} className="w-full border rounded px-3 py-2">
+                                    {WORKFLOW_AUDIENCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                            </div>
                         </div>
                         <div><Label>Email Subject</Label><Input value={selectedTemplate?.email_subject || ""} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, email_subject: e.target.value })} placeholder="Use variables: {batch_id}, {user_name}, {date}, etc" /></div>
-                        <div><Label>Email Body</Label><Textarea value={selectedTemplate?.email_body || ""} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, email_body: e.target.value })} rows={8} /><p className="text-xs text-gray-500 mt-1">Variables: {"{batch_id}, {user_name}, {date}, {total_records}, {amount}"}</p></div>
+                        <div>
+                            <Label>Email Body</Label>
+                            <Textarea value={selectedTemplate?.email_body || ""} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, email_body: e.target.value })} rows={8} />
+                            <p className="text-xs text-gray-500 mt-1">Variables: {WORKFLOW_TEMPLATE_VARIABLES}</p>
+                        </div>
                         <div className="flex items-center gap-2"><input type="checkbox" checked={selectedTemplate?.is_active !== false} onChange={(e) => setSelectedTemplate({ ...selectedTemplate, is_active: e.target.checked })} className="rounded" /><Label>Active</Label></div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowTemplateDialog(false)}>Cancel</Button>
-                        <Button onClick={handleSaveTemplate} disabled={processing}>Save Template</Button>
+                        <Button onClick={handleSaveTemplate} disabled={processing || !canManageTemplates}>Save Template</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

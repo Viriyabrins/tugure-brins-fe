@@ -7,7 +7,7 @@ import { format } from 'date-fns';
 import { backend } from '@/api/backendClient';
 
 export default function NotificationList() {
-  const [userRoles, setUserRoles] = useState([]);
+  const [currentUserId, setCurrentUserId] = useState('');
   const [isUserLoaded, setIsUserLoaded] = useState(false);
   
   const [notifications, setNotifications] = useState([]);
@@ -24,36 +24,24 @@ export default function NotificationList() {
       const { default: keycloakService } = await import('@/services/keycloakService');
       const userInfo = keycloakService.getCurrentUserInfo();
       if (userInfo) {
-        const roles = keycloakService.getRoles();
-        const roleList = Array.isArray(roles) ? roles : [];
-        setUserRoles(roleList);
+        setCurrentUserId(userInfo.id || '');
         setIsUserLoaded(true);
-        return roleList;
+        return userInfo.id || '';
       }
     } catch (error) {
       console.error("Failed to load user:", error);
     }
     setIsUserLoaded(true);
-    return [];
+    return '';
   };
 
-  const loadNotifications = async (pageToLoad = notifPage, roles = userRoles) => {
+  const loadNotifications = async (pageToLoad = notifPage, userId = currentUserId) => {
     try {
-      let targetRoles = ["ALL"];
-      if (roles && roles.length > 0) {
-        const normalizedRoles = roles.map((r) => String(r || "").trim().toLowerCase());
-        const knownRoles = ["maker-brins-role", "checker-brins-role", "approver-brins-role", "checker-tugure-role", "approver-tugure-role", "admin", "admin-brins-role"];
-        const matchedRoles = normalizedRoles.filter(r => knownRoles.includes(r));
-        if (matchedRoles.length > 0) {
-          targetRoles = [...targetRoles, ...matchedRoles];
-        }
-      }
-
       const result = await backend.listNotifications({
         unread: 'true',
         page: pageToLoad,
         limit: notifPageSize,
-        target_role: targetRoles.join(',')
+        target_user: userId
       });
       setNotifications(Array.isArray(result.data) ? result.data : []);
       setTotalNotifications(Number(result.pagination?.total) || 0);
@@ -66,14 +54,14 @@ export default function NotificationList() {
 
   useEffect(() => {
     if (isUserLoaded) {
-      loadNotifications(notifPage, userRoles);
+      loadNotifications(notifPage, currentUserId);
     }
-  }, [notifPage, userRoles, isUserLoaded]);
+  }, [notifPage, currentUserId, isUserLoaded]);
 
   const handleMarkAsRead = async (notifId) => {
     try {
       await backend.updateNotification(notifId, { is_read: true });
-      loadNotifications(notifPage, userRoles);
+      loadNotifications(notifPage, currentUserId);
     } catch (error) {
       console.error('Mark as read error:', error);
     }

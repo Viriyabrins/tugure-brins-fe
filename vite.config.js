@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
 
   return {
-    logLevel: 'error', // Suppress warnings, only show errors
+    logLevel: 'info', // Show startup messages; change to 'warn' to reduce noise
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src')
@@ -21,6 +21,12 @@ export default defineConfig(({ mode }) => {
     // Dev server proxy settings (useful for local/staging dev)
     server: {
       host: '0.0.0.0',
+      // HMR config for SSH tunnel: ensures hot-reload works when accessing via localhost:5173
+      hmr: {
+        host: 'localhost',
+        port: 5173,
+        protocol: 'http'
+      },
       proxy: {
         '/api': {
           // PROXY_TARGET (no VITE_ prefix) is server-side only and never exposed to the browser bundle.

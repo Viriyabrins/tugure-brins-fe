@@ -94,6 +94,15 @@ export function useSystemConfigData() {
         setLoading(false);
     };
 
+    // Toggle notification preference for a specific channel
+    const toggleNotificationChannel = (notificationType, channel) => {
+        if (channel === "email") {
+            setCurrentSetting(prev => ({ ...prev, [`email_${notificationType}`]: !prev[`email_${notificationType}`] }));
+        } else if (channel === "inapp") {
+            setCurrentSetting(prev => ({ ...prev, [`inapp_${notificationType}`]: !prev[`inapp_${notificationType}`] }));
+        }
+    };
+
     // Pagination helpers
     const tpl = { from: totalTemplates === 0 ? 0 : (templatePage - 1) * SC_PAGE_SIZE + 1, to: Math.min(totalTemplates, templatePage * SC_PAGE_SIZE), total: totalTemplates, page: templatePage, totalPages: Math.max(1, Math.ceil(totalTemplates / SC_PAGE_SIZE)) };
     const stg = { from: totalSettings === 0 ? 0 : (settingsPage - 1) * SC_PAGE_SIZE + 1, to: Math.min(totalSettings, settingsPage * SC_PAGE_SIZE), total: totalSettings, page: settingsPage, totalPages: Math.max(1, Math.ceil(totalSettings / SC_PAGE_SIZE)) };
@@ -103,7 +112,7 @@ export function useSystemConfigData() {
         user, userRoles, keycloakUserId, loading,
         systemConfigs, emailTemplates, notificationSettings, slaRules,
         notifications, totalNotifications,
-        currentSetting, setCurrentSetting,
+        currentSetting, setCurrentSetting, toggleNotificationChannel,
         templatePage, setTemplatePage, settingsPage, setSettingsPage,
         slaPage, setSlaPage, notifPage, setNotifPage,
         templateFilters, setTemplateFilters, slaFilters, setSlaFilters,

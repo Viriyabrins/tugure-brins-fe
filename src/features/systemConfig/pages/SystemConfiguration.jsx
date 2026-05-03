@@ -23,6 +23,7 @@ import {
     DEFAULT_SLA_FILTER,
     EMAIL_TEMPLATE_ADMIN_ROLES,
     EMAIL_TEMPLATE_RECIPIENT_OPTIONS,
+    NOTIFICATION_CATEGORIES,
     NOTIFICATION_TYPE_CONFIG,
     WORKFLOW_ACTION_OPTIONS,
     WORKFLOW_AUDIENCE_OPTIONS,
@@ -62,7 +63,7 @@ export default function SystemConfiguration() {
     const {
         user, userRoles, keycloakUserId, loading, systemConfigs,
         emailTemplates, notificationSettings, slaRules,
-        currentSetting, setCurrentSetting,
+        currentSetting, setCurrentSetting, toggleNotificationChannel,
         templatePage, setTemplatePage, settingsPage, setSettingsPage,
         slaPage, setSlaPage, notifPage, setNotifPage,
         templateFilters, setTemplateFilters, slaFilters, setSlaFilters,
@@ -260,7 +261,8 @@ export default function SystemConfiguration() {
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="grid w-fit grid-cols-3">
                     <TabsTrigger value="email-templates"><Mail className="w-4 h-4 mr-2" />Email Templates</TabsTrigger>
-                    <TabsTrigger value="notif-engine"><Settings className="w-4 h-4 mr-2" />Notif Engine</TabsTrigger>
+                    {/* <TabsTrigger value="notif-engine"><Settings className="w-4 h-4 mr-2" />Notif Engine</TabsTrigger> */}
+                    <TabsTrigger value="notification-prefs"><Bell className="w-4 h-4 mr-2" />Email Preferences</TabsTrigger>
                     <TabsTrigger value="notification-rules"><AlertCircle className="w-4 h-4 mr-2" />Notification by Rules</TabsTrigger>
                 </TabsList>
 
@@ -286,7 +288,7 @@ export default function SystemConfiguration() {
                 </TabsContent>
 
                 {/* ── Notif Engine ─────────────────────────────────────── */}
-                <TabsContent value="notif-engine" className="mt-4 space-y-6">
+                {/* <TabsContent value="notif-engine" className="mt-4 space-y-6">
                     <Card>
                         <CardHeader><CardTitle>My Notification Preferences</CardTitle><p className="text-sm text-gray-500">Configure your personal notification settings</p></CardHeader>
                         <CardContent>
@@ -328,6 +330,76 @@ export default function SystemConfiguration() {
                             <DataTable columns={settingsColumns} data={notificationSettings} isLoading={loading} emptyMessage="No notification settings found" pagination={stgPagination} onPageChange={setSettingsPage} />
                         </CardContent>
                     </Card>
+                </TabsContent> */}
+
+                {/* ── Email Preferences (Email vs In-App) ──────────────── */}
+                <TabsContent value="notification-prefs" className="mt-4 space-y-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Email vs In-App Notifications</CardTitle>
+                            <p className="text-sm text-gray-500 mt-2">Choose how you want to receive each notification type. Enable or disable for Email or In-App separately.</p>
+                        </CardHeader>
+                        <CardContent className="space-y-8">
+                            {NOTIFICATION_CATEGORIES.map((category, idx) => (
+                                <div key={idx}>
+                                    <h3 className="text-lg font-semibold mb-4 text-gray-800">{category.name}</h3>
+                                    <div className="space-y-3">
+                                        {category.types.map((notifType) => {
+                                            const config = NOTIFICATION_TYPE_CONFIG.find(n => n.key === notifType);
+                                            if (!config) return null;
+                                            const emailKey = `email_${notifType}`;
+                                            const inappKey = `inapp_${notifType}`;
+                                            return (
+                                                <div key={notifType} className={`flex items-start justify-between p-4 bg-${category.color}-50 border border-${category.color}-100 rounded-lg`}>
+                                                    <div className="flex-1">
+                                                        <Label className="font-medium text-sm">{config.label}</Label>
+                                                        <p className="text-xs text-gray-500 mt-1">{config.description}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-6 ml-4">
+                                                        <div className="flex flex-col items-center gap-2">
+                                                            <span className="text-xs text-gray-600 font-medium">Email</span>
+                                                            <Switch 
+                                                                checked={currentSetting[emailKey] !== false}
+                                                                onCheckedChange={() => toggleNotificationChannel(notifType, "email")}
+                                                            />
+                                                        </div>
+                                                        <div className="flex flex-col items-center gap-2">
+                                                            <span className="text-xs text-gray-600 font-medium">In-App</span>
+                                                            <Switch 
+                                                                checked={currentSetting[inappKey] !== false}
+                                                                onCheckedChange={() => toggleNotificationChannel(notifType, "inapp")}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+                    <div className="flex gap-2">
+                        <Button onClick={handleSaveUserSettings} disabled={processing} className="bg-blue-600 hover:bg-blue-700">
+                            {processing ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : <><CheckCircle2 className="w-4 h-4 mr-2" />Save Changes</>}
+                        </Button>
+                        <Button variant="outline" onClick={() => {
+                            // Reset to defaults
+                            const defaultSettings = {
+                                ...currentSetting,
+                                // Reset all email and inapp toggles to true
+                                ...Object.keys(currentSetting).reduce((acc, key) => {
+                                    if (key.startsWith('email_') || key.startsWith('inapp_')) {
+                                        acc[key] = true;
+                                    }
+                                    return acc;
+                                }, {})
+                            };
+                            setCurrentSetting(defaultSettings);
+                        }}>
+                            Reset to Defaults
+                        </Button>
+                    </div>
                 </TabsContent>
 
                 {/* ── Notification by Rules ────────────────────────────── */}

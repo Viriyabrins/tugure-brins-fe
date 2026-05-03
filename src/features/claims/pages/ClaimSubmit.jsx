@@ -39,6 +39,8 @@ import { useClaimData } from "../hooks/useClaimData";
 import { useClaimUpload } from "../hooks/useClaimUpload";
 import { ClaimUploadDialog } from "../components/ClaimUploadDialog";
 import { SubrogationDialog } from "../components/SubrogationDialog";
+import { SubrogationUploadDialog } from "../components/SubrogationUploadDialog";
+import { useSubrogationUpload } from "../hooks/useSubrogationUpload";
 import { FilePreviewModal } from "../components/FilePreviewModal";
 import { AttachmentCount } from "@/components/common/AttachmentCount";
 import { DEFAULT_CLAIM_FILTER, CLAIM_TEMPLATE_HEADERS, CLAIM_TEMPLATE_SAMPLE } from "../utils/claimConstants";
@@ -144,9 +146,29 @@ export default function ClaimSubmit() {
         },
     });
 
+    const {
+        processing: subrogationProcessing,
+        parsedSubrogations,
+        validationRemarks: subrogationValidationRemarks,
+        dialogError: subrogationDialogError,
+        previewValidationError: subrogationPreviewValidationError,
+        handleFileUpload: handleSubrogationFileUpload,
+        handleBulkUpload: handleSubrogationBulkUpload,
+        handleDownloadTemplate: handleSubrogationDownloadTemplate,
+        reset: resetSubrogationUpload,
+    } = useSubrogationUpload({
+        user,
+        onSuccess: (msg) => {
+            closeDialog("subrogationUpload");
+            setSuccessMessage(msg);
+            loadAll();
+        },
+    });
+
     const { dialogs, open: openDialog, close: closeDialog } = useDialogs([
         "upload",
         "subrogation",
+        "subrogationUpload",
     ]);
 
     useEffect(() => {
@@ -437,15 +459,24 @@ export default function ClaimSubmit() {
                 </TabsContent>
 
                 <TabsContent value="subrogation" className="mt-4">
-                    <div className="mb-4 flex justify-end">
+                    <div className="mb-4 flex justify-end gap-2">
                         {canShowActionButtons && (
-                            <Button
-                                onClick={() => openDialog("subrogation")}
-                                className="bg-green-600"
-                            >
-                                <Plus className="w-4 h-4 mr-2" />
-                                New Subrogation
-                            </Button>
+                            <>
+                                <Button
+                                    variant="outline"
+                                    onClick={handleSubrogationDownloadTemplate}
+                                >
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Download Template
+                                </Button>
+                                <Button
+                                    onClick={() => openDialog("subrogationUpload")}
+                                    className="bg-blue-600"
+                                >
+                                    <Upload className="w-4 h-4 mr-2" />
+                                    Upload Subrogations
+                                </Button>
+                            </>
                         )}
                     </div>
                     <DataTable
@@ -602,6 +633,21 @@ export default function ClaimSubmit() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <SubrogationUploadDialog
+                open={dialogs.subrogationUpload}
+                onClose={() => {
+                    closeDialog("subrogationUpload");
+                    resetSubrogationUpload();
+                }}
+                processing={subrogationProcessing}
+                parsedSubrogations={parsedSubrogations}
+                validationRemarks={subrogationValidationRemarks}
+                dialogError={subrogationDialogError}
+                previewValidationError={subrogationPreviewValidationError}
+                onPreview={handleSubrogationFileUpload}
+                onUpload={handleSubrogationBulkUpload}
+            />
         </div>
     );
 }

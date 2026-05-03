@@ -395,6 +395,28 @@ export const backend = {
     }
   },
 
+  async uploadSubrogationsAtomic(payload) {
+    const url = `/api/apps/${encodeURIComponent(appId)}/subrogations/upload`;
+    const res = await fetch(url, await authFetchOptions({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }, url));
+
+    if (!res.ok) {
+      await throwBackendError(res);
+    }
+
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.success) return parsed.data ?? null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+
   async checkUploadDuplicates(payload) {
     const url = `/api/apps/${encodeURIComponent(appId)}/debtors/check-duplicates`;
     const res = await fetch(url, await authFetchOptions({

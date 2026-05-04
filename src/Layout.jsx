@@ -12,7 +12,7 @@ import {
 import { useKeycloakAuth } from './lib/KeycloakContext';
 import { useViewerRole } from '@/hooks/usePermissions';
 export default function Layout({ children, currentPageName }) {
-  const { user, logout, tokenParsed } = useKeycloakAuth();
+  const { user, logout, tokenParsed, isSuperAdmin } = useKeycloakAuth();
   const { isViewer, isTugureViewer, isBrinsViewer } = useViewerRole();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -86,6 +86,9 @@ export default function Layout({ children, currentPageName }) {
   const menuItems = {
     common: [
       { name: 'Dashboard Analytics', icon: LayoutDashboard, path: 'Dashboard', roles: [] } // all users
+    ],
+    admin: [
+      { name: 'Admin Dashboard', icon: Activity, path: 'AdminDashboard', roles: [] }
     ],
     operations: [
       { name: 'Debtor Submit', icon: Upload, path: 'SubmitDebtor', accesses: ['brins operation'] },
@@ -238,8 +241,23 @@ export default function Layout({ children, currentPageName }) {
               </nav>
             </div>
 
-            {/* Operations */}
-            {filterMenuItems(menuItems.operations).length > 0 && (
+            {/* Admin Section (superadmin only) */}
+            {isSuperAdmin && (
+              <>
+                <Separator />
+                <div>
+                  <p className="text-xs font-semibold text-purple-600 uppercase tracking-wider mb-3 px-2">
+                    Admin
+                  </p>
+                  <nav className="space-y-1">
+                    {filterMenuItems(menuItems.admin).map(renderMenuItem)}
+                  </nav>
+                </div>
+              </>
+            )}
+
+            {/* Operations (non-superadmin only) */}
+            {!isSuperAdmin && filterMenuItems(menuItems.operations).length > 0 && (
               <>
                 <Separator />
                 <div>

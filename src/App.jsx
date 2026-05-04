@@ -9,6 +9,7 @@ import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'r
 import PageNotFound from './lib/PageNotFound';
 import { KeycloakProvider, useKeycloakAuth } from '@/lib/KeycloakContext';
 import LandingPage from './pages/LandingPage';
+import AdminLayout from './AdminLayout';
 
 const { Pages, Layout } = pagesConfig;
 
@@ -27,11 +28,37 @@ const RequireAuth = ({ children }) => {
   return children;
 };
 
+const RequireAdmin = ({ children }) => {
+  const { isAuthenticated, isSuperAdmin } = useKeycloakAuth();
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/Home" replace state={{ from: location }} />;
+  }
+
+  if (!isSuperAdmin) {
+    return <Navigate to="/Dashboard" replace />;
+  }
+
+  return children;
+};
+
+const RequireNotAdmin = ({ children }) => {
+  const { isSuperAdmin } = useKeycloakAuth();
+
+  if (isSuperAdmin) {
+    return <Navigate to="/admin/AdminDashboard" replace />;
+  }
+
+  return children;
+};
+
 const PublicRedirect = () => {
-  const { isAuthenticated } = useKeycloakAuth();
+  const { isAuthenticated, isSuperAdmin } = useKeycloakAuth();
 
   if (isAuthenticated) {
-    return <Navigate to="/Dashboard" replace />;
+    // Redirect superadmin to admin dashboard, regular users to normal dashboard
+    return <Navigate to={isSuperAdmin ? "/admin/AdminDashboard" : "/Dashboard"} replace />;
   }
 
   const HomePage = Pages.Home;
@@ -44,21 +71,35 @@ const AppRoutes = () => {
       {/* Landing page — shown to everyone, no sidebar/header */}
       <Route path="/" element={<LandingPage />} />
 
-      {/* Login page — show Home or redirect authenticated users to Dashboard */}
+      {/* Login page — show Home or redirect authenticated users */}
       <Route path="/Home" element={<PublicRedirect />} />
 
-      {/* All other pages require authentication */}
+      {/* Admin-only routes */}
+      <Route
+        path="/admin/AdminDashboard"
+        element={
+          <RequireAdmin>
+            <AdminLayout currentPageName="AdminDashboard">
+              <Pages.AdminDashboard />
+            </AdminLayout>
+          </RequireAdmin>
+        }
+      />
+
+      {/* Regular user routes — protected from superadmin access */}
       {Object.entries(Pages)
-        .filter(([path]) => path !== 'Home') // Home is handled above
+        .filter(([path]) => path !== 'Home' && path !== 'AdminDashboard')
         .map(([path, Page]) => (
           <Route
             key={path}
             path={`/${path}`}
             element={
               <RequireAuth>
-                <LayoutWrapper currentPageName={path}>
-                  <Page />
-                </LayoutWrapper>
+                <RequireNotAdmin>
+                  <LayoutWrapper currentPageName={path}>
+                    <Page />
+                  </LayoutWrapper>
+                </RequireNotAdmin>
               </RequireAuth>
             }
           />

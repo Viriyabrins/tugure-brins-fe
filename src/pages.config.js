@@ -1,6 +1,7 @@
 import AdvancedReports from './pages/AdvancedReports';
 import RecapSummary from './pages/RecapSummary';
 import AuditLog from './pages/AuditLog';
+import AdminDashboard from './pages/AdminDashboard';
 import BatchProcessing from './pages/BatchProcessing';
 import BorderoManagement from './pages/BorderoManagement';
 import ClaimReview from './pages/ClaimReview';
@@ -27,6 +28,7 @@ export const PAGES = {
     "AdvancedReports": AdvancedReports,
     "RecapSummary": RecapSummary,
     "AuditLog": AuditLog,
+    "AdminDashboard": AdminDashboard,
     "BatchProcessing": BatchProcessing,
     "BorderoManagement": BorderoManagement,
     "ClaimReview": ClaimReview,

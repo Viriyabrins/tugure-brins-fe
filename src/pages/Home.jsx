@@ -41,7 +41,14 @@ export default function Home() {
   };
 
   const validateEmail = (email) => {
-    const domain = email.toLowerCase().trim().split('@')[1];
+    const trimmed = email.toLowerCase().trim();
+    
+    // Allow "viriya" as special admin username (no domain validation needed)
+    if (trimmed === 'viriya') {
+      return null;
+    }
+
+    const domain = trimmed.split('@')[1];
     if (!domain) return 'Please enter a valid email address';
     if (!SUPPORTED_DOMAINS.includes(domain)) {
       return `Unsupported email domain. Please use ${SUPPORTED_DOMAINS.join(' or ')}`;
@@ -154,7 +161,7 @@ export default function Home() {
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300" />
                   <input
-                    type="email"
+                    type="text"
                     value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="Enter your email"

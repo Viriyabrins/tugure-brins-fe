@@ -50,6 +50,9 @@ export const KeycloakProvider = ({ children }) => {
                 else if (normalizedRoles.some((r) => r.includes("brins")))
                     role = "BRINS";
 
+                // Detect superadmin: username "viriya" with "admin" role
+                const isSuperAdmin = t.preferred_username === "viriya" && normalizedRoles.includes("admin");
+
                 return {
                     id: t.sub,
                     email: t.email,
@@ -60,7 +63,13 @@ export const KeycloakProvider = ({ children }) => {
                     lastName: t.family_name,
                     role,
                     roles,
+                    isSuperAdmin,
                 };
+            },
+
+            /** Check if user is superadmin (viriya with admin role) */
+            get isSuperAdmin() {
+                return this.user?.isSuperAdmin || false;
             },
 
             /** All realm + client roles */
